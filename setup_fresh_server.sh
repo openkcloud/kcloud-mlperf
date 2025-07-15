@@ -122,6 +122,14 @@ fi
 
 log_success "Repository ready at $REPO_DIR"
 
+# Check for CUDA support - mlperf-llama image already has CUDA
+log_info "🐳 MLPerf container already built with CUDA support"
+if docker images | grep -q "mlperf-llama"; then
+    log_success "MLPerf container ready for GPU testing"
+else
+    log_warning "MLPerf container not found - will be built in next step"
+fi
+
 # Final Setup
 log_info "🎯 Final setup..."
 mkdir -p results cache
@@ -139,8 +147,8 @@ echo ""
 echo "2. After reboot, test GPU access:"
 echo "   nvidia-smi"
 echo ""
-echo "3. Test Docker GPU access:"
-echo "   docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi"
+echo "3. Test Docker GPU access with MLPerf container:"
+echo "   docker run --rm --gpus all mlperf-llama:latest nvidia-smi"
 echo ""
 echo "4. Build the MLPerf container:"
 echo "   cd $REPO_DIR"
