@@ -1,5 +1,5 @@
 # MLPerf Llama-3.1-8B Benchmark Container
-FROM nvidia/cuda:12.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 # Metadata
 LABEL maintainer="jungwooshim"
