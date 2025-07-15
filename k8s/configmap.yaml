@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: benchmark-config
+  labels:
+    app: mlperf-llama
+data:
+  num_samples: "10"
+  max_tokens: "64" 
+  batch_size: "1"
+  # Model configuration
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  # Performance settings
+  torch_dtype: "float16"
+  # Cache settings
+  cache_dir: "/app/cache/transformers"
+  # Results settings
+  results_dir: "/app/results"
