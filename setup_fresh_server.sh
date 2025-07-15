@@ -122,12 +122,21 @@ fi
 
 log_success "Repository ready at $REPO_DIR"
 
-# Check for CUDA support - mlperf-llama image already has CUDA
-log_info "🐳 MLPerf container already built with CUDA support"
+# Load or build MLPerf Docker image
+log_info "🐳 Setting up MLPerf Docker image..."
 if docker images | grep -q "mlperf-llama"; then
-    log_success "MLPerf container ready for GPU testing"
+    log_success "MLPerf container already available"
 else
-    log_warning "MLPerf container not found - will be built in next step"
+    log_info "Downloading MLPerf Docker image from GitHub releases..."
+    if curl -L -o mlperf-llama.tar.gz "https://github.com/jshim0978/MLPerf_local_test/releases/download/v1.0/mlperf-llama.tar.gz" 2>/dev/null; then
+        gunzip -c mlperf-llama.tar.gz | docker load
+        rm mlperf-llama.tar.gz
+        log_success "MLPerf image loaded from release"
+    else
+        log_warning "Could not download image, building from Dockerfile..."
+        docker build -t mlperf-llama:latest .
+        log_success "MLPerf container built"
+    fi
 fi
 
 # Final Setup
@@ -150,9 +159,8 @@ echo ""
 echo "3. Test Docker GPU access with MLPerf container:"
 echo "   docker run --rm --gpus all mlperf-llama:latest nvidia-smi"
 echo ""
-echo "4. Build the MLPerf container:"
-echo "   cd $REPO_DIR"
-echo "   docker build -t mlperf-llama:latest ."
+echo "4. MLPerf container setup (done automatically):"
+echo "   # Script loads from mlperf-llama.tar.gz or builds from Dockerfile"
 echo ""
 echo "5. Run the benchmark:"
 echo "   docker run --gpus all -e HF_TOKEN=your_token mlperf-llama:latest"

@@ -21,13 +21,13 @@ cd /app
 case "$1" in
     "benchmark")
         echo "🚀 Starting MLPerf benchmark..."
-        python3 containerized_benchmark.py
+        python3 /app/containerized_benchmark.py
         ;;
     "test")
         echo "🧪 Running test mode..."
         export NUM_SAMPLES=3
         export MAX_TOKENS=32
-        python3 containerized_benchmark.py
+        python3 /app/containerized_benchmark.py
         ;;
     "bash")
         echo "💻 Starting interactive shell..."

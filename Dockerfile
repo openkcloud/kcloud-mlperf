@@ -1,5 +1,5 @@
 # MLPerf Llama-3.1-8B Benchmark Container
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM ubuntu:22.04
 
 # Metadata
 LABEL maintainer="jungwooshim"
@@ -36,18 +36,8 @@ RUN python3 -m pip install --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Clone MLPerf repository
-RUN git clone --recursive https://github.com/mlcommons/inference.git mlperf_inference
-
-# Install MLPerf loadgen
-WORKDIR /app/mlperf_inference/loadgen
-RUN pip install -e .
-
-# Setup working directory
-WORKDIR /app/mlperf_inference/language/llama3.1-8b
-
 # Copy benchmark scripts
-COPY benchmark_scripts/ ./
+COPY benchmark_scripts/ /app/
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
@@ -62,7 +52,7 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD nvidia-smi || exit 1
+    CMD python3 --version || exit 1
 
 # Entry point
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
