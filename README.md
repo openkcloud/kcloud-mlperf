@@ -20,11 +20,23 @@ This project provides a complete setup for benchmarking Llama-3.1-8B model perfo
 ### Local Setup
 ```bash
 # Clone repository
-git clone <your-repo-url>
-cd mlperf-llama-benchmark
+git clone https://github.com/jshim0978/MLPerf_local_test.git
+cd MLPerf_local_test
 
 # Follow setup guide
 cat Complete_Setup_Guide.md
+```
+
+### MLPerf Datacenter Benchmark (NEW!)
+```bash
+# Set HuggingFace token
+export HF_TOKEN=your_token
+
+# Run MLPerf Inference v5.0 compliant benchmark
+python mlperf_datacenter_benchmark.py
+
+# Run coordinated multi-GPU datacenter benchmark
+python run_datacenter_benchmark.py
 ```
 
 ### Docker Container
@@ -47,15 +59,20 @@ kubectl apply -f k8s/
 ```
 mlperf-llama-benchmark/
 ├── README.md                              # This file
+├── README_MLPerf_Datacenter.md           # MLPerf Datacenter documentation
 ├── Complete_Setup_Guide.md                # Step-by-step setup instructions
 ├── Simple_Benchmark_Results.md            # Latest benchmark results
 ├── MLPerf_Llama3.1-8B_Benchmark_Report.md # Detailed performance report
-├── mlperf_llama7b_benchmark.md           # Complete documentation log
 ├── Dockerfile                            # Container definition
 ├── requirements.txt                      # Python dependencies
 ├── benchmark_scripts/                    # Benchmark code
-│   ├── containerized_benchmark.py        # Main benchmark script
-│   └── test_llama_mlperf.py             # Local test script
+│   └── distributed_benchmark.py          # Distributed benchmark implementation
+├── mlperf_datacenter_benchmark.py        # MLPerf v5.0 compliant benchmark
+├── run_datacenter_benchmark.py           # Multi-GPU datacenter coordinator
+├── run_coordinated_benchmark.py          # Multi-GPU coordination
+├── run_distributed_benchmark.py          # Distributed benchmark runner
+├── run_benchmark_auto.py                 # Automated benchmark execution
+├── run_benchmark.py                      # Basic benchmark script
 ├── k8s/                                  # Kubernetes manifests
 │   ├── benchmark-job.yaml               # Benchmark job
 │   ├── configmap.yaml                   # Configuration
@@ -80,17 +97,28 @@ mlperf-llama-benchmark/
 
 ## 🏗️ Setup Options
 
-### 1. Local Development
+### 1. MLPerf Datacenter Benchmark (Recommended)
+MLPerf Inference v5.0 compliant benchmarking with server and offline scenarios:
+```bash
+# Single node
+python mlperf_datacenter_benchmark.py
+
+# Multi-GPU coordination  
+python run_datacenter_benchmark.py
+```
+See [README_MLPerf_Datacenter.md](README_MLPerf_Datacenter.md) for detailed documentation.
+
+### 2. Local Development
 Follow the [Complete Setup Guide](Complete_Setup_Guide.md) for manual installation and testing.
 
-### 2. Container Deployment
+### 3. Container Deployment
 Use Docker for isolated, reproducible benchmarks:
 ```bash
 docker build -t mlperf-llama:latest .
 docker run --gpus all -e HF_TOKEN=your_token mlperf-llama:latest
 ```
 
-### 3. Kubernetes Cluster
+### 4. Kubernetes Cluster
 Deploy across multiple nodes for scale testing:
 ```bash
 kubectl apply -f k8s/benchmark-job.yaml
