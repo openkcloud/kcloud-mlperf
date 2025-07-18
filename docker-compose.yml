@@ -1,0 +1,160 @@
+# Docker Compose for MLPerf Benchmarks
+# Supports multiple hardware configurations
+
+version: '3.8'
+
+services:
+  # NVIDIA GPU Service
+  mlperf-nvidia:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+      args:
+        ACCELERATOR_TYPE: nvidia
+    image: mlperf-benchmark:nvidia
+    container_name: mlperf-nvidia
+    environment:
+      - ACCELERATOR_TYPE=nvidia
+      - HF_TOKEN=${HF_TOKEN}
+      - CUDA_VISIBLE_DEVICES=0,1
+      - SERVER_TARGET_QPS=2.0
+      - OFFLINE_TARGET_QPS=20.0
+    volumes:
+      - ./results:/app/results
+      - ./cache:/app/cache
+      - ./configs:/app/configs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    profiles: ["nvidia", "all"]
+
+  # Furiosa NPU Service  
+  mlperf-furiosa:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+      args:
+        ACCELERATOR_TYPE: furiosa
+    image: mlperf-benchmark:furiosa
+    container_name: mlperf-furiosa
+    environment:
+      - ACCELERATOR_TYPE=furiosa
+      - HF_TOKEN=${HF_TOKEN}
+      - NPU_VISIBLE_DEVICES=0,1,2,3
+      - SERVER_TARGET_QPS=8.0
+      - OFFLINE_TARGET_QPS=60.0
+    volumes:
+      - ./results:/app/results
+      - ./cache:/app/cache
+      - ./configs:/app/configs
+      - /dev:/dev
+    privileged: true
+    profiles: ["furiosa", "all"]
+
+  # AMD ROCm Service
+  mlperf-amd:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+      args:
+        ACCELERATOR_TYPE: amd
+    image: mlperf-benchmark:amd
+    container_name: mlperf-amd
+    environment:
+      - ACCELERATOR_TYPE=amd
+      - HF_TOKEN=${HF_TOKEN}
+      - ROCR_VISIBLE_DEVICES=0,1
+      - SERVER_TARGET_QPS=1.8
+      - OFFLINE_TARGET_QPS=18.0
+    volumes:
+      - ./results:/app/results
+      - ./cache:/app/cache
+      - ./configs:/app/configs
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+    profiles: ["amd", "all"]
+
+  # Intel GPU Service
+  mlperf-intel:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+      args:
+        ACCELERATOR_TYPE: intel
+    image: mlperf-benchmark:intel
+    container_name: mlperf-intel
+    environment:
+      - ACCELERATOR_TYPE=intel
+      - HF_TOKEN=${HF_TOKEN}
+      - SERVER_TARGET_QPS=1.2
+      - OFFLINE_TARGET_QPS=12.0
+    volumes:
+      - ./results:/app/results
+      - ./cache:/app/cache
+      - ./configs:/app/configs
+      - /dev/dri:/dev/dri
+    profiles: ["intel", "all"]
+
+  # CPU-Only Service
+  mlperf-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+      args:
+        ACCELERATOR_TYPE: cpu
+    image: mlperf-benchmark:cpu
+    container_name: mlperf-cpu
+    environment:
+      - ACCELERATOR_TYPE=cpu
+      - HF_TOKEN=${HF_TOKEN}
+      - OMP_NUM_THREADS=16
+      - SERVER_TARGET_QPS=0.1
+      - OFFLINE_TARGET_QPS=0.5
+    volumes:
+      - ./results:/app/results
+      - ./cache:/app/cache
+      - ./configs:/app/configs
+    deploy:
+      resources:
+        reservations:
+          cpus: '16'
+        limits:
+          cpus: '32'
+          memory: 64G
+    profiles: ["cpu", "all"]
+
+  # Results Aggregator Service
+  results-aggregator:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+    image: mlperf-benchmark:latest
+    container_name: mlperf-aggregator
+    command: python3 aggregate_results.py
+    environment:
+      - AGGREGATION_MODE=multi_hardware
+    volumes:
+      - ./results:/app/results
+      - ./reports:/app/reports
+    depends_on:
+      - mlperf-nvidia
+      - mlperf-furiosa
+      - mlperf-amd
+      - mlperf-intel
+      - mlperf-cpu
+    profiles: ["aggregator", "all"]
+
+volumes:
+  mlperf-cache:
+    driver: local
+  mlperf-results:
+    driver: local
+
+networks:
+  mlperf-network:
+    driver: bridge

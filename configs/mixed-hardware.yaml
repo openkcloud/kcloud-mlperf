@@ -1,0 +1,265 @@
+# Mixed Hardware Configuration
+# For heterogeneous clusters with different accelerator types
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlperf
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mixed-hardware-config
+  namespace: mlperf
+data:
+  config.yaml: |
+    # MLPerf Benchmark Configuration for Mixed Hardware
+    
+    cluster:
+      type: "heterogeneous"
+      coordination: "kubernetes"
+    
+    nodes:
+      - name: "nvidia-node"
+        accelerator_type: "nvidia"
+        device_count: 2
+        target_qps: 2.0
+        node_selector:
+          accelerator: "nvidia-gpu"
+        
+      - name: "furiosa-node"
+        accelerator_type: "furiosa"
+        device_count: 4
+        target_qps: 8.0
+        node_selector:
+          accelerator: "furiosa-npu"
+        
+      - name: "amd-node"
+        accelerator_type: "amd"
+        device_count: 2
+        target_qps: 3.6
+        node_selector:
+          accelerator: "amd-gpu"
+        
+      - name: "cpu-node"
+        accelerator_type: "cpu"
+        cpu_count: 32
+        target_qps: 0.4
+        node_selector:
+          accelerator: "cpu-only"
+    
+    scenarios:
+      server:
+        total_target_qps: 14.0  # Sum of all nodes
+        latency_constraint_ms: 1200
+        duration_ms: 180000  # 3 minutes for mixed testing
+        
+      offline:
+        total_target_qps: 140.0
+        duration_ms: 180000
+
+---
+# NVIDIA GPU Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-nvidia-node
+  namespace: mlperf
+spec:
+  template:
+    spec:
+      nodeSelector:
+        accelerator: nvidia-gpu
+      containers:
+      - name: mlperf-nvidia
+        image: mlperf-benchmark:nvidia
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "nvidia"
+        - name: NODE_ROLE
+          value: "nvidia-node"
+        - name: SERVER_TARGET_QPS
+          value: "2.0"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        resources:
+          requests:
+            nvidia.com/gpu: "2"
+            cpu: "8"
+            memory: "32Gi"
+          limits:
+            nvidia.com/gpu: "2"
+            cpu: "16"
+            memory: "64Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-shared-results
+      restartPolicy: Never
+
+---
+# Furiosa NPU Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-furiosa-node
+  namespace: mlperf
+spec:
+  template:
+    spec:
+      nodeSelector:
+        accelerator: furiosa-npu
+      containers:
+      - name: mlperf-furiosa
+        image: mlperf-benchmark:furiosa
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "furiosa"
+        - name: NODE_ROLE
+          value: "furiosa-node"
+        - name: SERVER_TARGET_QPS
+          value: "8.0"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        resources:
+          requests:
+            furiosa.ai/npu: "4"
+            cpu: "16"
+            memory: "64Gi"
+          limits:
+            furiosa.ai/npu: "4"
+            cpu: "32"
+            memory: "128Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+        - name: npu-devices
+          mountPath: /dev
+        securityContext:
+          privileged: true
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-shared-results
+      - name: npu-devices
+        hostPath:
+          path: /dev
+      restartPolicy: Never
+
+---
+# AMD GPU Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-amd-node
+  namespace: mlperf
+spec:
+  template:
+    spec:
+      nodeSelector:
+        accelerator: amd-gpu
+      containers:
+      - name: mlperf-amd
+        image: mlperf-benchmark:amd
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "amd"
+        - name: NODE_ROLE
+          value: "amd-node"
+        - name: SERVER_TARGET_QPS
+          value: "3.6"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        resources:
+          requests:
+            amd.com/gpu: "2"
+            cpu: "8"
+            memory: "32Gi"
+          limits:
+            amd.com/gpu: "2"
+            cpu: "16"
+            memory: "64Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+        - name: gpu-devices
+          mountPath: /dev/dri
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-shared-results
+      - name: gpu-devices
+        hostPath:
+          path: /dev/dri
+      restartPolicy: Never
+
+---
+# CPU-Only Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-cpu-node
+  namespace: mlperf
+spec:
+  template:
+    spec:
+      nodeSelector:
+        accelerator: cpu-only
+      containers:
+      - name: mlperf-cpu
+        image: mlperf-benchmark:cpu
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "cpu"
+        - name: NODE_ROLE
+          value: "cpu-node"
+        - name: SERVER_TARGET_QPS
+          value: "0.4"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        resources:
+          requests:
+            cpu: "16"
+            memory: "32Gi"
+          limits:
+            cpu: "32"
+            memory: "64Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-shared-results
+      restartPolicy: Never
+
+---
+# Shared PVC for results
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlperf-shared-results
+  namespace: mlperf
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: nfs  # Adjust based on your storage class

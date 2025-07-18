@@ -1,0 +1,142 @@
+# Universal MLPerf Datacenter Benchmark Container
+# Supports NVIDIA GPUs, Furiosa NPUs, AMD ROCm, Intel GPUs, and CPU-only environments
+
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+# Build arguments for customization
+ARG CUDA_VERSION=12.1
+ARG PYTHON_VERSION=3.10
+ARG PYTORCH_VERSION=2.4.0
+ARG ACCELERATOR_TYPE=auto
+
+# Environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/opt/conda/bin:$PATH"
+ENV ACCELERATOR_TYPE=${ACCELERATOR_TYPE}
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    git \
+    build-essential \
+    cmake \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    python3 \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Miniconda for better package management
+RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh && \
+    /opt/conda/bin/conda update -n base -c defaults conda && \
+    /opt/conda/bin/conda clean -afy
+
+# Create conda environment
+RUN conda create -n mlperf python=${PYTHON_VERSION} -y && \
+    conda clean -afy
+
+# Activate environment for subsequent commands
+SHELL ["conda", "run", "-n", "mlperf", "/bin/bash", "-c"]
+
+# Install PyTorch (base version, will be overridden by specific accelerator installations)
+RUN pip install torch==${PYTORCH_VERSION} torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install common Python dependencies
+COPY requirements.universal.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+
+# NVIDIA GPU Support (conditional)
+RUN if [ "$ACCELERATOR_TYPE" = "auto" ] || [ "$ACCELERATOR_TYPE" = "nvidia" ]; then \
+        # Install CUDA toolkit
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb && \
+        dpkg -i cuda-keyring_1.0-1_all.deb && \
+        apt-get update && \
+        apt-get install -y cuda-toolkit-$(echo ${CUDA_VERSION} | tr '.' '-') && \
+        rm cuda-keyring_1.0-1_all.deb && \
+        # Install PyTorch with CUDA support
+        pip install torch==${PYTORCH_VERSION} torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && \
+        # Install additional NVIDIA tools
+        pip install nvidia-ml-py3 && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# AMD ROCm Support (conditional)
+RUN if [ "$ACCELERATOR_TYPE" = "auto" ] || [ "$ACCELERATOR_TYPE" = "amd" ]; then \
+        # Install ROCm
+        wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - && \
+        echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.7/ jammy main' | tee /etc/apt/sources.list.d/rocm.list && \
+        apt-get update && \
+        apt-get install -y rocm-dev hip-dev && \
+        # Install PyTorch with ROCm support
+        pip install torch==${PYTORCH_VERSION} torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.7 && \
+        rm -rf /var/lib/apt/lists/* || true; \
+    fi
+
+# Intel GPU Support (conditional)
+RUN if [ "$ACCELERATOR_TYPE" = "auto" ] || [ "$ACCELERATOR_TYPE" = "intel" ]; then \
+        # Install Intel GPU drivers and tools
+        wget -q -O - https://repositories.intel.com/gpu/intel-graphics.key | apt-key add - && \
+        echo 'deb [arch=amd64] https://repositories.intel.com/gpu/ubuntu jammy unified' | tee /etc/apt/sources.list.d/intel-gpu.list && \
+        apt-get update && \
+        apt-get install -y intel-opencl-icd intel-level-zero-gpu level-zero intel-media-va-driver-non-free libmfx1 && \
+        # Install Intel Extension for PyTorch
+        pip install intel-extension-for-pytorch && \
+        rm -rf /var/lib/apt/lists/* || true; \
+    fi
+
+# Furiosa NPU Support (conditional)
+RUN if [ "$ACCELERATOR_TYPE" = "auto" ] || [ "$ACCELERATOR_TYPE" = "furiosa" ]; then \
+        # Install Furiosa SDK and runtime
+        curl -s https://archive.furiosa.ai/furiosa_repo.gpg | apt-key add - && \
+        echo "deb [arch=amd64] https://archive.furiosa.ai/ubuntu focal restricted" | tee /etc/apt/sources.list.d/furiosa.list && \
+        apt-get update && \
+        apt-get install -y furiosa-runtime furiosa-libhal-warboy furiosa-libcompiler furiosa-libnux && \
+        # Install Furiosa Python SDK
+        pip install furiosa-sdk[runtime,quantizer,common] furiosa-litmus && \
+        rm -rf /var/lib/apt/lists/* || true; \
+    fi
+
+# Create application directory
+WORKDIR /app
+
+# Copy application files
+COPY . /app/
+
+# Make scripts executable
+RUN chmod +x /app/*.py /app/scripts/*.sh || true
+
+# Install MLPerf dependencies
+RUN pip install -e . || pip install -r requirements.txt
+
+# Create results directory
+RUN mkdir -p /app/results /app/cache /app/configs
+
+# Set default environment variables
+ENV HF_HOME=/app/cache
+ENV MLPERF_CACHE_DIR=/app/cache
+ENV MLPERF_RESULTS_DIR=/app/results
+ENV MLPERF_CONFIG_DIR=/app/configs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import torch; print('Container healthy')" || exit 1
+
+# Default command
+CMD ["python", "environment_detector.py"]
+
+# Labels for metadata
+LABEL maintainer="MLPerf Benchmark Team"
+LABEL version="1.0"
+LABEL description="Universal MLPerf Datacenter Benchmark Container"
+LABEL supports="NVIDIA-GPU,AMD-ROCm,Intel-GPU,Furiosa-NPU,CPU"

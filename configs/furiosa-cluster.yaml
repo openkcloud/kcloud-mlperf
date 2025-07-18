@@ -1,0 +1,115 @@
+# Furiosa NPU Cluster Configuration
+# For systems with Furiosa Warboy NPUs
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: furiosa-cluster-config
+  namespace: mlperf
+data:
+  config.yaml: |
+    # MLPerf Benchmark Configuration for Furiosa NPUs
+    
+    model:
+      name: "meta-llama/Llama-3.1-8B-Instruct"
+      max_tokens: 64
+      batch_size: 1
+      framework: "furiosa"
+    
+    hardware:
+      accelerator_type: "furiosa"
+      device_count: 8  # Adjust based on available NPUs
+      npu_memory: "32GB"  # Per NPU
+      driver_version: "latest"
+    
+    scenarios:
+      server:
+        target_qps: 16.0  # 2.0 per NPU
+        latency_constraint_ms: 1200  # NPUs may have slightly higher latency
+        duration_ms: 120000
+        min_queries: 200
+      
+      offline:
+        target_qps: 120.0  # 15.0 per NPU
+        duration_ms: 120000
+        min_queries: 200
+    
+    deployment:
+      type: "kubernetes"
+      replicas: 1
+      npu_runtime: "furiosa"
+      resources:
+        requests:
+          cpu: "16"
+          memory: "64Gi"
+          furiosa.ai/npu: "8"
+        limits:
+          cpu: "32"
+          memory: "128Gi"
+          furiosa.ai/npu: "8"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-furiosa-cluster
+  namespace: mlperf
+spec:
+  template:
+    spec:
+      nodeSelector:
+        accelerator: furiosa-npu
+      containers:
+      - name: mlperf-benchmark
+        image: mlperf-benchmark:furiosa
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "furiosa"
+        - name: NPU_VISIBLE_DEVICES
+          value: "0,1,2,3,4,5,6,7"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        - name: SERVER_TARGET_QPS
+          value: "16.0"
+        - name: OFFLINE_TARGET_QPS
+          value: "120.0"
+        - name: FURIOSA_LOG_LEVEL
+          value: "INFO"
+        volumeMounts:
+        - name: config
+          mountPath: /app/configs
+        - name: results
+          mountPath: /app/results
+        - name: cache
+          mountPath: /app/cache
+        - name: npu-devices
+          mountPath: /dev
+        resources:
+          requests:
+            cpu: "16"
+            memory: "64Gi"
+            furiosa.ai/npu: "8"
+          limits:
+            cpu: "32"
+            memory: "128Gi"
+            furiosa.ai/npu: "8"
+        securityContext:
+          privileged: true  # Required for NPU access
+      volumes:
+      - name: config
+        configMap:
+          name: furiosa-cluster-config
+      - name: results
+        persistentVolumeClaim:
+          claimName: mlperf-results
+      - name: cache
+        persistentVolumeClaim:
+          claimName: mlperf-cache
+      - name: npu-devices
+        hostPath:
+          path: /dev
+      restartPolicy: Never
+  backoffLimit: 2
