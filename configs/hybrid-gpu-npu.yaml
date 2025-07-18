@@ -1,0 +1,320 @@
+# Hybrid GPU+NPU Configuration
+# Designed for clusters with both NVIDIA GPUs and Furiosa NPUs
+# Perfect for your future environment with jw2/jw3 (NVIDIA A30) + Warboy NPU
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlperf-hybrid
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hybrid-config
+  namespace: mlperf-hybrid
+data:
+  config.yaml: |
+    # MLPerf Configuration for Hybrid GPU+NPU Environment
+    
+    cluster:
+      type: "hybrid-gpu-npu"
+      coordination: "kubernetes"
+      load_balancing: "performance_weighted"
+    
+    # Your specific node configuration
+    nodes:
+      - name: "jw2-nvidia"
+        hostname: "129.254.202.252"
+        accelerator_type: "nvidia"
+        device_count: 1  # NVIDIA A30
+        target_qps: 1.0
+        weight: 1.0  # Performance weight for load balancing
+        node_selector:
+          kubernetes.io/hostname: "jw2"
+          accelerator: "nvidia-gpu"
+        
+      - name: "jw3-nvidia" 
+        hostname: "129.254.202.253"
+        accelerator_type: "nvidia"
+        device_count: 1  # NVIDIA A30
+        target_qps: 1.0
+        weight: 1.0
+        node_selector:
+          kubernetes.io/hostname: "jw3"
+          accelerator: "nvidia-gpu"
+        
+      - name: "warboy-npu"
+        hostname: "auto-detect"  # Will detect which node has NPU
+        accelerator_type: "furiosa"
+        device_count: 1  # Furiosa Warboy NPU
+        target_qps: 2.0  # NPUs often have higher throughput
+        weight: 2.0  # Higher performance weight
+        node_selector:
+          accelerator: "furiosa-npu"
+    
+    scenarios:
+      server:
+        total_target_qps: 4.0  # Combined target
+        latency_constraint_ms: 1000
+        duration_ms: 180000  # 3 minutes
+        coordination_strategy: "distributed_load"
+        
+      offline:
+        total_target_qps: 40.0
+        duration_ms: 180000
+        batch_coordination: true
+    
+    performance_comparison:
+      enabled: true
+      metrics: ["qps", "latency_p50", "latency_p99", "tokens_per_second"]
+      export_format: ["json", "csv", "markdown"]
+
+---
+# NVIDIA A30 GPU Job (jw2)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-jw2-nvidia
+  namespace: mlperf-hybrid
+spec:
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: jw2
+        accelerator: nvidia-gpu
+      containers:
+      - name: mlperf-nvidia
+        image: mlperf-benchmark:nvidia
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "nvidia"
+        - name: NODE_ROLE
+          value: "jw2-nvidia"
+        - name: NODE_ID
+          value: "0"
+        - name: CLUSTER_MODE
+          value: "hybrid"
+        - name: SERVER_TARGET_QPS
+          value: "1.0"
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        - name: COORDINATION_ENDPOINT
+          value: "mlperf-coordinator.mlperf-hybrid.svc.cluster.local:8080"
+        resources:
+          requests:
+            nvidia.com/gpu: "1"
+            cpu: "4"
+            memory: "16Gi"
+          limits:
+            nvidia.com/gpu: "1"
+            cpu: "8" 
+            memory: "32Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+        - name: hybrid-config
+          mountPath: /app/config
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-hybrid-results
+      - name: hybrid-config
+        configMap:
+          name: hybrid-config
+      restartPolicy: Never
+
+---
+# NVIDIA A30 GPU Job (jw3)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-jw3-nvidia
+  namespace: mlperf-hybrid
+spec:
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: jw3
+        accelerator: nvidia-gpu
+      containers:
+      - name: mlperf-nvidia
+        image: mlperf-benchmark:nvidia
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "nvidia"
+        - name: NODE_ROLE
+          value: "jw3-nvidia"
+        - name: NODE_ID
+          value: "1"
+        - name: CLUSTER_MODE
+          value: "hybrid"
+        - name: SERVER_TARGET_QPS
+          value: "1.0"
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        - name: COORDINATION_ENDPOINT
+          value: "mlperf-coordinator.mlperf-hybrid.svc.cluster.local:8080"
+        resources:
+          requests:
+            nvidia.com/gpu: "1"
+            cpu: "4"
+            memory: "16Gi"
+          limits:
+            nvidia.com/gpu: "1"
+            cpu: "8"
+            memory: "32Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+        - name: hybrid-config
+          mountPath: /app/config
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-hybrid-results
+      - name: hybrid-config
+        configMap:
+          name: hybrid-config
+      restartPolicy: Never
+
+---
+# Furiosa Warboy NPU Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-warboy-npu
+  namespace: mlperf-hybrid
+spec:
+  template:
+    spec:
+      nodeSelector:
+        accelerator: furiosa-npu
+      containers:
+      - name: mlperf-furiosa
+        image: mlperf-benchmark:furiosa
+        env:
+        - name: ACCELERATOR_TYPE
+          value: "furiosa"
+        - name: NODE_ROLE
+          value: "warboy-npu"
+        - name: NODE_ID
+          value: "2"
+        - name: CLUSTER_MODE
+          value: "hybrid"
+        - name: SERVER_TARGET_QPS
+          value: "2.0"
+        - name: NPU_VISIBLE_DEVICES
+          value: "0"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        - name: COORDINATION_ENDPOINT
+          value: "mlperf-coordinator.mlperf-hybrid.svc.cluster.local:8080"
+        - name: FURIOSA_LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            furiosa.ai/npu: "1"
+            cpu: "8"
+            memory: "32Gi"
+          limits:
+            furiosa.ai/npu: "1"
+            cpu: "16"
+            memory: "64Gi"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+        - name: hybrid-config
+          mountPath: /app/config
+        - name: npu-devices
+          mountPath: /dev
+        securityContext:
+          privileged: true
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-hybrid-results
+      - name: hybrid-config
+        configMap:
+          name: hybrid-config
+      - name: npu-devices
+        hostPath:
+          path: /dev
+      restartPolicy: Never
+
+---
+# Performance Comparison Service
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-performance-analyzer
+  namespace: mlperf-hybrid
+spec:
+  template:
+    spec:
+      containers:
+      - name: performance-analyzer
+        image: mlperf-benchmark:latest
+        command: ["python3", "performance_analyzer.py"]
+        env:
+        - name: ANALYSIS_MODE
+          value: "hybrid-comparison"
+        - name: NODES
+          value: "jw2-nvidia,jw3-nvidia,warboy-npu"
+        volumeMounts:
+        - name: shared-results
+          mountPath: /app/results
+        - name: analysis-output
+          mountPath: /app/analysis
+      volumes:
+      - name: shared-results
+        persistentVolumeClaim:
+          claimName: mlperf-hybrid-results
+      - name: analysis-output
+        persistentVolumeClaim:
+          claimName: mlperf-analysis
+      restartPolicy: Never
+  backoffLimit: 1
+
+---
+# Shared PVC for results
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlperf-hybrid-results
+  namespace: mlperf-hybrid
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: nfs
+
+---
+# PVC for analysis results
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlperf-analysis
+  namespace: mlperf-hybrid
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: nfs
