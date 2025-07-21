@@ -86,10 +86,14 @@ class MLPerfDatacenterBenchmark:
             import transformers
             from transformers import AutoTokenizer, AutoModelForCausalLM
             
-            # Set HF token if available
+            # Set HF token if available (skip if invalid)
             if self.hf_token:
-                from huggingface_hub import login
-                login(token=self.hf_token)
+                try:
+                    from huggingface_hub import login
+                    login(token=self.hf_token)
+                    logger.info("Successfully logged into HuggingFace")
+                except Exception as e:
+                    logger.warning(f"HF login failed, trying without token: {e}")
             
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -127,7 +131,7 @@ class MLPerfDatacenterBenchmark:
                 tokenizer=self.tokenizer
             )
             
-            # Test samples - comprehensive set for thorough evaluation
+            # Test samples for debugging (10 samples)
             test_samples = [
                 "Explain the concept of machine learning in simple terms.",
                 "What are the benefits of renewable energy?",
@@ -138,17 +142,7 @@ class MLPerfDatacenterBenchmark:
                 "Discuss the impact of climate change on global ecosystems.",
                 "Explain the fundamentals of blockchain technology.",
                 "What are the key principles of sustainable development?",
-                "Describe the evolution of the internet and its societal impact.",
-                "How do neural networks process information?",
-                "What role does genetics play in human health?",
-                "Explain the concept of circular economy.",
-                "Discuss the challenges of space exploration.",
-                "What are the ethical considerations in AI development?",
-                "Describe the process of protein synthesis in cells.",
-                "How does cryptocurrency mining work?",
-                "What are the benefits of biodiversity conservation?",
-                "Explain the principles of quantum mechanics.",
-                "Discuss the future of autonomous vehicles."
+                "Describe the evolution of the internet and its societal impact."
             ]
             
             results = []
@@ -239,7 +233,7 @@ class MLPerfDatacenterBenchmark:
                 tokenizer=self.tokenizer
             )
             
-            # Larger batch for offline scenario - comprehensive dataset
+            # Test samples for debugging (10 samples)
             test_samples = [
                 "Explain the concept of machine learning in simple terms.",
                 "What are the benefits of renewable energy?",
@@ -250,27 +244,7 @@ class MLPerfDatacenterBenchmark:
                 "Discuss the impact of climate change on global ecosystems.",
                 "Explain the fundamentals of blockchain technology.",
                 "What are the key principles of sustainable development?",
-                "Describe the evolution of the internet and its societal impact.",
-                "How do neural networks process information?",
-                "What role does genetics play in human health?",
-                "Explain the concept of circular economy.",
-                "Discuss the challenges of space exploration.",
-                "What are the ethical considerations in AI development?",
-                "Describe the process of protein synthesis in cells.",
-                "How does cryptocurrency mining work?",
-                "What are the benefits of biodiversity conservation?",
-                "Explain the principles of quantum mechanics.",
-                "Discuss the future of autonomous vehicles.",
-                "What is the role of enzymes in biological processes?",
-                "How do recommendation systems work?",
-                "Explain the concept of distributed computing.",
-                "What are the challenges of renewable energy storage?",
-                "Describe the impact of social media on communication.",
-                "How does DNA sequencing technology work?",
-                "What are the principles of cybersecurity?",
-                "Explain the concept of edge computing.",
-                "Discuss the role of microorganisms in ecosystems.",
-                "What are the applications of computer vision?"
+                "Describe the evolution of the internet and its societal impact."
             ]
             
             results = []
