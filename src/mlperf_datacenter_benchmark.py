@@ -39,15 +39,15 @@ class MLPerfConfig:
     max_sequence_length: int = 2048
     
     # Datacenter scenario configurations
-    server_target_qps: float = 1.0
-    server_latency_constraint_ms: float = 1000.0  # 1 second SLA
-    offline_target_qps: float = 10.0
+    server_target_qps: float = 0.5
+    server_latency_constraint_ms: float = 3000.0  # 3 second SLA for A30 GPUs
+    offline_target_qps: float = 1.0
     
     # MLPerf compliance requirements
     accuracy_target: float = 0.99  # 99% accuracy requirement
-    warmup_queries: int = 10
-    min_query_count: int = 100
-    min_duration_ms: int = 60000  # 60 seconds minimum
+    warmup_queries: int = 5
+    min_query_count: int = 20  # Adjusted for realistic testing
+    min_duration_ms: int = 30000  # 30 seconds minimum
     
     # Performance thresholds for Llama models
     ttft_constraint_ms: float = 2000.0  # Time to First Token

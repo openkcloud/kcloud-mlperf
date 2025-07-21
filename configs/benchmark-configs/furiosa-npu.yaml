@@ -1,0 +1,45 @@
+# Furiosa NPU (Warboy) Configuration
+hardware:
+  type: "furiosa-npu"
+  model: "warboy"
+  memory_gb: 32
+  compute_capability: "npu-v1"
+
+benchmark:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  max_tokens: 64
+  batch_size: 4  # NPUs typically handle larger batches better
+  max_sequence_length: 2048
+  
+  # NPU-optimized performance targets
+  server_target_qps: 2.0  # NPUs often have higher throughput
+  server_latency_constraint_ms: 2000.0
+  offline_target_qps: 5.0
+  
+  # Memory optimization for NPU
+  memory_utilization_target: 0.80  # Use 80% of 32GB
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+
+deployment:
+  node_selector:
+    accelerator: "furiosa-npu"
+  resources:
+    limits:
+      furiosa.ai/npu: 1
+      memory: "64Gi"
+      cpu: "16"
+    requests:
+      furiosa.ai/npu: 1
+      memory: "32Gi"
+      cpu: "8"
+
+optimization:
+  precision: "int8"  # NPUs excel at quantized inference
+  enable_quantization: true
+  enable_batching: true
+  max_batch_size: 8
+  
+adapter:
+  module: "src.adapters.furiosa_adapter"
+  class: "FuriosaAdapter"

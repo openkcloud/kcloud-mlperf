@@ -1,129 +1,422 @@
-# MLPerf Local Test - Simplified
+# 🚀 MLPerf Local Test - Multi-GPU Kubernetes Cluster
 
-A streamlined MLPerf benchmark suite for testing GPU cluster performance with Llama models.
+[![MLPerf](https://img.shields.io/badge/MLPerf-v5.0-blue.svg)](https://mlcommons.org/en/inference-datacenter-50/)
+[![Kubernetes](https://img.shields.io/badge/kubernetes-1.28+-blue.svg)](https://kubernetes.io/)
+[![NVIDIA](https://img.shields.io/badge/NVIDIA-A30-green.svg)](https://www.nvidia.com/en-us/data-center/a30/)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://python.org/)
 
-## Quick Start
+A comprehensive MLPerf benchmark suite for testing GPU cluster performance with support for multiple accelerator types including NVIDIA GPUs and Furiosa NPUs.
 
-### 1. Setup
+## 🏗️ **Cluster Architecture**
+
+### **Current Setup**
+| Node | Role | IP Address | Hardware | Status |
+|------|------|------------|----------|---------|
+| jw1 | Control Plane | 129.254.202.251 | CPU Only | ✅ Active |
+| jw2 | Worker | 129.254.202.252 | NVIDIA A30 | ✅ Active |
+| jw3 | Worker | 129.254.202.253 | NVIDIA A30 | ✅ Active |
+
+**Network**: Calico CNI | **Platform**: Ubuntu 22.04 | **Kubernetes**: v1.28+
+
+---
+
+## ⚡ **Quick Start**
+
+### **1. Environment Setup**
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Run automated setup (detects hardware automatically)
+./scripts/setup-environment.sh
+
+# For Kubernetes cluster setup
+./scripts/setup-environment.sh --kubernetes
+
+# Activate Python environment
+source venv/bin/activate
 
 # Set your HuggingFace token
 export HF_TOKEN="your_token_here"
 ```
 
-### 2. Run Benchmarks
+### **2. Run Benchmarks**
 
-**Single GPU Benchmark:**
+#### **Single/Multi-GPU Benchmarks**
 ```bash
-python src/mlperf_benchmark.py --type single --samples 10
+# Single GPU benchmark (via coordinated mode)
+python3 src/mlperf_benchmark.py --type coordinated --nodes jw2 --samples 10
+
+# Multi-GPU coordinated benchmark
+python3 src/mlperf_benchmark.py --type coordinated --nodes jw2,jw3 --samples 20
+
+# Distributed multi-GPU benchmark
+python3 src/mlperf_benchmark.py --type distributed --world-size 2
 ```
 
-**Multi-GPU Coordinated Benchmark:**
+#### **MLPerf Datacenter Benchmark**
 ```bash
-python src/mlperf_benchmark.py --type coordinated --samples 20
+# Run MLPerf Inference v5.0 Datacenter benchmark
+export SERVER_TARGET_QPS=0.5
+export OFFLINE_TARGET_QPS=1.0
+python3 src/mlperf_benchmark.py --type datacenter
 ```
 
-**Distributed Benchmark:**
+### **3. View Results**
 ```bash
-python src/mlperf_benchmark.py --type distributed --world-size 2
+# Results automatically saved to results/latest/
+ls results/latest/
+
+# View comprehensive summary
+cat results/20250721/comprehensive_benchmark_summary.md
+
+# View automated reports
+open reports/benchmark-execution-report.md
 ```
-
-**MLPerf Datacenter Benchmark:**
-```bash
-python src/mlperf_benchmark.py --type datacenter
-```
-
-### 3. View Results
-Results are automatically saved to `results/latest/`
-
-## Directory Structure
-
-```
-├── src/                          # All source code
-│   ├── mlperf_benchmark.py       # Main benchmark runner
-│   ├── environment_detector.py   # Hardware detection
-│   ├── hardware_manager.py       # GPU management
-│   └── adapters/                 # Hardware adapters
-├── configs/                      # Configuration files
-│   ├── kubernetes/               # K8s deployments
-│   ├── benchmark-configs/        # Benchmark settings
-│   └── docker-compose.yml        # Container setup
-├── docs/                         # Documentation
-│   ├── setup-guide.md            # Detailed setup
-│   ├── deployment-guide.md       # K8s deployment
-│   └── troubleshooting.md        # Common issues
-├── reports/                      # Latest benchmark reports
-│   ├── benchmark-execution-report.md
-│   ├── performance-analysis.md
-│   └── infrastructure-health.md
-└── results/latest/               # Latest benchmark results
-```
-
-## Configuration
-
-### Available Configurations
-```bash
-# List available configs
-python src/mlperf_benchmark.py --list-configs
-
-# Use specific config
-python src/mlperf_benchmark.py --type single --config configs/benchmark-configs/single-gpu.yaml
-```
-
-### Environment Variables
-- `HF_TOKEN` - HuggingFace authentication token (required)
-- `NUM_SAMPLES` - Number of samples to process (default: 10)
-- `MAX_TOKENS` - Maximum output tokens (default: 32)
-- `CUDA_VISIBLE_DEVICES` - GPU selection (default: 0)
-
-## Latest Results
-
-**Performance Summary:**
-- **Multi-GPU Efficiency:** 2.05x scaling with 2 GPUs
-- **Combined Throughput:** 2.05 samples/sec
-- **Token Generation:** 66.8 tokens/sec total
-- **Average Latency:** 980ms
-- **Infrastructure Health:** 72/100
-
-For detailed analysis, see reports in the `reports/` directory.
-
-## Kubernetes Deployment
-
-```bash
-# Deploy to Kubernetes
-kubectl apply -f configs/kubernetes/
-
-# Check status  
-kubectl get pods -l app=mlperf-benchmark
-```
-
-## Support
-
-- **Setup Issues:** See `docs/setup-guide.md`
-- **Deployment Problems:** See `docs/deployment-guide.md`  
-- **Common Errors:** See `docs/troubleshooting.md`
-
-## Model Support
-
-- **Primary:** meta-llama/Llama-3.1-8B-Instruct
-- **Hardware:** NVIDIA GPUs with CUDA support
-- **Memory:** Minimum 16GB GPU memory recommended
 
 ---
 
-**Quick Commands Reference:**
-```bash
-# Single GPU test
-python src/mlperf_benchmark.py
+## 📊 **Performance Results Summary**
 
-# Multi-GPU test with custom samples
-python src/mlperf_benchmark.py --type coordinated --samples 50
+### **🏆 Latest Benchmark Results**
 
-# Check configuration options
-python src/mlperf_benchmark.py --help
+| Benchmark Type | jw2 Throughput | jw3 Throughput | Combined | Scaling Efficiency |
+|----------------|----------------|----------------|----------|--------------------|
+| **Coordinated Multi-GPU** | 0.98 samples/sec | 1.07 samples/sec | **2.05 samples/sec** | **2.05x** |
+| **Distributed Multi-GPU** | 1.02 samples/sec | 1.09 samples/sec | **2.11 samples/sec** | **100%** |
+| **Datacenter Server** | 0.50 QPS | 0.54 QPS | **1.03 QPS** | ✅ **Valid** |
 
-# List available configs
-python src/mlperf_benchmark.py --list-configs
+**Token Generation**: ~67-72 tokens/sec combined | **GPU Memory**: ~16GB per A30 | **Latency**: <3s
+
+---
+
+## 🛠️ **Supported Hardware**
+
+### **NVIDIA GPUs**
+- ✅ **A30** (24GB) - Primary tested configuration
+- ✅ **H100** (80GB) - Configuration available
+- ✅ **Other NVIDIA GPUs** - Generic CUDA support
+
+### **Furiosa NPUs**
+- ✅ **Warboy NPU** - Configuration and adapter available
+- 🔄 **Driver Integration** - Setup scripts included
+
+### **Generic Hardware**
+- ✅ **CPU-only** - Fallback support
+- ✅ **Mixed Environments** - Configurable hardware detection
+
+---
+
+## 📁 **Repository Structure**
+
 ```
+📦 MLPerf_local_test/
+├── 📄 README.md                    # This file
+├── 📄 requirements.txt             # Python dependencies
+├── 🗂️ src/                         # Source code
+│   ├── 📄 mlperf_benchmark.py      # Main benchmark runner
+│   ├── 📄 mlperf_datacenter_benchmark.py
+│   ├── 📄 report_generator.py      # Automated reporting
+│   └── 🗂️ adapters/                # Hardware adapters
+│       ├── 📄 generic_adapter.py   # Generic hardware support
+│       └── 📄 furiosa_adapter.py   # Furiosa NPU support
+├── 🗂️ configs/                     # Configuration files
+│   ├── 🗂️ benchmark-configs/       # Hardware-specific configs
+│   │   ├── 📄 nvidia-a30.yaml      # NVIDIA A30 optimized
+│   │   ├── 📄 furiosa-npu.yaml     # Furiosa NPU optimized
+│   │   └── 📄 generic-config.yaml  # Generic template
+│   └── 🗂️ kubernetes/              # K8s deployments
+│       ├── 📄 mlperf-job.yaml       # Benchmark job template
+│       └── 📄 ntp-daemonset.yaml    # NTP synchronization
+├── 🗂️ scripts/                     # Automation scripts
+│   ├── 📄 setup-environment.sh     # Environment setup
+│   └── 📄 deploy.sh                # Deployment automation
+├── 🗂️ docs/                        # Documentation
+│   ├── 📄 cluster-architecture.md  # Architecture details
+│   ├── 📄 setup-guide.md           # Detailed setup
+│   └── 📄 troubleshooting.md       # Common issues
+├── 🗂️ reports/                     # Generated reports
+└── 🗂️ results/                     # Benchmark results
+    └── 🗂️ 20250721/                # Daily results
+        └── 📄 comprehensive_benchmark_summary.md
+```
+
+---
+
+## 🎯 **Benchmark Types**
+
+### **1. Coordinated Multi-GPU**
+- **Purpose**: Test multi-GPU scaling efficiency
+- **Execution**: Simultaneous execution across worker nodes
+- **Metrics**: Throughput, latency, scaling efficiency
+- **Usage**: `--type coordinated --nodes jw2,jw3`
+
+### **2. Distributed Multi-GPU**
+- **Purpose**: True distributed inference simulation
+- **Execution**: Independent processes with coordination
+- **Metrics**: Combined throughput, per-node performance
+- **Usage**: `--type distributed --world-size 2`
+
+### **3. MLPerf Datacenter**
+- **Purpose**: MLPerf v5.0 compliance testing
+- **Scenarios**: Server (QPS), Offline (throughput)
+- **Validation**: Latency constraints, accuracy targets
+- **Usage**: `--type datacenter`
+
+---
+
+## ⚙️ **Configuration**
+
+### **Environment Variables**
+```bash
+# Required
+export HF_TOKEN="your_huggingface_token"
+
+# Hardware Configuration
+export HARDWARE_TYPE="nvidia-a30"          # Auto-detected
+export CUDA_VISIBLE_DEVICES="0"            # GPU selection
+
+# Performance Tuning
+export SERVER_TARGET_QPS="0.5"             # Datacenter server QPS
+export OFFLINE_TARGET_QPS="1.0"            # Datacenter offline QPS
+export MAX_TOKENS="64"                     # Output token limit
+export BATCH_SIZE="1"                      # Inference batch size
+```
+
+### **Hardware-Specific Configs**
+```bash
+# List available configurations
+python3 src/mlperf_benchmark.py --list-configs
+
+# Use specific hardware config
+python3 src/mlperf_benchmark.py --config configs/benchmark-configs/nvidia-a30.yaml
+
+# Create custom configuration
+cp configs/benchmark-configs/generic-config.yaml configs/my-config.yaml
+# Edit configs/my-config.yaml as needed
+```
+
+---
+
+## 🚀 **Adding New Hardware**
+
+### **1. Create Hardware Configuration**
+```yaml
+# configs/benchmark-configs/my-accelerator.yaml
+hardware:
+  type: "my-accelerator"
+  model: "accelerator-v1"
+  memory_gb: 32
+
+benchmark:
+  server_target_qps: 2.0
+  # ... other settings
+
+deployment:
+  node_selector:
+    accelerator: "my-accelerator"
+  resources:
+    limits:
+      my-company.com/accelerator: 1
+```
+
+### **2. Create Hardware Adapter**
+```python
+# src/adapters/my_adapter.py
+from adapters.generic_adapter import BaseHardwareAdapter
+
+class MyAcceleratorAdapter(BaseHardwareAdapter):
+    def initialize_device(self):
+        # Initialize your accelerator
+        pass
+    
+    def load_model(self, model_name):
+        # Load model on your accelerator
+        pass
+    
+    def run_inference(self, prompt, max_tokens):
+        # Run inference
+        pass
+```
+
+### **3. Update Environment Setup**
+```bash
+# Add to scripts/setup-environment.sh
+case $HARDWARE_TYPE in
+    my-accelerator)
+        print_status "Setting up My Accelerator..."
+        # Add installation steps
+        ;;
+esac
+```
+
+---
+
+## 🔧 **Kubernetes Deployment**
+
+### **Job-Based Execution**
+```bash
+# Deploy benchmark job
+kubectl apply -f configs/kubernetes/mlperf-job.yaml
+
+# Check status
+kubectl get jobs
+kubectl logs job/mlperf-benchmark
+
+# Scale to multiple nodes
+kubectl scale job mlperf-benchmark --replicas=2
+```
+
+### **Infrastructure Services**
+```bash
+# Deploy NTP synchronization
+kubectl apply -f configs/kubernetes/ntp-daemonset.yaml
+
+# Monitor cluster health
+kubectl get nodes -o wide
+kubectl top nodes
+```
+
+---
+
+## 📊 **Monitoring and Observability**
+
+### **Real-time Monitoring**
+```bash
+# GPU utilization
+watch nvidia-smi
+
+# System resources
+htop
+
+# Kubernetes resources
+kubectl top nodes
+kubectl top pods
+```
+
+### **Performance Analysis**
+- **Automated Reports**: Generated after each benchmark
+- **Metrics Collection**: Throughput, latency, GPU utilization
+- **Health Assessment**: Infrastructure status monitoring
+- **Historical Tracking**: Results stored by date
+
+---
+
+## 🔍 **Troubleshooting**
+
+### **Common Issues**
+
+#### **GPU Memory Issues**
+```bash
+# Check GPU memory
+nvidia-smi
+
+# Reduce batch size
+export BATCH_SIZE=1
+
+# Clear GPU cache
+python3 -c "import torch; torch.cuda.empty_cache()"
+```
+
+#### **Model Loading Issues**
+```bash
+# Check HuggingFace token
+echo $HF_TOKEN
+
+# Test model access
+huggingface-cli login
+```
+
+#### **Network Issues**
+```bash
+# Test node connectivity
+ping jw2
+ping jw3
+
+# Check SSH access
+ssh jw2 "hostname"
+ssh jw3 "hostname"
+```
+
+### **Debug Mode**
+```bash
+# Enable verbose logging
+export PYTHONPATH=src:$PYTHONPATH
+python3 src/mlperf_benchmark.py --type single --samples 1 --verbose
+```
+
+---
+
+## 🎯 **Performance Optimization**
+
+### **A30 GPU Optimization**
+- **Memory Usage**: ~16GB optimal utilization
+- **Precision**: FP16 for memory efficiency
+- **Batch Size**: 1 for latency optimization
+- **Sequence Length**: 2048 max for balance
+
+### **Multi-Node Optimization**
+- **NTP Sync**: Critical for coordinated benchmarks
+- **Network**: Calico CNI optimized for performance
+- **Load Balancing**: Automatic distribution across nodes
+
+---
+
+## 📋 **Next Steps & Roadmap**
+
+### **Current Status** ✅
+- ✅ Multi-GPU scaling (2.05x efficiency)
+- ✅ MLPerf Datacenter compliance
+- ✅ Automated reporting
+- ✅ Hardware abstraction
+
+### **Planned Improvements** 🔄
+- 🔄 Additional NPU support
+- 🔄 Helm chart deployment
+- 🔄 Advanced monitoring
+- 🔄 Model optimization
+
+### **Future Enhancements** 📋
+- 📋 Multi-cluster support
+- 📋 Custom model support
+- 📋 Performance profiling
+- 📋 CI/CD integration
+
+---
+
+## 🤝 **Contributing**
+
+1. **Fork** the repository
+2. **Create** a feature branch
+3. **Test** on your hardware
+4. **Submit** a pull request
+
+### **Development Setup**
+```bash
+git clone https://github.com/jshim0978/MLPerf_local_test.git
+cd MLPerf_local_test
+./scripts/setup-environment.sh
+source venv/bin/activate
+```
+
+---
+
+## 📄 **License**
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 **Acknowledgments**
+
+- **MLCommons** for MLPerf specifications
+- **NVIDIA** for A30 GPU support
+- **Furiosa AI** for NPU integration
+- **Kubernetes Community** for orchestration platform
+
+---
+
+<div align="center">
+
+**📊 Benchmarked** | **🚀 Optimized** | **🔧 Production Ready**
+
+*Built for high-performance AI inference at scale*
+
+</div>

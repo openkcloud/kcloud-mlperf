@@ -2,19 +2,21 @@
 """
 MLPerf Benchmark Runner - Simplified Unified Interface
 Supports single-GPU, multi-GPU, distributed, and datacenter benchmarks
+With automated report generation
 """
 import os
 import sys
 import argparse
 import importlib.util
 from pathlib import Path
+from report_generator import MLPerfReportGenerator
 
 def load_benchmark_module(benchmark_type):
     """Dynamically load the appropriate benchmark module"""
     script_mapping = {
         'single': '../run_benchmark_auto.py',
         'coordinated': '../run_coordinated_benchmark.py', 
-        'distributed': '../run_distributed_benchmark.py',
+        'distributed': '../run_distributed_benchmark_simple.py',
         'datacenter': '../run_datacenter_benchmark.py'
     }
     
@@ -45,6 +47,7 @@ Examples:
   python src/mlperf_benchmark.py --type coordinated --nodes jw2,jw3
   python src/mlperf_benchmark.py --type distributed --world-size 2
   python src/mlperf_benchmark.py --type datacenter
+  python src/mlperf_benchmark.py --type coordinated --no-reports
         """
     )
     
@@ -94,6 +97,19 @@ Examples:
         help='List available configuration files'
     )
     
+    parser.add_argument(
+        '--generate-reports',
+        action='store_true',
+        default=True,
+        help='Generate automated reports after benchmark completion (default: True)'
+    )
+    
+    parser.add_argument(
+        '--no-reports',
+        action='store_true',
+        help='Skip report generation'
+    )
+    
     args = parser.parse_args()
     
     if args.list_configs:
@@ -104,6 +120,9 @@ Examples:
                 print(f"  {config.name}")
         return
     
+    # Handle report generation settings
+    generate_reports = args.generate_reports and not args.no_reports
+    
     # Set environment variables based on arguments
     if args.samples:
         os.environ['NUM_SAMPLES'] = str(args.samples)
@@ -113,6 +132,7 @@ Examples:
     print(f"   Type: {args.type}")
     print(f"   Samples: {args.samples}")
     print(f"   Output: {args.output_dir}")
+    print(f"   Reports: {'✅ Enabled' if generate_reports else '❌ Disabled'}")
     
     if args.nodes:
         print(f"   Nodes: {args.nodes}")
@@ -137,6 +157,20 @@ Examples:
             return 1
             
         print(f"✅ Benchmark completed successfully!")
+        
+        # Generate reports if enabled
+        if generate_reports:
+            print(f"📊 Generating automated reports...")
+            try:
+                report_generator = MLPerfReportGenerator(
+                    results_dir=args.output_dir
+                )
+                report_generator.generate_all_reports()
+                print(f"✅ Reports generated successfully!")
+            except Exception as e:
+                print(f"⚠️ Report generation failed: {e}")
+                print("🔍 Benchmark completed but reports unavailable")
+        
         return result if result is not None else 0
         
     except Exception as e:

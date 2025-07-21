@@ -1,0 +1,41 @@
+# NVIDIA A30 Optimized Configuration
+hardware:
+  type: "nvidia-gpu"
+  model: "A30"
+  memory_gb: 24
+  compute_capability: "8.0"
+
+benchmark:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  max_tokens: 64
+  batch_size: 1
+  max_sequence_length: 2048
+  
+  # A30-optimized performance targets
+  server_target_qps: 0.5
+  server_latency_constraint_ms: 3000.0
+  offline_target_qps: 1.0
+  
+  # Memory optimization for A30
+  memory_utilization_target: 0.75  # Use 75% of 24GB
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+
+deployment:
+  node_selector:
+    accelerator: "nvidia-a30"
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      memory: "32Gi"
+      cpu: "8"
+    requests:
+      nvidia.com/gpu: 1
+      memory: "16Gi"
+      cpu: "4"
+
+optimization:
+  precision: "fp16"
+  enable_cuda_graphs: true
+  enable_kv_cache: true
+  max_cached_tokens: 1024

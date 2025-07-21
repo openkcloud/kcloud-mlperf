@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-benchmark
+  labels:
+    app: mlperf
+    type: benchmark
+spec:
+  template:
+    metadata:
+      labels:
+        app: mlperf
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: jw2  # Target specific GPU node
+      containers:
+      - name: mlperf-benchmark
+        image: mlperf-local:latest
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "32Gi"
+            cpu: "8"
+          requests:
+            nvidia.com/gpu: 1
+            memory: "16Gi"
+            cpu: "4"
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mlperf-secrets
+              key: hf-token
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: SERVER_TARGET_QPS
+          value: "0.5"
+        - name: OFFLINE_TARGET_QPS
+          value: "1.0"
+        volumeMounts:
+        - name: results-volume
+          mountPath: /app/results
+        - name: model-cache
+          mountPath: /root/.cache
+        command: ["/bin/bash"]
+        args: 
+        - -c
+        - |
+          python3 src/mlperf_benchmark.py --type single --samples 10
+      volumes:
+      - name: results-volume
+        hostPath:
+          path: /tmp/mlperf-results
+          type: DirectoryOrCreate
+      - name: model-cache
+        hostPath:
+          path: /tmp/model-cache
+          type: DirectoryOrCreate
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlperf-secrets
+type: Opaque
+data:
+  hf-token: ""  # Base64 encoded HuggingFace token
