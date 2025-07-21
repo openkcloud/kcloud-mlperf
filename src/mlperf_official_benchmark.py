@@ -20,6 +20,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 import mlperf_loadgen as lg
 from mlperf_dataset import create_mlperf_dataset
+from report_generator import MLPerfReportGenerator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -295,6 +296,51 @@ def run_mlperf_benchmark(
     
     logger.info(f"✅ MLPerf benchmark completed!")
     logger.info(f"📁 Results saved to: {output_dir}")
+    
+    # Generate automated report
+    try:
+        report_generator = MLPerfReportGenerator(results_dir=output_dir)
+        
+        # Collect benchmark results for report
+        benchmark_results = {
+            'scenario': scenario,
+            'model_name': model_name,
+            'total_sample_count': total_sample_count,
+            'device': device,
+            'dtype': dtype,
+            'max_new_tokens': max_new_tokens,
+            'batch_size': batch_size,
+            'dataset_path': dataset_path,
+            'output_dir': output_dir,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'system_info': {
+                'hardware': {
+                    'device': device,
+                    'dtype': dtype,
+                    'batch_size': batch_size
+                },
+                'software': {
+                    'model': model_name,
+                    'max_tokens': max_new_tokens,
+                    'dataset_samples': total_sample_count
+                }
+            },
+            'performance': {
+                'scenario': scenario,
+                'total_samples': total_sample_count,
+                'device': device,
+                'precision': dtype
+            }
+        }
+        
+        report_file = report_generator.generate_comprehensive_report(
+            benchmark_results, 
+            f"MLPerf_{scenario}_{device}_{total_sample_count}_samples_{time.strftime('%Y%m%d_%H%M%S')}.md"
+        )
+        logger.info(f"📊 Automated report generated: {report_file}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to generate automated report: {e}")
     
     # Cleanup
     lg.DestroySUT(sut_wrapper)

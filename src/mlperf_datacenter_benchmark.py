@@ -22,6 +22,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from report_generator import MLPerfReportGenerator
 
 # Configure logging
 logging.basicConfig(
@@ -505,7 +506,44 @@ class MLPerfDatacenterBenchmark:
         results["Offline"] = offline_result
         
         # Save results
-        self.save_results(results, node_name)
+        results_file, summary_file = self.save_results(results, node_name)
+        
+        # Generate automated comprehensive report
+        try:
+            report_generator = MLPerfReportGenerator(results_dir=os.path.dirname(results_file))
+            
+            # Prepare comprehensive results for report
+            comprehensive_results = {
+                'benchmark_type': 'MLPerf Datacenter',
+                'model_name': self.model_name,
+                'device': self.device,
+                'node_name': node_name,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'scenarios': {
+                    'server': results.get('Server', {}),
+                    'offline': results.get('Offline', {})
+                },
+                'system_info': {
+                    'hardware': {
+                        'device': self.device,
+                        'node': node_name
+                    },
+                    'software': {
+                        'model': self.model_name,
+                        'framework': 'PyTorch + Transformers'
+                    }
+                },
+                'performance': results
+            }
+            
+            report_file = report_generator.generate_comprehensive_report(
+                comprehensive_results,
+                f"MLPerf_Datacenter_{node_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            )
+            logger.info(f"📊 Automated comprehensive report generated: {report_file}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate automated report: {e}")
         
         return results
 
