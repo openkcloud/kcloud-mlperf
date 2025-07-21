@@ -515,7 +515,7 @@ class MLPerfDatacenterBenchmark:
             # Prepare comprehensive results for report
             comprehensive_results = {
                 'benchmark_type': 'MLPerf Datacenter',
-                'model_name': self.model_name,
+                'model_name': getattr(self, 'model_name', 'meta-llama/Llama-3.1-8B-Instruct'),
                 'device': self.device,
                 'node_name': node_name,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
