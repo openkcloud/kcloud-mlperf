@@ -39,10 +39,9 @@ class MLPerfConfig:
         self.model_name = "meta-llama/Llama-3.1-8B-Instruct"
         self.hf_token = os.environ.get('HF_TOKEN', '')
         
-        # Benchmark configuration (realistic targets for A30 GPU)
+        # MLPerf Benchmark configuration (optimized for A30 GPU)
         self.max_tokens = int(os.environ.get('MAX_TOKENS', '64'))
-        self.server_target_qps = float(os.environ.get('SERVER_TARGET_QPS', '0.5'))  # Realistic for A30
-        self.offline_target_qps = float(os.environ.get('OFFLINE_TARGET_QPS', '0.5'))  # Realistic for A30
+        self.server_target_qps = float(os.environ.get('SERVER_TARGET_QPS', '0.5'))  # Realistic server QPS for A30
         
     def get_ssh_command(self, node_name: str, command: str) -> list:
         """Generate SSH command for remote execution"""

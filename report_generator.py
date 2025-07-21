@@ -72,49 +72,102 @@ class MLPerfReportGenerator:
     
     def generate_summary_report(self, all_results: Dict[str, Any]) -> str:
         """Generate a comprehensive summary report"""
+        
+        # Calculate overall status
+        total_benchmarks = sum(len(results) for results in all_results.values())
+        passed_benchmarks = 0
+        failed_benchmarks = 0
+        
+        # Quick scan for pass/fail counts
+        for benchmark_type, results in all_results.items():
+            for result in results:
+                scenarios = result.get("scenarios", {})
+                if scenarios:
+                    for scenario_data in scenarios.values():
+                        if scenario_data.get('valid', False):
+                            passed_benchmarks += 1
+                        else:
+                            failed_benchmarks += 1
+                else:
+                    failed_benchmarks += 1
+        
+        overall_status = "✅ ALL PASSED" if failed_benchmarks == 0 else f"❌ {failed_benchmarks} FAILED, {passed_benchmarks} PASSED"
+        
         report_lines = [
-            "# MLPerf Benchmark Results Summary",
-            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"Project: {config.project_root}",
+            "# 🎯 MLPerf Benchmark Results Summary",
             "",
-            "## Environment Configuration",
-            f"- Model: {config.model_name}",
-            f"- Max Tokens: {config.max_tokens}",
-            f"- Server Target QPS: {config.server_target_qps}",
-            f"- Offline Target QPS: {config.offline_target_qps}",
+            f"## 📊 **OVERALL STATUS: {overall_status}**",
             "",
-            "## Node Configuration",
+            f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
+            f"**Project:** {config.project_root}  ",
+            f"**Total Scenarios:** {passed_benchmarks + failed_benchmarks}  ",
+            "",
+            "---",
+            "",
+            "## ⚙️ Environment Configuration",
+            f"- **Model:** {config.model_name}",
+            f"- **Max Tokens:** {config.max_tokens}",
+            f"- **Server Target QPS:** {config.server_target_qps}",
+            f"- **Offline Target QPS:** {config.offline_target_qps}",
+            "",
+            "## 🖥️ Node Configuration",
         ]
         
         for node_name, node_ip in config.nodes.items():
-            report_lines.append(f"- {node_name}: {node_ip}")
+            report_lines.append(f"- **{node_name}:** {node_ip}")
         
         report_lines.extend([
             "",
-            "## Benchmark Results Summary",
+            "---",
+            "",
+            "## 📈 Benchmark Results",
             ""
         ])
         
         # Process each benchmark type
         for benchmark_type, results in all_results.items():
             if not results:
+                report_lines.extend([
+                    f"### 🔍 {benchmark_type.title()} Benchmarks",
+                    "❌ **NO RESULTS FOUND**",
+                    "",
+                    "---",
+                    ""
+                ])
                 continue
                 
+            # Calculate pass/fail for this benchmark type
+            type_passed = 0
+            type_failed = 0
+            for result in results:
+                scenarios = result.get("scenarios", {})
+                if scenarios:
+                    for scenario_data in scenarios.values():
+                        if scenario_data.get('valid', False):
+                            type_passed += 1
+                        else:
+                            type_failed += 1
+                else:
+                    type_failed += 1
+            
+            type_status = "✅ ALL PASSED" if type_failed == 0 else f"❌ {type_failed} FAILED, {type_passed} PASSED"
+            
             report_lines.extend([
-                f"### {benchmark_type.title()} Benchmarks",
-                f"Total runs: {len(results)}",
-                ""
+                f"### 🔍 {benchmark_type.title()} Benchmarks",
+                f"**Status:** {type_status}  ",
+                f"**Total runs:** {len(results)}  ",
+                "",
             ])
             
             for i, result in enumerate(results, 1):
-                report_lines.append(f"#### Run {i} - {result.get('timestamp', 'Unknown')}")
+                report_lines.append(f"#### 📋 Run {i} - {result.get('timestamp', 'Unknown')}")
                 
                 if benchmark_type == "datacenter":
                     self._add_datacenter_summary(report_lines, result)
                 elif benchmark_type in ["coordinated", "distributed", "distributed_simple"]:
                     self._add_multi_gpu_summary(report_lines, result)
                 
-                report_lines.append("")
+                report_lines.extend(["", "---", ""])
         
         return "\n".join(report_lines)
     
@@ -122,43 +175,75 @@ class MLPerfReportGenerator:
         """Add datacenter benchmark summary"""
         scenarios = result.get("scenarios", {})
         
-        for scenario_name, scenario_data in scenarios.items():
+        if not scenarios:
             report_lines.extend([
-                f"**{scenario_name} Scenario:**",
-                f"- Valid: {scenario_data.get('valid', 'Unknown')}",
-                f"- Achieved QPS: {scenario_data.get('achieved_qps', 'N/A')}",
-                f"- Latency P99: {scenario_data.get('latency_p99', 'N/A')}ms",
-                f"- Accuracy: {scenario_data.get('accuracy', 'N/A')}",
+                "❌ **FAILED** - No scenario results found",
+                "- Status: BENCHMARK FAILED",
+                "- Error: No valid scenarios completed",
+                ""
+            ])
+            return
+        
+        for scenario_name, scenario_data in scenarios.items():
+            # Determine pass/fail status
+            is_valid = scenario_data.get('valid', False)
+            status_icon = "✅" if is_valid else "❌"
+            status_text = "PASSED" if is_valid else "FAILED"
+            
+            # Get metrics with fallbacks
+            achieved_qps = scenario_data.get('achieved_qps', 'N/A')
+            latency_p99 = scenario_data.get('latency_p99', 'N/A')
+            accuracy = scenario_data.get('accuracy', 'N/A')
+            
+            report_lines.extend([
+                f"{status_icon} **{scenario_name} Scenario: {status_text}**",
+                f"- **Valid:** {is_valid}",
+                f"- **Achieved QPS:** {achieved_qps}",
+                f"- **Latency P99:** {latency_p99}ms" if latency_p99 != 'N/A' else f"- **Latency P99:** {latency_p99}",
+                f"- **Accuracy:** {accuracy}",
                 ""
             ])
     
     def _add_multi_gpu_summary(self, report_lines: List[str], result: Dict):
-        """Add multi-GPU benchmark summary"""
+        """Add multi-GPU benchmark summary (Server scenario only)"""
         if "aggregated_results" in result:
             total_throughput = 0
+            total_qps = 0
             node_count = len(result["aggregated_results"])
             
-            report_lines.append(f"**Multi-GPU Results ({node_count} nodes):**")
+            report_lines.append(f"**Multi-GPU Server Results ({node_count} nodes):**")
             
             for node_result in result["aggregated_results"]:
                 node_name = node_result.get("node_name", "Unknown")
-                throughput = node_result.get("throughput_tokens_per_sec", 0)
+                
+                # Extract server scenario metrics
+                server_data = node_result.get("scenarios", {}).get("Server", {})
+                qps = server_data.get("achieved_qps", 0)
+                throughput = server_data.get("throughput_tokens_per_sec", 0)
+                is_valid = server_data.get("valid", False)
+                status = "✅ VALID" if is_valid else "❌ INVALID"
+                
+                total_qps += qps
                 total_throughput += throughput
                 
-                report_lines.append(f"- {node_name}: {throughput:.2f} tokens/sec")
+                report_lines.append(f"- {node_name}: {status} - QPS: {qps:.2f}, Throughput: {throughput:.2f} tokens/sec")
             
             report_lines.extend([
+                f"- **Combined Server QPS: {total_qps:.2f}**",
                 f"- **Total Throughput: {total_throughput:.2f} tokens/sec**",
-                f"- **Average per Node: {total_throughput/node_count:.2f} tokens/sec**",
+                f"- **Average per GPU: {total_throughput/node_count:.2f} tokens/sec**",
                 ""
             ])
         else:
-            # Single result
-            throughput = result.get("throughput_tokens_per_sec", "N/A")
-            latency = result.get("average_latency_ms", "N/A")
+            # Single result - extract server scenario data
+            server_data = result.get("scenarios", {}).get("Server", {})
+            qps = server_data.get("achieved_qps", "N/A")
+            throughput = server_data.get("throughput_tokens_per_sec", "N/A")
+            latency_p99 = server_data.get("latency_p99", "N/A")
             report_lines.extend([
+                f"- Server QPS: {qps}",
                 f"- Throughput: {throughput} tokens/sec",
-                f"- Average Latency: {latency}ms",
+                f"- Latency P99: {latency_p99}ms",
                 ""
             ])
     
