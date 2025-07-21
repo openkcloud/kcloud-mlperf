@@ -131,7 +131,7 @@ class MLPerfDatacenterBenchmark:
                 tokenizer=self.tokenizer
             )
             
-            # Test samples for debugging (10 samples)
+            # Full test samples for final benchmark
             test_samples = [
                 "Explain the concept of machine learning in simple terms.",
                 "What are the benefits of renewable energy?",
@@ -142,7 +142,17 @@ class MLPerfDatacenterBenchmark:
                 "Discuss the impact of climate change on global ecosystems.",
                 "Explain the fundamentals of blockchain technology.",
                 "What are the key principles of sustainable development?",
-                "Describe the evolution of the internet and its societal impact."
+                "Describe the evolution of the internet and its societal impact.",
+                "How do neural networks process information?",
+                "What role does genetics play in human health?",
+                "Explain the concept of circular economy.",
+                "Discuss the challenges of space exploration.",
+                "What are the ethical considerations in AI development?",
+                "Describe the process of protein synthesis in cells.",
+                "How does cryptocurrency mining work?",
+                "What are the benefits of biodiversity conservation?",
+                "Explain the principles of quantum mechanics.",
+                "Discuss the future of autonomous vehicles."
             ]
             
             results = []
@@ -233,7 +243,7 @@ class MLPerfDatacenterBenchmark:
                 tokenizer=self.tokenizer
             )
             
-            # Test samples for debugging (10 samples)
+            # Full test samples for final benchmark
             test_samples = [
                 "Explain the concept of machine learning in simple terms.",
                 "What are the benefits of renewable energy?",
@@ -244,7 +254,17 @@ class MLPerfDatacenterBenchmark:
                 "Discuss the impact of climate change on global ecosystems.",
                 "Explain the fundamentals of blockchain technology.",
                 "What are the key principles of sustainable development?",
-                "Describe the evolution of the internet and its societal impact."
+                "Describe the evolution of the internet and its societal impact.",
+                "How do neural networks process information?",
+                "What role does genetics play in human health?",
+                "Explain the concept of circular economy.",
+                "Discuss the challenges of space exploration.",
+                "What are the ethical considerations in AI development?",
+                "Describe the process of protein synthesis in cells.",
+                "How does cryptocurrency mining work?",
+                "What are the benefits of biodiversity conservation?",
+                "Explain the principles of quantum mechanics.",
+                "Discuss the future of autonomous vehicles."
             ]
             
             results = []
