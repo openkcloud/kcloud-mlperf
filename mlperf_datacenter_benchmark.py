@@ -542,7 +542,7 @@ class MLPerfDatacenterBenchmark:
             
             # Calculate MLPerf-required percentiles
             def get_percentile(data: List[float], percentile: float) -> float:
-                \"\"\"Calculate percentile from sorted data\"\"\"
+                """Calculate percentile from sorted data"""
                 index = int(len(data) * percentile / 100)
                 return data[min(index, len(data) - 1)]
             
