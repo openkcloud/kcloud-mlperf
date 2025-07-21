@@ -116,7 +116,7 @@ class MLPerfReportGenerator:
                 
                 report_lines.append("")
         
-        return "\\n".join(report_lines)
+        return "\n".join(report_lines)
     
     def _add_datacenter_summary(self, report_lines: List[str], result: Dict):
         """Add datacenter benchmark summary"""

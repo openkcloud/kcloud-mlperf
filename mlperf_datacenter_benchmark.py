@@ -127,13 +127,28 @@ class MLPerfDatacenterBenchmark:
                 tokenizer=self.tokenizer
             )
             
-            # Test samples
+            # Test samples - comprehensive set for thorough evaluation
             test_samples = [
                 "Explain the concept of machine learning in simple terms.",
                 "What are the benefits of renewable energy?",
                 "Describe the process of photosynthesis.",
                 "How does artificial intelligence work?",
-                "What is the importance of data privacy?"
+                "What is the importance of data privacy?",
+                "Compare and contrast classical and quantum computing.",
+                "Discuss the impact of climate change on global ecosystems.",
+                "Explain the fundamentals of blockchain technology.",
+                "What are the key principles of sustainable development?",
+                "Describe the evolution of the internet and its societal impact.",
+                "How do neural networks process information?",
+                "What role does genetics play in human health?",
+                "Explain the concept of circular economy.",
+                "Discuss the challenges of space exploration.",
+                "What are the ethical considerations in AI development?",
+                "Describe the process of protein synthesis in cells.",
+                "How does cryptocurrency mining work?",
+                "What are the benefits of biodiversity conservation?",
+                "Explain the principles of quantum mechanics.",
+                "Discuss the future of autonomous vehicles."
             ]
             
             results = []
@@ -224,18 +239,38 @@ class MLPerfDatacenterBenchmark:
                 tokenizer=self.tokenizer
             )
             
-            # Larger batch for offline scenario
+            # Larger batch for offline scenario - comprehensive dataset
             test_samples = [
                 "Explain the concept of machine learning in simple terms.",
                 "What are the benefits of renewable energy?",
                 "Describe the process of photosynthesis.",
                 "How does artificial intelligence work?",
                 "What is the importance of data privacy?",
-                "Explain quantum computing fundamentals.",
-                "What are the impacts of climate change?",
-                "How do neural networks function?",
-                "Describe the principles of sustainable development.",
-                "What is the role of big data in modern business?"
+                "Compare and contrast classical and quantum computing.",
+                "Discuss the impact of climate change on global ecosystems.",
+                "Explain the fundamentals of blockchain technology.",
+                "What are the key principles of sustainable development?",
+                "Describe the evolution of the internet and its societal impact.",
+                "How do neural networks process information?",
+                "What role does genetics play in human health?",
+                "Explain the concept of circular economy.",
+                "Discuss the challenges of space exploration.",
+                "What are the ethical considerations in AI development?",
+                "Describe the process of protein synthesis in cells.",
+                "How does cryptocurrency mining work?",
+                "What are the benefits of biodiversity conservation?",
+                "Explain the principles of quantum mechanics.",
+                "Discuss the future of autonomous vehicles.",
+                "What is the role of enzymes in biological processes?",
+                "How do recommendation systems work?",
+                "Explain the concept of distributed computing.",
+                "What are the challenges of renewable energy storage?",
+                "Describe the impact of social media on communication.",
+                "How does DNA sequencing technology work?",
+                "What are the principles of cybersecurity?",
+                "Explain the concept of edge computing.",
+                "Discuss the role of microorganisms in ecosystems.",
+                "What are the applications of computer vision?"
             ]
             
             results = []
