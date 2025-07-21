@@ -11,6 +11,8 @@ import subprocess
 import threading
 import socket
 from pathlib import Path
+from datetime import datetime
+from config import config
 
 def get_local_ip():
     """Get local IP address"""
@@ -95,7 +97,7 @@ def main():
             return 1
     
     # Create results directory
-    results_dir = Path("/home/jungwooshim/k8s-gpu-cluster/mlperf-benchmark/results/distributed")
+    results_dir = config.get_results_path("distributed")
     results_dir.mkdir(parents=True, exist_ok=True)
     
     print("\\n🚀 Starting distributed benchmark...")
@@ -116,8 +118,8 @@ def main():
             
             ssh_cmd = [
                 'ssh', '-o', 'StrictHostKeyChecking=no',
-                f'jungwooshim@{node["host"]}',
-                f'cd /home/jungwooshim/mlperf-benchmark && '
+                f'{config.username}@{node["host"]}',
+                f'cd {config.remote_base_dir} && '
                 f'source venv/bin/activate && '
                 f'export HF_TOKEN={os.environ.get("HF_TOKEN", "")} && '
                 f'export NUM_SAMPLES=10 && '

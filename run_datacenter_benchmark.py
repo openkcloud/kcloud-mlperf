@@ -14,6 +14,7 @@ import socket
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any
+from config import config
 
 def run_datacenter_benchmark_on_node(node_name: str, node_ip: str, log_file: str, results_container: Dict):
     """Run MLPerf datacenter benchmark on a single node"""
@@ -29,14 +30,9 @@ def run_datacenter_benchmark_on_node(node_name: str, node_ip: str, log_file: str
         
         env_str = ' && '.join([f'export {k}={v}' for k, v in env_vars.items()])
         
-        cmd = [
-            'ssh', '-o', 'StrictHostKeyChecking=no',
-            f'jungwooshim@{node_ip}',
-            f'cd /home/jungwooshim/mlperf-benchmark && '
-            f'source venv/bin/activate && '
-            f'{env_str} && '
-            f'python mlperf_datacenter_benchmark.py'
-        ]
+        # Use configuration-managed SSH command
+        ssh_command = f"{env_str} && python3 mlperf_datacenter_benchmark.py"
+        cmd = config.get_ssh_command(node_name, ssh_command)
         
         print(f"🚀 Starting MLPerf Datacenter benchmark on {node_name}...")
         start_time = time.time()
@@ -78,12 +74,12 @@ def collect_results_from_node(node_name: str, node_ip: str, results_container: D
             remote_file = result.stdout.strip()
             
             # Copy results file
-            local_results_dir = Path(f"results/datacenter_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            local_results_dir = config.get_results_path("datacenter")
             local_results_dir.mkdir(parents=True, exist_ok=True)
             
             copy_cmd = [
                 'scp', '-o', 'StrictHostKeyChecking=no',
-                f'jungwooshim@{node_ip}:{remote_file}',
+                f'{config.username}@{node_ip}:{remote_file}',
                 str(local_results_dir / f"{node_name}_results.json")
             ]
             
@@ -111,14 +107,14 @@ def run_coordinated_datacenter_benchmark():
     print("🌐 MLPerf Inference Datacenter Benchmark")
     print("=" * 60)
     
-    # Node configuration
+    # Node configuration from centralized config
     nodes = [
-        {"name": "jw2", "ip": "129.254.202.252"},
-        {"name": "jw3", "ip": "129.254.202.253"}
+        {"name": "jw2", "ip": config.nodes["jw2"]},
+        {"name": "jw3", "ip": config.nodes["jw3"]}
     ]
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_dir = Path(f"results/datacenter_{timestamp}")
+    results_dir = config.get_results_path("datacenter", timestamp)
     results_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"📊 Configuration:")
@@ -131,7 +127,7 @@ def run_coordinated_datacenter_benchmark():
         try:
             result = subprocess.run([
                 'ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=5',
-                f'jungwooshim@{node["ip"]}', 'hostname'
+                f'{config.username}@{node["ip"]}', 'hostname'
             ], capture_output=True, text=True, timeout=10)
             
             if result.returncode == 0:

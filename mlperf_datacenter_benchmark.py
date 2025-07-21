@@ -14,6 +14,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from config import config
 
 # Set up logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('/tmp/mlperf_datacenter.log')
+        logging.FileHandler(config.get_log_path('mlperf_datacenter.log'))
     ]
 )
 logger = logging.getLogger(__name__)
@@ -29,16 +30,17 @@ logger = logging.getLogger(__name__)
 class MLPerfDatacenterBenchmark:
     def __init__(self, node_name: str = None):
         self.node_name = node_name or os.environ.get('NODE_NAME', 'unknown')
-        self.results_dir = Path(f"/home/jungwooshim/mlperf-benchmark/results/mlperf_datacenter")
-        self.results_dir.mkdir(parents=True, exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use configuration-managed results directory
+        self.results_dir = config.get_results_path("mlperf_datacenter", self.timestamp)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
         
-        # Configuration from environment
-        self.hf_token = os.environ.get('HF_TOKEN', '')
-        self.max_tokens = int(os.environ.get('MAX_TOKENS', '64'))
-        self.server_target_qps = float(os.environ.get('SERVER_TARGET_QPS', '1.0'))
-        self.offline_target_qps = float(os.environ.get('OFFLINE_TARGET_QPS', '10.0'))
-        self.model_name = "meta-llama/Llama-3.1-8B-Instruct"
+        # Configuration from centralized config
+        self.hf_token = config.hf_token
+        self.max_tokens = config.max_tokens
+        self.server_target_qps = config.server_target_qps
+        self.offline_target_qps = config.offline_target_qps
+        self.model_name = config.model_name
         
         logger.info(f"Initialized MLPerf Datacenter Benchmark for node: {self.node_name}")
         logger.info(f"Results directory: {self.results_dir}")

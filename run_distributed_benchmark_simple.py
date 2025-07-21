@@ -13,6 +13,7 @@ import threading
 import socket
 from pathlib import Path
 from datetime import datetime
+from config import config
 from typing import Dict, List, Any
 
 def run_simple_distributed_benchmark():
@@ -28,7 +29,7 @@ def run_simple_distributed_benchmark():
     ]
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_dir = Path(f"results/distributed_simple_{timestamp}")
+    results_dir = config.get_results_path("distributed_simple", timestamp)
     results_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"📊 Configuration:")
@@ -76,8 +77,8 @@ def run_simple_distributed_benchmark():
             # Use the existing benchmark script
             cmd = [
                 'ssh', '-o', 'StrictHostKeyChecking=no',
-                f'jungwooshim@{node_ip}',
-                f'cd /home/jungwooshim/mlperf-benchmark && '
+                f'{config.username}@{node_ip}',
+                f'cd {config.remote_base_dir} && '
                 f'source venv/bin/activate && '
                 f'{env_str} && '
                 f'python run_benchmark_auto.py'
@@ -119,7 +120,7 @@ def run_simple_distributed_benchmark():
             # Get the latest results file
             cmd = [
                 'ssh', '-o', 'StrictHostKeyChecking=no',
-                f'jungwooshim@{node_ip}',
+                f'{config.username}@{node_ip}',
                 f'ls -t /home/jungwooshim/mlperf-benchmark/results/*/benchmark_results_*.json 2>/dev/null | head -1'
             ]
             

@@ -12,6 +12,7 @@ import threading
 import socket
 from pathlib import Path
 from datetime import datetime
+from config import config
 
 def run_benchmark_on_node(node_name, node_ip, samples_per_node, log_file, results_container):
     """Run benchmark on a single node"""
@@ -27,8 +28,8 @@ def run_benchmark_on_node(node_name, node_ip, samples_per_node, log_file, result
         
         cmd = [
             'ssh', '-o', 'StrictHostKeyChecking=no',
-            f'jungwooshim@{node_ip}',
-            f'cd /home/jungwooshim/mlperf-benchmark && '
+            f'{config.username}@{node_ip}',
+            f'cd {config.remote_base_dir} && '
             f'source venv/bin/activate && '
             f'{env_str} && '
             f'python run_benchmark_auto.py'
@@ -54,7 +55,7 @@ def run_benchmark_on_node(node_name, node_ip, samples_per_node, log_file, result
                 try:
                     results_cmd = [
                         'ssh', '-o', 'StrictHostKeyChecking=no',
-                        f'jungwooshim@{node_ip}',
+                        f'{config.username}@{node_ip}',
                         f'find /home/jungwooshim/mlperf-benchmark/results/{node_name} -name "*.json" -type f | head -1 | xargs cat'
                     ]
                     
@@ -103,7 +104,7 @@ def main():
     
     # Create results directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_dir = Path(f"/home/jungwooshim/k8s-gpu-cluster/mlperf-benchmark/results/coordinated_{timestamp}")
+    results_dir = config.get_results_path("coordinated", timestamp)
     results_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"📁 Results directory: {results_dir}")
