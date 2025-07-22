@@ -16,24 +16,39 @@ This repository contains the **official MLCommons MLPerf inference implementatio
 
 ## Quick Start
 
-### 1. Run Benchmarks
+### 1. Configure Your Infrastructure
 ```bash
-# Start benchmarks on distributed GPUs
-cd official_mlperf
-./run_official_benchmarks.sh
+# Create configuration for your specific infrastructure
+python3 config_manager.py --create-example
+cp config.yaml.example config.yaml
 
-# Monitor progress with auto-reporting
-cd ..
-./monitor_official_benchmarks.sh watch
+# Edit config.yaml with your GPU node IPs, usernames, etc.
+nano config.yaml
+
+# Validate configuration
+python3 config_manager.py --validate
 ```
 
-### 2. Generate Visual Reports
+### 2. Generate Custom Scripts
 ```bash
-# Generate reports for existing results
-python3 generate_visual_reports.py results
+# Generate scripts customized for your infrastructure
+python3 config_manager.py --generate-scripts
 
-# View results
-open sample_visual_reports/mlperf_interactive_dashboard.html
+# This creates infrastructure-specific scripts:
+# - run_benchmarks.sh (for your specific nodes)
+# - monitor_benchmarks.sh (monitors your nodes)
+```
+
+### 3. Run Benchmarks
+```bash
+# Start benchmarks on your configured infrastructure
+./run_benchmarks.sh
+
+# Monitor progress with auto-reporting
+./monitor_benchmarks.sh watch
+
+# Generate visual reports anytime
+python3 generate_visual_reports.py results
 ```
 
 ## Repository Structure
@@ -45,9 +60,13 @@ open sample_visual_reports/mlperf_interactive_dashboard.html
 │   ├── dataset.py               # CNN DailyMail data loader
 │   ├── loadgen/                 # Official MLPerf loadgen
 │   └── run_official_benchmarks.sh
+├── config.yaml                  # Infrastructure configuration (user-customizable)
+├── config_manager.py            # Configuration management and script generation
 ├── generate_visual_reports.py   # Visual report generator
-├── monitor_official_benchmarks.sh # Benchmark monitoring with auto-reports
+├── monitor_benchmarks.sh        # Auto-generated monitoring (customized for your infrastructure)
+├── run_benchmarks.sh           # Auto-generated benchmark runner (customized for your infrastructure)
 ├── sample_visual_reports/        # Example visual reports
+├── SETUP_GUIDE.md               # Detailed setup guide for any infrastructure
 └── results/                     # Benchmark outputs (auto-generated)
 ```
 
