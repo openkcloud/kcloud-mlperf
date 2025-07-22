@@ -13,27 +13,27 @@ echo "GPU Nodes: 2"
 echo ""
 
 
-echo "🎯 Starting benchmark on gpu-node-1 (192.168.1.100)..."
-ssh username@192.168.1.100 "cd ~/official_mlperf/inference/language/llama3.1-8b && \
+echo "🎯 Starting benchmark on jw2 (129.254.202.252)..."
+ssh jungwooshim@129.254.202.252 "cd ~/official_mlperf/inference/language/llama3.1-8b && \
     nohup python3 main.py \
         --scenario Server \
         --model-path meta-llama/Llama-3.1-8B-Instruct \
         --total-sample-count 13368 \
         --dataset-path cnn_eval.json \
-        --vllm > gpu-node-1_benchmark.log 2>&1 &"
+        --vllm > jw2_benchmark.log 2>&1 &"
 
-echo "✅ Benchmark started on gpu-node-1"
+echo "✅ Benchmark started on jw2"
 
-echo "🎯 Starting benchmark on gpu-node-2 (192.168.1.101)..."
-ssh username@192.168.1.101 "cd ~/official_mlperf/inference/language/llama3.1-8b && \
+echo "🎯 Starting benchmark on jw3 (129.254.202.253)..."
+ssh jungwooshim@129.254.202.253 "cd ~/official_mlperf/inference/language/llama3.1-8b && \
     nohup python3 main.py \
         --scenario Server \
         --model-path meta-llama/Llama-3.1-8B-Instruct \
         --total-sample-count 13368 \
         --dataset-path cnn_eval.json \
-        --vllm > gpu-node-2_benchmark.log 2>&1 &"
+        --vllm > jw3_benchmark.log 2>&1 &"
 
-echo "✅ Benchmark started on gpu-node-2"
+echo "✅ Benchmark started on jw3"
 
 echo ""
 echo "🎯 All benchmarks started successfully!"

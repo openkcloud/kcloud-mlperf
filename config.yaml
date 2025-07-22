@@ -9,15 +9,15 @@ infrastructure:
   
   # GPU nodes configuration
   gpu_nodes:
-    - name: "gpu-node-1"           # Custom name for your first GPU node
-      ip: "192.168.1.100"          # Replace with your GPU node IP
-      ssh_user: "username"         # Replace with your SSH username
+    - name: "jw2"                  # Your actual GPU node
+      ip: "129.254.202.252"        # Your actual jw2 IP
+      ssh_user: "jungwooshim"      # Your actual SSH username
       gpu_type: "NVIDIA A30"       # Your GPU model
       gpu_memory: "24GB"           # GPU memory
       
-    - name: "gpu-node-2"           # Custom name for your second GPU node  
-      ip: "192.168.1.101"          # Replace with your GPU node IP
-      ssh_user: "username"         # Replace with your SSH username
+    - name: "jw3"                  # Your actual GPU node  
+      ip: "129.254.202.253"        # Your actual jw3 IP
+      ssh_user: "jungwooshim"      # Your actual SSH username
       gpu_type: "NVIDIA A30"       # Your GPU model
       gpu_memory: "24GB"           # GPU memory
 
