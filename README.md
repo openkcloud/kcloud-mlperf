@@ -1,125 +1,190 @@
-# MLPerf Llama-3.1-8B Benchmark
+# MLPerf Inference Benchmark Suite
 
-A streamlined, reproducible MLPerf inference benchmark for Meta's Llama-3.1-8B-Instruct model, designed for multi-GPU evaluation and team deployment.
+**Official MLCommons Llama-3.1-8B inference benchmarking with automatic visual reporting**
 
-## 🎯 Quick Start
+## Overview
 
-### 1. Setup Environment
+This repository contains the **official MLCommons MLPerf inference implementation** for Llama-3.1-8B benchmarking with enhanced visual reporting capabilities. All benchmarks use the genuine MLPerf loadgen with the complete CNN DailyMail dataset (13,368 samples).
+
+## Key Features
+
+- ✅ **Official Implementation**: Uses genuine MLCommons reference code
+- ✅ **Complete Dataset**: Full CNN DailyMail dataset (13,368 samples, not synthetic)
+- ✅ **Auto Visual Reports**: Comprehensive charts generated automatically when benchmarks complete
+- ✅ **Multi-GPU Support**: Distributed benchmarking across NVIDIA A30 GPUs
+- ✅ **Production Ready**: VLLM optimization with proper MLPerf compliance
+
+## Quick Start
+
+### 1. Run Benchmarks
+```bash
+# Start benchmarks on distributed GPUs
+cd official_mlperf
+./run_official_benchmarks.sh
+
+# Monitor progress with auto-reporting
+cd ..
+./monitor_official_benchmarks.sh watch
+```
+
+### 2. Generate Visual Reports
+```bash
+# Generate reports for existing results
+python3 generate_visual_reports.py results
+
+# View results
+open sample_visual_reports/mlperf_interactive_dashboard.html
+```
+
+## Repository Structure
+
+```
+├── official_mlperf/              # Official MLCommons implementation
+│   ├── main.py                   # MLPerf benchmark entry point
+│   ├── SUT_VLLM.py              # VLLM System Under Test
+│   ├── dataset.py               # CNN DailyMail data loader
+│   ├── loadgen/                 # Official MLPerf loadgen
+│   └── run_official_benchmarks.sh
+├── generate_visual_reports.py   # Visual report generator
+├── monitor_official_benchmarks.sh # Benchmark monitoring with auto-reports
+├── sample_visual_reports/        # Example visual reports
+└── results/                     # Benchmark outputs (auto-generated)
+```
+
+## Benchmark Results
+
+### Current Status
+- **Implementation**: Official MLCommons reference
+- **Model**: meta-llama/Llama-3.1-8B-Instruct  
+- **Dataset**: CNN DailyMail (13,368 samples)
+- **Scenario**: Server
+- **Hardware**: 2x NVIDIA A30 24GB GPUs
+
+### Visual Reports Generated
+1. **Static Charts** (`mlperf_static_report.png`)
+   - Performance comparison across runs
+   - Latency distribution histograms
+   - Throughput timeline analysis
+   - ROUGE accuracy comparisons
+
+2. **Interactive Dashboard** (`mlperf_interactive_dashboard.html`)
+   - Web-based charts with hover details
+   - Zoom, pan, and filter capabilities
+   - Real-time data exploration
+
+3. **Summary Report** (`README.md`)
+   - Comprehensive analysis overview
+   - Data source breakdown
+   - Technical implementation details
+
+## Automatic Report Generation
+
+Visual reports are **automatically generated** when benchmarks complete:
+
+```bash
+# Enhanced monitoring with auto-reporting
+./monitor_official_benchmarks.sh results
+
+# Manual generation anytime
+python3 generate_visual_reports.py results
+```
+
+Reports are saved to timestamped directories: `results/visual_reports_TIMESTAMP/`
+
+## Technical Details
+
+### MLPerf Compliance
+- **Official loadgen**: `mlperf_loadgen.cpython-310-x86_64-linux-gnu.so`
+- **Server scenario**: FirstTokenComplete callbacks with proper token reporting
+- **Accuracy validation**: ROUGE scoring with 99% targets
+- **Performance constraints**: Official MLPerf requirements
+
+### Visualization Stack
+- **Base Framework**: Official MLCommons trace analysis tools
+- **Static Charts**: Matplotlib + Seaborn (publication quality)
+- **Interactive Charts**: Plotly (web-based, interactive)
+- **Data Processing**: Pandas + NumPy
+
+### Hardware Configuration
+- **GPUs**: 2x NVIDIA A30 24GB
+- **Memory Optimization**: `gpu_memory_utilization=0.8, max_model_len=4096`
+- **Distributed**: Kubernetes cluster (jw1 control, jw2/jw3 workers)
+
+## Installation
+
 ```bash
 # Clone repository
 git clone https://github.com/jshim0978/MLPerf_local_test.git
 cd MLPerf_local_test
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your HuggingFace token and node IPs
-
-# Automated setup
+# Setup environment
 ./setup_environment.sh
+
+# Install visualization dependencies
+pip install matplotlib seaborn plotly pandas numpy
+
+# Download dataset (if needed)
+cd official_mlperf
+python3 download_cnndm.py
 ```
 
-### 2. Run Benchmark
+## Usage Examples
+
+### Example 1: Single GPU Benchmark
 ```bash
-# Set HuggingFace token
-export HF_TOKEN=your_token_here
-
-# Single node datacenter benchmark
-python3 mlperf_datacenter_benchmark.py
-
-# Multi-GPU coordinated benchmark (from controller node)
-python3 run_datacenter_benchmark.py
+cd official_mlperf
+python3 main.py --scenario Server --model-path meta-llama/Llama-3.1-8B-Instruct
 ```
 
-### 3. View Results
+### Example 2: Multi-GPU Distributed
 ```bash
-# Generate comprehensive reports
-python3 report_generator.py
-
-# View latest results
-cat reports/latest_summary.md
-cat FINAL_BENCHMARK_SUMMARY.md
+cd official_mlperf
+./run_official_benchmarks.sh  # Runs on both jw2 and jw3
 ```
 
-## 📊 Latest Performance Results
-
-**Infrastructure:** 2× NVIDIA A30 GPUs (jw2 + jw3)  
-**Model:** Llama-3.1-8B-Instruct  
-**Samples:** 20 server + 30 offline per GPU
-
-| GPU | Server QPS | Offline QPS | Throughput | Accuracy | MLPerf Valid |
-|-----|------------|-------------|------------|----------|--------------|
-| **jw2** | 0.495 | 0.546 | 32.2 tok/sec | 100% | ✅ Server |
-| **jw3** | 0.536 | 0.563 | 34.8 tok/sec | 100% | ✅ Server |
-| **Total** | **1.031** | **1.109** | **67.0 tok/sec** | **100%** | **✅ Both** |
-
-## 🏗️ Repository Structure
-
-```
-MLPerf_local_test/
-├── config.py                           # Environment-agnostic configuration
-├── mlperf_datacenter_benchmark.py      # Main benchmark (single GPU)
-├── run_datacenter_benchmark.py         # Multi-GPU coordinator
-├── report_generator.py                 # Automated report generation
-├── setup_environment.sh                # Environment setup
-├── requirements.txt                    # Python dependencies
-├── .env.example                        # Configuration template
-├── README.md                           # This file
-├── FINAL_BENCHMARK_SUMMARY.md          # Executive summary
-├── Dockerfile                          # Container support
-└── LICENSE                             # MIT License
-```
-
-## ⚙️ Configuration
-
-### Environment Variables (.env)
+### Example 3: Live Monitoring with Auto-Reports
 ```bash
-HF_TOKEN=your_huggingface_token
-MLPERF_USERNAME=your_username
-JW2_IP=node2_ip_address
-JW3_IP=node3_ip_address
-MAX_TOKENS=64
-SERVER_TARGET_QPS=1.0
+./monitor_official_benchmarks.sh watch
+# Visual reports auto-generated when benchmarks complete
 ```
 
-### Hardware Requirements
-- **GPUs:** NVIDIA A30/A100/H100 with 16GB+ VRAM
-- **Memory:** 32GB+ system RAM
-- **Storage:** 50GB+ free space
-- **Network:** SSH access between nodes
+## Results Format
 
-## 🌐 Reproducibility Features
+### Performance Results (`mlperf_log_summary.txt`)
+```
+Completed samples per second: 0.41
+Completed tokens per second: 41.23
+50.00 percentile latency (ns): 42000000000
+99.00 percentile latency (ns): 96000000000
+```
 
-- **No hardcoded paths** - works on any infrastructure
-- **Centralized configuration** - easy teammate deployment
-- **Automated setup** - one script installation
-- **Self-contained reports** - all outputs within project
-- **Environment agnostic** - supports various node configurations
+### Accuracy Results (`mlperf_log_accuracy.json`)
+```json
+{
+  "metadata": {
+    "rouge_scores": {
+      "rouge1": 38.45,
+      "rouge2": 15.67,
+      "rougeL": 24.23
+    },
+    "accuracy_target": "99% of baseline ROUGE scores"
+  }
+}
+```
 
-## 📈 MLPerf Compliance
+## Contributing
 
-- ✅ **MLPerf v5.0 Inference Datacenter** specifications
-- ✅ **Server scenario validation** on both GPUs
-- ✅ **99%+ accuracy requirement** (achieved 100%)
-- ✅ **Latency constraints** met for server scenarios
-- ✅ **Extended sample testing** (20-30 samples per scenario)
+This repository implements the **official MLCommons MLPerf inference reference** with enhanced visualization. To contribute:
 
-## 🚀 Team Deployment
+1. Ensure changes maintain MLPerf compliance
+2. Test with the complete CNN DailyMail dataset
+3. Verify visual report generation functionality
+4. Follow official MLCommons contribution guidelines
 
-Your teammates can deploy this anywhere by:
+## License
 
-1. **Clone repository** to their infrastructure
-2. **Copy .env.example to .env** and configure IPs/tokens
-3. **Run ./setup_environment.sh** for automated setup
-4. **Execute benchmarks** with single command
-5. **Generate reports** with consistent formatting
+This project uses the official MLCommons MLPerf inference code. See [LICENSE](LICENSE) for details.
 
-## 📄 License
+---
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **MLCommons** for MLPerf benchmark framework
-- **Meta** for Llama-3.1-8B model
-- **HuggingFace** for model hosting and transformers
-- **NVIDIA** for GPU compute infrastructure
+**🎯 Results**: Professional MLPerf benchmarking with automatic visual reporting that transforms complex text outputs into intuitive, interactive dashboards.
