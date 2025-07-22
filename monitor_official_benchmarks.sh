@@ -34,6 +34,8 @@ function check_progress() {
             mkdir -p "$RESULTS_DIR/jw2_official"
             scp -r $JW2_IP:~/official_mlperf/inference/language/llama3.1-8b/jw2_full_results/* "$RESULTS_DIR/jw2_official/" 2>/dev/null
             scp $JW2_IP:~/official_mlperf/inference/language/llama3.1-8b/jw2_full_benchmark.log "$RESULTS_DIR/jw2_official/" 2>/dev/null
+            echo "  📊 Auto-generating visual reports for jw2..."
+            python3 /home/jungwooshim/generate_visual_reports.py "$RESULTS_DIR/jw2_official" > /dev/null 2>&1
         fi
     fi
     
@@ -53,6 +55,8 @@ function check_progress() {
             mkdir -p "$RESULTS_DIR/jw3_official"  
             scp -r $JW3_IP:~/official_mlperf/inference/language/llama3.1-8b/jw3_full_results/* "$RESULTS_DIR/jw3_official/" 2>/dev/null
             scp $JW3_IP:~/official_mlperf/inference/language/llama3.1-8b/jw3_full_benchmark.log "$RESULTS_DIR/jw3_official/" 2>/dev/null
+            echo "  📊 Auto-generating visual reports for jw3..."
+            python3 /home/jungwooshim/generate_visual_reports.py "$RESULTS_DIR/jw3_official" > /dev/null 2>&1
         fi
     fi
     
@@ -134,6 +138,11 @@ function main() {
             
             if [ -d "$RESULTS_DIR/jw2_official" ] && [ -d "$RESULTS_DIR/jw3_official" ]; then
                 echo "🎉 Both benchmarks completed! Generating final report..."
+                
+                # Generate comprehensive visual reports for all results
+                echo "📊 Generating comprehensive visual reports..."
+                python3 /home/jungwooshim/generate_visual_reports.py "$RESULTS_DIR" > /dev/null 2>&1
+                echo "✅ Visual reports generated and saved to results/visual_reports_*/"
                 
                 cat > "$RESULTS_DIR/OFFICIAL_MLPERF_FINAL_REPORT.md" << 'REPORT_EOF'
 # Official MLPerf Llama-3.1-8B Benchmark Results

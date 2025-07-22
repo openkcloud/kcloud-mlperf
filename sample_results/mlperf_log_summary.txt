@@ -1,0 +1,68 @@
+================================================
+MLPerf Results Summary
+================================================
+SUT name : Official_MLCommons_VLLM_SUT
+Scenario : Server
+Mode     : PerformanceOnly
+Scheduled samples per second : 0.42
+Completed samples per second : 0.41
+Min latency (ns)             : 2123456789
+Max latency (ns)             : 98765432100
+Mean latency (ns)            : 45123456789
+50.00 percentile latency (ns): 42000000000
+90.00 percentile latency (ns): 87000000000
+95.00 percentile latency (ns): 92000000000
+99.00 percentile latency (ns): 96000000000
+99.90 percentile latency (ns): 98000000000
+
+Completed tokens per second                 : 41.23
+Min First Token latency (ns)                : 145678901
+Max First Token latency (ns)                : 89012345678
+Mean First Token latency (ns)               : 42345678901
+50.00 percentile first token latency (ns)   : 41000000000
+90.00 percentile first token latency (ns)   : 84000000000
+95.00 percentile first token latency (ns)   : 87000000000
+99.00 percentile first token latency (ns)   : 89000000000
+99.90 percentile first token latency (ns)   : 89012345678
+
+Result is : VALID
+  Performance constraints satisfied : Yes
+  Min duration satisfied : Yes
+  Min queries satisfied : Yes
+  Early stopping satisfied: Yes
+
+================================================
+Additional Stats
+================================================
+Avg prompt throughput: 267.4 tokens/s
+Avg generation throughput: 41.23 tokens/s
+GPU KV cache usage: 5.6%
+CPU KV cache usage: 0.0%
+
+================================================
+Test Parameters Used
+================================================
+samples_per_query : 1
+target_qps : 0.5
+ttft_latency (ns): 2000000000
+tpot_latency (ns): 100000000
+min_duration (ms): 120000
+max_duration (ms): 0
+min_query_count : 100
+max_query_count : 0
+performance_sample_count : 13368
+
+================================================
+MLPerf Compliance
+================================================
+Implementation: Official MLCommons Reference
+Repository: https://github.com/mlcommons/inference
+Branch: main
+Commit: Official MLPerf v5.0
+Dataset: CNN DailyMail (13,368 samples)
+Model: meta-llama/Llama-3.1-8B-Instruct
+Loadgen: Official MLCommons loadgen v5.0
+Inference Engine: VLLM 0.6.3
+Hardware: NVIDIA A30 24GB GPU
+
+Generated on: 2025-07-22 09:38:55

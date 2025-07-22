@@ -85,3 +85,4 @@ wheels/
 .DS_Store
 Thumbs.dbmlperf-llama.tar*
 official_mlperf/cnn_eval.json
+dataset/
