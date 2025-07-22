@@ -110,10 +110,28 @@ def run_test_benchmark(node_name, node_config, output_dir, sample_count=20):
         return False
 
 def generate_test_report(output_dir, node_name, sample_count):
-    """Generate test report"""
+    """Generate visual test report"""
     
     results_dir = Path(output_dir) / f"{node_name}_test_results"
     
+    if results_dir.exists():
+        # Generate visual HTML report
+        try:
+            visual_cmd = [
+                sys.executable, "scripts/reporting/visual_results_generator.py",
+                "--results-dir", str(results_dir)
+            ]
+            result = subprocess.run(visual_cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print(f"📊 Visual test report generated successfully")
+                print(f"✨ {result.stdout.strip()}")
+            else:
+                print(f"⚠️ Visual report generation failed: {result.stderr}")
+        except Exception as e:
+            print(f"⚠️ Could not generate visual report: {e}")
+    
+    # Also save basic JSON data
     report_data = {
         "timestamp": datetime.now().isoformat(),
         "test_mode": True,
@@ -123,14 +141,11 @@ def generate_test_report(output_dir, node_name, sample_count):
         "status": "completed" if results_dir.exists() else "failed"
     }
     
-    # Save test report
-    report_file = Path("reports") / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{node_name}_test_report.json"
+    report_file = Path("reports") / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{node_name}_test_data.json"
     report_file.parent.mkdir(parents=True, exist_ok=True)
     
     with open(report_file, 'w') as f:
         json.dump(report_data, f, indent=2)
-    
-    print(f"📊 Test report generated: {report_file}")
 
 def main():
     parser = argparse.ArgumentParser(description="MLPerf Test Single GPU Inference (Small Sample Count)")

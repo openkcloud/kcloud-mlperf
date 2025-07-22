@@ -108,7 +108,7 @@ def run_single_gpu_benchmark(node_name, node_config, output_dir):
         return False
 
 def generate_performance_report(output_dir, node_name):
-    """Generate performance report for single GPU benchmark"""
+    """Generate visual performance report for single GPU benchmark"""
     
     results_dir = Path(output_dir) / f"{node_name}_single_gpu_results"
     summary_file = results_dir / "mlperf_log_summary.txt"
@@ -117,11 +117,26 @@ def generate_performance_report(output_dir, node_name):
         print(f"⚠️  Summary file not found: {summary_file}")
         return
     
-    # Parse MLPerf results
+    # Generate visual HTML report
+    try:
+        visual_cmd = [
+            sys.executable, "scripts/reporting/visual_results_generator.py",
+            "--results-dir", str(results_dir)
+        ]
+        result = subprocess.run(visual_cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print(f"📊 Visual performance report generated successfully")
+            print(f"✨ {result.stdout.strip()}")
+        else:
+            print(f"⚠️ Visual report generation failed: {result.stderr}")
+    except Exception as e:
+        print(f"⚠️ Could not generate visual report: {e}")
+    
+    # Also save JSON data
     with open(summary_file, 'r') as f:
         content = f.read()
     
-    # Extract key metrics
     report_data = {
         "timestamp": datetime.now().isoformat(),
         "node": node_name,
@@ -133,14 +148,11 @@ def generate_performance_report(output_dir, node_name):
         "summary_content": content
     }
     
-    # Save detailed report
-    report_file = Path("reports") / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{node_name}_single_gpu_report.json"
+    report_file = Path("reports") / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{node_name}_single_gpu_data.json"
     report_file.parent.mkdir(parents=True, exist_ok=True)
     
     with open(report_file, 'w') as f:
         json.dump(report_data, f, indent=2)
-    
-    print(f"📊 Performance report generated: {report_file}")
 
 def main():
     parser = argparse.ArgumentParser(description="MLPerf Single GPU Inference Benchmark")
