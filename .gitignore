@@ -1,88 +1,10 @@
-# MLPerf Llama Benchmark .gitignore
-
-# System files
-.bash_history
-.bashrc
-.bash_logout
-.profile
-.viminfo
-.wget-hsts
-.sudo_as_admin_successful
-.lesshst
-.gitconfig
-
-# User directories
-.ssh/
-.cache/
-.local/
-.npm/
-.nv/
-.config/
-.kube/
-.claude/
-.claude.json*
-
-# Downloaded files and archives
-*.zip
-*.tar.gz
-*.deb
-rclone-*
-get-docker.sh
-cuda-keyring_*
-
-# MLPerf repository (too large, will be cloned)
-mlperf_inference/
-
-# Model files and caches (too large for git)
-models/
-cache/
-*.safetensors
-*.bin
-*.pth
-
-# Results and logs
-results/
-logs/
-output/
+.vscode-server/
+.dotnet/
+snap/
 *.log
-
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Jupyter
-.ipynb_checkpoints
-
-# Environment variables
-.env
-.env.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.dbmlperf-llama.tar*
-official_mlperf/cnn_eval.json
-dataset/
+*.pyc
+.cache/
+.pytest_cache/
+tmp/
+*.tmp
