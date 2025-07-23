@@ -10,12 +10,13 @@ TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 LOG_DIR="/home/jungwooshim/results/scheduled_run_${TIMESTAMP}"
 BENCHMARK_DIR="/home/jungwooshim/official_mlperf/inference/language/llama3.1-8b"
 
-echo "🚀 Starting Scheduled Full MLPerf Benchmark Run"
-echo "================================================"
+echo "🚀 Starting Scheduled COMPREHENSIVE MLPerf Benchmark Run"
+echo "========================================================="
 echo "Timestamp: $(date)"
 echo "Log Directory: ${LOG_DIR}"
-echo "Expected Duration: 3-4 hours"
+echo "Expected Duration: 5-6 hours (Performance + Accuracy + ROUGE)"
 echo "Dataset: Full CNN DailyMail (13,368 samples)"
+echo "Evaluation: Performance Metrics + ROUGE-1/2/L Scoring"
 echo ""
 
 # Create results directory
@@ -37,7 +38,9 @@ run_benchmark() {
     echo "Output directory: ${output_dir}"
     
     ssh ${node_ip} "cd ${BENCHMARK_DIR} && \
-        mkdir -p ${output_dir} && \
+        mkdir -p ${output_dir}/performance && \
+        mkdir -p ${output_dir}/accuracy && \
+        echo '🚀 Phase 1: Performance Benchmark' && \
         python3 -u main.py \
             --scenario Server \
             --model-path meta-llama/Llama-3.1-8B-Instruct \
@@ -45,10 +48,29 @@ run_benchmark() {
             --dtype float16 \
             --total-sample-count 13368 \
             --dataset-path cnn_eval.json \
-            --output-log-dir ${output_dir} \
+            --output-log-dir ${output_dir}/performance \
             --tensor-parallel-size 1 \
             --vllm \
-            --user-conf user.conf" 2>&1 | tee "${LOG_DIR}/${node}_execution.log"
+            --user-conf user.conf && \
+        echo '🎯 Phase 2: Accuracy Benchmark with ROUGE evaluation' && \
+        python3 -u main.py \
+            --scenario Server \
+            --model-path meta-llama/Llama-3.1-8B-Instruct \
+            --batch-size 1 \
+            --dtype float16 \
+            --total-sample-count 13368 \
+            --dataset-path cnn_eval.json \
+            --output-log-dir ${output_dir}/accuracy \
+            --tensor-parallel-size 1 \
+            --accuracy \
+            --vllm \
+            --user-conf user.conf && \
+        echo '📊 Phase 3: ROUGE Score Calculation' && \
+        python3 evaluation.py \
+            --mlperf-accuracy-file ${output_dir}/accuracy/mlperf_log_accuracy.json \
+            --dataset-file cnn_eval.json \
+            --dtype int32 \
+            --total-sample-count 13368" 2>&1 | tee "${LOG_DIR}/${node}_execution.log"
     
     local exit_code=${PIPESTATUS[0]}
     if [ $exit_code -eq 0 ]; then
