@@ -58,6 +58,53 @@ def postprocess_text(preds, targets):
     return preds, targets
 
 
+def check_accuracy_targets(result):
+    """Check against official MLCommons LLaMA3.1-8B accuracy targets"""
+    
+    # Official MLCommons accuracy targets (99% of baseline)
+    targets = {
+        "rouge1": 38.7792 * 0.99,      # 38.392
+        "rouge2": 15.9075 * 0.99,      # 15.749  
+        "rougeL": 24.4957 * 0.99,      # 24.251
+        "rougeLsum": 35.793 * 0.99,    # 35.435
+        "gen_len": 8167644 * 0.9,      # 7350880 (90% for generation length)
+    }
+    
+    print(f"\n{'='*70}")
+    print("📋 MLCOMMONS ACCURACY TARGET VALIDATION")
+    print(f"{'='*70}")
+    
+    passed_all = True
+    
+    for metric, target in targets.items():
+        if metric in result:
+            if metric == "gen_len":
+                actual = int(result[metric])
+                passed = actual >= target
+                status = "✅ PASS" if passed else "❌ FAIL"
+                print(f"{metric.upper():<12}: {actual:>10} >= {target:>10.0f} {status}")
+            else:
+                actual = float(result[metric])
+                passed = actual >= target
+                status = "✅ PASS" if passed else "❌ FAIL"
+                print(f"{metric.upper():<12}: {actual:>10.4f}% >= {target:>7.3f}% {status}")
+            
+            if not passed:
+                passed_all = False
+        else:
+            print(f"{metric.upper():<12}: {'MISSING':>10} {'❌ FAIL':>10}")
+            passed_all = False
+    
+    print(f"{'='*70}")
+    if passed_all:
+        print("🎉 ALL ACCURACY TARGETS PASSED - MLCommons Compliant!")
+    else:
+        print("⚠️  Some accuracy targets not met - Review model performance")
+    print(f"{'='*70}")
+    
+    return passed_all
+
+
 def main():
 
     args = get_args()
@@ -127,8 +174,33 @@ def main():
     prediction_lens = [len(pred) for pred in preds]
     result["gen_len"] = np.sum(prediction_lens)
     result["gen_num"] = len(preds)
-    print("\nResults\n")
+    
+    print(f"\n{'='*70}")
+    print("📈 OFFICIAL MLCOMMONS LLAMA3.1-8B EVALUATION RESULTS")
+    print(f"{'='*70}")
+    
+    # Enhanced display of ROUGE scores
+    rouge_scores = {}
+    for key, value in result.items():
+        if key.startswith('rouge'):
+            rouge_scores[key] = value
+    
+    if rouge_scores:
+        print(f"\n📊 ROUGE Scores (%):")
+        for metric_name, score in rouge_scores.items():
+            print(f"   {metric_name.upper():<12}: {score}")
+    
+    print(f"\n📝 Generation Statistics:")
+    print(f"   Generated Tokens : {result['gen_len']}")
+    print(f"   Number of Samples: {result['gen_num']}")
+    
+    # Check against official MLCommons targets
+    check_accuracy_targets(result)
+    
+    print(f"\n{'='*70}")
+    print("Raw Results (for compatibility):")
     print(result)
+    print(f"{'='*70}")
 
 
 if __name__ == "__main__":
