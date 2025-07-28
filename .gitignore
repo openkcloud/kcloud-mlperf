@@ -38,3 +38,4 @@ cache/datasets--*/
 # Environment files with secrets
 .env.local
 .env.production
+dataset/cnn_dailymail_v3.json
