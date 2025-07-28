@@ -1,10 +1,40 @@
+# Development files
 .vscode-server/
 .dotnet/
 snap/
-*.log
 __pycache__/
 *.pyc
 .cache/
 .pytest_cache/
+
+# Log files
+*.log
 tmp/
 *.tmp
+
+# MLPerf benchmark outputs (exclude from git)
+results/local_benchmark_*/
+results/jw*_*/
+results/20*/
+results/automated_*/
+results/coordinated_*/
+results/datacenter_*/
+official_mlperf/local_benchmark_*/
+official_mlperf/test_results/
+reports/local_benchmark_*.md
+reports/local_benchmark_*.json
+reports/jw*_*
+reports/MLPerf_Complete_Distributed_Analysis_*.md
+reports/MLPerf_Automated_Pipeline_Report_*.md
+
+# Keep example files
+!results/examples/
+!reports/examples/
+
+# Model cache (can be large)
+cache/models--*/
+cache/datasets--*/
+
+# Environment files with secrets
+.env.local
+.env.production

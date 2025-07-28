@@ -1,0 +1,9 @@
+{
+  "node": "local",
+  "timestamp": "2025-07-28T09:38:09.833560",
+  "samples": 20,
+  "accuracy_enabled": false,
+  "duration_seconds": 325.9974727630615,
+  "results_dir": "results/local_benchmark_20250728_093243",
+  "report_file": "reports/local_benchmark_20250728_093809.md"
+}
