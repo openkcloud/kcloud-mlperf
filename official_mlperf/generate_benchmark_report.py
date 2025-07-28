@@ -57,37 +57,44 @@ def parse_mlperf_logs(results_dir):
         with open(detail_file, 'r') as f:
             detail_content = f.read()
             
-            # Extract execution time from power timestamps
-            if "power_begin" in detail_content and "power_end" in detail_content:
-                # Extract timestamps and calculate duration
-                lines = detail_content.split('\n')
-                start_time = None
-                end_time = None
-                
-                for line in lines:
-                    if '"power_begin"' in line:
-                        try:
-                            import re
-                            time_match = re.search(r'"time_ms":\s*([0-9.]+)', line)
-                            if time_match:
-                                start_time = float(time_match.group(1))
-                        except:
-                            pass
-                    elif '"power_end"' in line:
-                        try:
-                            time_match = re.search(r'"time_ms":\s*([0-9.]+)', line)
-                            if time_match:
-                                end_time = float(time_match.group(1))
-                        except:
-                            pass
-                
-                if start_time is not None and end_time is not None:
-                    metrics["execution_time"] = (end_time - start_time) / 1000  # Convert to seconds
+            # Extract execution time from power timestamps (most accurate)
+            import re
+            from datetime import datetime
+            
+            power_begin_time = None
+            power_end_time = None
+            
+            # Look for power_begin and power_end timestamps
+            power_begin_match = re.search(r'"key": "power_begin".*?"value": "([^"]+)"', detail_content)
+            power_end_match = re.search(r'"key": "power_end".*?"value": "([^"]+)"', detail_content)
+            
+            if power_begin_match and power_end_match:
+                try:
+                    # Parse the timestamp strings
+                    power_begin_str = power_begin_match.group(1)
+                    power_end_str = power_end_match.group(1)
                     
-            # Fallback: estimate from sample processing logs
+                    # Convert to datetime objects
+                    power_begin_time = datetime.strptime(power_begin_str, "%m-%d-%Y %H:%M:%S.%f")
+                    power_end_time = datetime.strptime(power_end_str, "%m-%d-%Y %H:%M:%S.%f")
+                    
+                    # Calculate execution time in seconds
+                    execution_duration = (power_end_time - power_begin_time).total_seconds()
+                    metrics["execution_time"] = execution_duration
+                except Exception as e:
+                    print(f"Warning: Could not parse power timestamps: {e}")
+            
+            # Fallback 1: Use time_ms range from MLPerf logs
             if metrics["execution_time"] == 0:
-                # Look for sample processing times
-                import re
+                time_ms_values = re.findall(r'"time_ms":\s*([0-9.]+)', detail_content)
+                if time_ms_values:
+                    time_values = [float(t) for t in time_ms_values]
+                    if len(time_values) >= 2:
+                        # Calculate duration from first to last timestamp
+                        metrics["execution_time"] = (max(time_values) - min(time_values)) / 1000.0
+            
+            # Fallback 2: estimate from sample processing logs
+            if metrics["execution_time"] == 0:
                 sample_times = re.findall(r'Total time: ([0-9.]+)', detail_content)
                 if sample_times:
                     # Sum up individual sample times
