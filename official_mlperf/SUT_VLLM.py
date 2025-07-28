@@ -162,6 +162,8 @@ class SUT:
             self.model_path,
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
+            max_model_len=8192,  # Reduced from default 131072 for A30 GPU
+            gpu_memory_utilization=0.9
         )
         log.info("Loaded model")
 
@@ -283,14 +285,15 @@ class SUTServer(SUT):
         for worker in self.worker_threads:
             worker.join()
 
-        self.first_token_queue.put(None)
-        self.ft_response_thread.join()
+        # Note: ft_response_thread handling removed as it's not initialized in this class
 
     def load_model(self):
         log.info("Loading model")
         self.engine_args = AsyncEngineArgs(
             self.model_path,
             dtype=self.dtype,
-            tensor_parallel_size=self.tensor_parallel_size)
+            tensor_parallel_size=self.tensor_parallel_size,
+            max_model_len=8192,  # Reduced from default 131072 for A30 GPU
+            gpu_memory_utilization=0.9)
         self.model = AsyncLLMEngine.from_engine_args(self.engine_args)
         log.info("Loaded model")
