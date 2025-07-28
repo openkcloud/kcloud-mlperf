@@ -205,6 +205,34 @@ def main():
 
     log.info("Run Completed!")
 
+    # Auto-generate comprehensive benchmark report
+    log.info("Generating benchmark report...")
+    try:
+        import subprocess
+        report_script = os.path.join(os.path.dirname(__file__), "generate_benchmark_report.py")
+        
+        if os.path.exists(report_script):
+            result = subprocess.run([
+                "python3", report_script,
+                "--results-dir", args.output_log_dir,
+                "--format", "both",
+                "--verbose"
+            ], capture_output=True, text=True, cwd=os.path.dirname(__file__))
+            
+            if result.returncode == 0:
+                log.info("✅ Benchmark report generated successfully!")
+                # Show key results in the main log
+                for line in result.stdout.split('\n'):
+                    if line.strip() and ('Key Results:' in line or line.startswith('   •')):
+                        log.info(f"📊 {line.strip()}")
+            else:
+                log.error(f"❌ Report generation failed: {result.stderr}")
+        else:
+            log.warning("⚠️ Report generator script not found - skipping auto-report")
+            
+    except Exception as e:
+        log.error(f"❌ Failed to generate benchmark report: {e}")
+
     log.info("Destroying SUT...")
     lg.DestroySUT(lgSUT)
 
