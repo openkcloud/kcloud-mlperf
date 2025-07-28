@@ -87,7 +87,7 @@ def get_args():
         help="Model batch-size to use in benchmark.",
     )
     parser.add_argument(
-        "--output-log-dir", type=str, default="output-logs", help="Where logs are saved"
+        "--output-log-dir", type=str, default="../results", help="Where logs are saved"
     )
     parser.add_argument(
         "--enable-log-trace",

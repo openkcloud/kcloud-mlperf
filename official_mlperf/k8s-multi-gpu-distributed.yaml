@@ -67,9 +67,8 @@ spec:
           
           echo "✅ Multi-GPU Benchmark completed successfully"
           
-          # Copy results to shared location
-          mkdir -p /shared/results/multi_gpu_server_results
-          cp -r output-logs/* /shared/results/multi_gpu_server_results/ || true
+          # Results are already saved to the correct location via --output-log-dir
+          echo "Results automatically saved to shared location"
           
           echo "📊 Results saved to /shared/results/multi_gpu_server_results"
         resources:
