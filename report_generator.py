@@ -1,342 +1,390 @@
 #!/usr/bin/env python3
 """
-Centralized MLPerf Report Generator
-Generates comprehensive reports from benchmark results
+MLPerf Report Generator
+=======================
+
+Generates comprehensive reports from MLPerf benchmark results.
+Supports both mlcr output and custom benchmark results.
 """
 
 import os
 import json
+import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional
-from config import config
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class MLPerfReportGenerator:
-    """Generate comprehensive reports from MLPerf benchmark results"""
-    
-    def __init__(self):
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.report_dir = config.reports_dir / self.timestamp
-        self.report_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, input_dir, output_dir):
+        self.input_dir = Path(input_dir)
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
-    def collect_all_results(self) -> Dict[str, Any]:
-        """Collect all benchmark results from the results directory"""
-        all_results = {
-            "datacenter": [],
-            "coordinated": [],
-            "distributed": [],
-            "distributed_simple": []
+    def parse_mlcr_output(self):
+        """Parse mlcr command output files"""
+        logger.info("🔍 Parsing mlcr output files...")
+        
+        results = {
+            "performance": {},
+            "accuracy": {},
+            "logs": {}
         }
         
-        # Scan results directory for benchmark outputs
-        for benchmark_type in all_results.keys():
-            pattern = f"{benchmark_type}_*"
-            benchmark_dirs = list(config.results_dir.glob(pattern))
-            
-            for benchmark_dir in benchmark_dirs:
-                if benchmark_dir.is_dir():
-                    results = self._load_benchmark_results(benchmark_dir, benchmark_type)
-                    if results:
-                        all_results[benchmark_type].append(results)
-        
-        return all_results
-    
-    def _load_benchmark_results(self, result_dir: Path, benchmark_type: str) -> Optional[Dict]:
-        """Load results from a specific benchmark directory"""
-        try:
-            # Look for JSON result files
-            json_files = list(result_dir.glob("*.json"))
-            if not json_files:
-                return None
-            
-            # Load the first JSON file (or aggregate if multiple)
-            if len(json_files) == 1:
-                with open(json_files[0], 'r') as f:
-                    data = json.load(f)
-            else:
-                # Multiple files - aggregate them
-                data = {"aggregated_results": []}
-                for json_file in json_files:
-                    with open(json_file, 'r') as f:
-                        data["aggregated_results"].append(json.load(f))
-            
-            # Add metadata
-            data["benchmark_type"] = benchmark_type
-            data["result_directory"] = str(result_dir)
-            data["timestamp"] = result_dir.name.split("_")[-1] if "_" in result_dir.name else "unknown"
-            
-            return data
-        except Exception as e:
-            print(f"Error loading results from {result_dir}: {e}")
-            return None
-    
-    def generate_summary_report(self, all_results: Dict[str, Any]) -> str:
-        """Generate a comprehensive summary report"""
-        
-        # Calculate overall status
-        total_benchmarks = sum(len(results) for results in all_results.values())
-        passed_benchmarks = 0
-        failed_benchmarks = 0
-        
-        # Quick scan for pass/fail counts
-        for benchmark_type, results in all_results.items():
-            for result in results:
-                scenarios = result.get("scenarios", {})
-                if scenarios:
-                    for scenario_data in scenarios.values():
-                        if scenario_data.get('valid', False):
-                            passed_benchmarks += 1
-                        else:
-                            failed_benchmarks += 1
-                else:
-                    failed_benchmarks += 1
-        
-        overall_status = "✅ ALL PASSED" if failed_benchmarks == 0 else f"❌ {failed_benchmarks} FAILED, {passed_benchmarks} PASSED"
-        
-        report_lines = [
-            "# 🎯 MLPerf Benchmark Results Summary",
-            "",
-            f"## 📊 **OVERALL STATUS: {overall_status}**",
-            "",
-            f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
-            f"**Project:** {config.project_root}  ",
-            f"**Total Scenarios:** {passed_benchmarks + failed_benchmarks}  ",
-            "",
-            "---",
-            "",
-            "## ⚙️ Environment Configuration",
-            f"- **Model:** {config.model_name}",
-            f"- **Max Tokens:** {config.max_tokens}",
-            f"- **Server Target QPS:** {config.server_target_qps}",
-            f"- **Offline Target QPS:** {config.offline_target_qps}",
-            "",
-            "## 🖥️ Node Configuration",
+        # Look for common MLPerf output files
+        mlperf_files = [
+            "mlperf_log_summary.txt",
+            "mlperf_log_detail.txt", 
+            "mlperf_log_accuracy.json",
+            "mlperf_log_trace.json"
         ]
         
-        for node_name, node_ip in config.nodes.items():
-            report_lines.append(f"- **{node_name}:** {node_ip}")
+        for file_name in mlperf_files:
+            file_path = self.input_dir / file_name
+            if file_path.exists():
+                try:
+                    if file_name.endswith('.json'):
+                        with open(file_path) as f:
+                            results["logs"][file_name] = json.load(f)
+                    else:
+                        with open(file_path) as f:
+                            results["logs"][file_name] = f.read()
+                    logger.info(f"✅ Parsed {file_name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to parse {file_name}: {e}")
         
-        report_lines.extend([
-            "",
-            "---",
-            "",
-            "## 📈 Benchmark Results",
-            ""
-        ])
+        # Parse performance metrics from summary
+        if "mlperf_log_summary.txt" in results["logs"]:
+            summary_text = results["logs"]["mlperf_log_summary.txt"]
+            results["performance"] = self._extract_performance_metrics(summary_text)
         
-        # Process each benchmark type
-        for benchmark_type, results in all_results.items():
-            if not results:
-                report_lines.extend([
-                    f"### 🔍 {benchmark_type.title()} Benchmarks",
-                    "❌ **NO RESULTS FOUND**",
-                    "",
-                    "---",
-                    ""
-                ])
-                continue
-                
-            # Calculate pass/fail for this benchmark type
-            type_passed = 0
-            type_failed = 0
-            for result in results:
-                scenarios = result.get("scenarios", {})
-                if scenarios:
-                    for scenario_data in scenarios.values():
-                        if scenario_data.get('valid', False):
-                            type_passed += 1
-                        else:
-                            type_failed += 1
-                else:
-                    type_failed += 1
+        # Parse accuracy metrics from accuracy log
+        if "mlperf_log_accuracy.json" in results["logs"]:
+            accuracy_data = results["logs"]["mlperf_log_accuracy.json"]
+            results["accuracy"] = self._calculate_accuracy_metrics(accuracy_data)
             
-            type_status = "✅ ALL PASSED" if type_failed == 0 else f"❌ {type_failed} FAILED, {type_passed} PASSED"
-            
-            report_lines.extend([
-                f"### 🔍 {benchmark_type.title()} Benchmarks",
-                f"**Status:** {type_status}  ",
-                f"**Total runs:** {len(results)}  ",
-                "",
-            ])
-            
-            for i, result in enumerate(results, 1):
-                report_lines.append(f"#### 📋 Run {i} - {result.get('timestamp', 'Unknown')}")
-                
-                if benchmark_type == "datacenter":
-                    self._add_datacenter_summary(report_lines, result)
-                elif benchmark_type in ["coordinated", "distributed", "distributed_simple"]:
-                    self._add_multi_gpu_summary(report_lines, result)
-                
-                report_lines.extend(["", "---", ""])
-        
-        return "\n".join(report_lines)
+        return results
     
-    def _add_datacenter_summary(self, report_lines: List[str], result: Dict):
-        """Add datacenter benchmark summary"""
-        scenarios = result.get("scenarios", {})
+    def _extract_performance_metrics(self, summary_text):
+        """Extract performance metrics from MLPerf summary"""
+        metrics = {}
         
-        if not scenarios:
-            report_lines.extend([
-                "❌ **FAILED** - No scenario results found",
-                "- Status: BENCHMARK FAILED",
-                "- Error: No valid scenarios completed",
-                ""
-            ])
-            return
+        lines = summary_text.split('\n')
+        for line in lines:
+            if 'samples per second' in line.lower():
+                # Extract throughput
+                parts = line.split(':')
+                if len(parts) >= 2:
+                    try:
+                        throughput = float(parts[1].strip().split()[0])
+                        metrics['throughput_samples_per_second'] = throughput
+                    except:
+                        pass
+            elif 'latency' in line.lower():
+                # Extract latency metrics
+                parts = line.split(':')
+                if len(parts) >= 2:
+                    try:
+                        latency = float(parts[1].strip().split()[0])
+                        if 'mean' in line.lower():
+                            metrics['mean_latency_ms'] = latency
+                        elif 'p50' in line.lower():
+                            metrics['p50_latency_ms'] = latency
+                        elif 'p90' in line.lower():
+                            metrics['p90_latency_ms'] = latency
+                        elif 'p99' in line.lower():
+                            metrics['p99_latency_ms'] = latency
+                    except:
+                        pass
         
-        for scenario_name, scenario_data in scenarios.items():
-            # Determine pass/fail status
-            is_valid = scenario_data.get('valid', False)
-            status_icon = "✅" if is_valid else "❌"
-            status_text = "PASSED" if is_valid else "FAILED"
-            
-            # Get metrics with fallbacks
-            achieved_qps = scenario_data.get('achieved_qps', 'N/A')
-            latency_p99 = scenario_data.get('latency_p99', 'N/A')
-            accuracy = scenario_data.get('accuracy', 'N/A')
-            
-            report_lines.extend([
-                f"{status_icon} **{scenario_name} Scenario: {status_text}**",
-                f"- **Valid:** {is_valid}",
-                f"- **Achieved QPS:** {achieved_qps}",
-                f"- **Latency P99:** {latency_p99}ms" if latency_p99 != 'N/A' else f"- **Latency P99:** {latency_p99}",
-                f"- **Accuracy:** {accuracy}",
-                ""
-            ])
+        return metrics
     
-    def _add_multi_gpu_summary(self, report_lines: List[str], result: Dict):
-        """Add multi-GPU benchmark summary (Server scenario only)"""
-        if "aggregated_results" in result:
-            total_throughput = 0
-            total_qps = 0
-            node_count = len(result["aggregated_results"])
+    def _calculate_accuracy_metrics(self, accuracy_data):
+        """Calculate accuracy metrics from MLPerf accuracy log"""
+        if not accuracy_data:
+            return {}
+        
+        try:
+            # Calculate ROUGE scores if predictions are available
+            from rouge_score import rouge_scorer
             
-            report_lines.append(f"**Multi-GPU Server Results ({node_count} nodes):**")
+            predictions = []
+            references = []
             
-            for node_result in result["aggregated_results"]:
-                node_name = node_result.get("node_name", "Unknown")
-                
-                # Extract server scenario metrics
-                server_data = node_result.get("scenarios", {}).get("Server", {})
-                qps = server_data.get("achieved_qps", 0)
-                throughput = server_data.get("throughput_tokens_per_sec", 0)
-                is_valid = server_data.get("valid", False)
-                status = "✅ VALID" if is_valid else "❌ INVALID"
-                
-                total_qps += qps
-                total_throughput += throughput
-                
-                report_lines.append(f"- {node_name}: {status} - QPS: {qps:.2f}, Throughput: {throughput:.2f} tokens/sec")
+            for entry in accuracy_data:
+                if 'prediction' in entry and 'reference' in entry:
+                    predictions.append(entry['prediction'])
+                    references.append(entry['reference'])
             
-            report_lines.extend([
-                f"- **Combined Server QPS: {total_qps:.2f}**",
-                f"- **Total Throughput: {total_throughput:.2f} tokens/sec**",
-                f"- **Average per GPU: {total_throughput/node_count:.2f} tokens/sec**",
-                ""
-            ])
-        else:
-            # Single result - extract server scenario data
-            server_data = result.get("scenarios", {}).get("Server", {})
-            qps = server_data.get("achieved_qps", "N/A")
-            throughput = server_data.get("throughput_tokens_per_sec", "N/A")
-            latency_p99 = server_data.get("latency_p99", "N/A")
-            report_lines.extend([
-                f"- Server QPS: {qps}",
-                f"- Throughput: {throughput} tokens/sec",
-                f"- Latency P99: {latency_p99}ms",
-                ""
-            ])
-    
-    def generate_detailed_report(self, all_results: Dict[str, Any]) -> str:
-        """Generate detailed JSON report"""
-        detailed_report = {
-            "generation_info": {
-                "timestamp": self.timestamp,
-                "generator": "MLPerf Report Generator v1.0",
-                "project_root": str(config.project_root),
-                "configuration": {
-                    "model_name": config.model_name,
-                    "max_tokens": config.max_tokens,
-                    "server_target_qps": config.server_target_qps,
-                    "offline_target_qps": getattr(config, 'offline_target_qps', 10.0),
-                    "nodes": config.nodes
+            if predictions and references:
+                scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+                rouge_scores = {"rouge1": [], "rouge2": [], "rougeL": []}
+                
+                for pred, ref in zip(predictions, references):
+                    scores = scorer.score(ref, pred)
+                    rouge_scores["rouge1"].append(scores["rouge1"].fmeasure)
+                    rouge_scores["rouge2"].append(scores["rouge2"].fmeasure)
+                    rouge_scores["rougeL"].append(scores["rougeL"].fmeasure)
+                
+                return {
+                    "rouge1": sum(rouge_scores["rouge1"]) / len(rouge_scores["rouge1"]),
+                    "rouge2": sum(rouge_scores["rouge2"]) / len(rouge_scores["rouge2"]),
+                    "rougeL": sum(rouge_scores["rougeL"]) / len(rouge_scores["rougeL"]),
+                    "samples_evaluated": len(predictions)
                 }
+        except Exception as e:
+            logger.warning(f"⚠️  Accuracy calculation failed: {e}")
+        
+        return {"samples_evaluated": len(accuracy_data) if isinstance(accuracy_data, list) else 0}
+    
+    def parse_custom_results(self):
+        """Parse custom benchmark results"""
+        logger.info("🔍 Parsing custom benchmark results...")
+        
+        # Look for JSON result files
+        result_files = list(self.input_dir.glob("benchmark_results_*.json"))
+        
+        if not result_files:
+            logger.warning("⚠️  No custom result files found")
+            return {}
+        
+        # Use the most recent result file
+        latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
+        
+        try:
+            with open(latest_file) as f:
+                results = json.load(f)
+            logger.info(f"✅ Parsed custom results from {latest_file.name}")
+            return results
+        except Exception as e:
+            logger.error(f"❌ Failed to parse custom results: {e}")
+            return {}
+    
+    def generate_html_report(self, results):
+        """Generate HTML report"""
+        logger.info("📋 Generating HTML report...")
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLPerf LLaMA3.1-8B Benchmark Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
+        h2 {{ color: #34495e; margin-top: 30px; }}
+        .metric-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }}
+        .metric-card {{ background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #3498db; }}
+        .metric-value {{ font-size: 24px; font-weight: bold; color: #2c3e50; }}
+        .metric-label {{ color: #7f8c8d; font-size: 14px; margin-top: 5px; }}
+        .info-section {{ background: #ecf0f1; padding: 15px; border-radius: 6px; margin: 15px 0; }}
+        .accuracy-scores {{ background: #e8f5e8; padding: 15px; border-radius: 6px; border-left: 4px solid #27ae60; }}
+        .performance-metrics {{ background: #fff3cd; padding: 15px; border-radius: 6px; border-left: 4px solid #ffc107; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #f8f9fa; font-weight: bold; }}
+        .timestamp {{ color: #7f8c8d; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 MLPerf LLaMA3.1-8B Benchmark Report</h1>
+        <p class="timestamp">Generated on: {timestamp}</p>
+        
+        <div class="info-section">
+            <h2>📊 Benchmark Information</h2>
+            <p><strong>Model:</strong> meta-llama/Llama-3.1-8B-Instruct</p>
+            <p><strong>Dataset:</strong> CNN-DailyMail</p>
+            <p><strong>Framework:</strong> VLLM</p>
+            <p><strong>Device:</strong> CUDA</p>
+        </div>
+"""
+        
+        # Add performance metrics
+        if 'performance' in results and results['performance']:
+            perf_data = results['performance']
+            html_content += """
+        <div class="performance-metrics">
+            <h2>⚡ Performance Metrics</h2>
+            <div class="metric-grid">
+"""
+            
+            if 'throughput_samples_per_second' in perf_data:
+                html_content += f"""
+                <div class="metric-card">
+                    <div class="metric-value">{perf_data['throughput_samples_per_second']:.2f}</div>
+                    <div class="metric-label">Samples/Second</div>
+                </div>
+"""
+            
+            if 'total_time_seconds' in perf_data:
+                html_content += f"""
+                <div class="metric-card">
+                    <div class="metric-value">{perf_data['total_time_seconds']:.1f}s</div>
+                    <div class="metric-label">Total Time</div>
+                </div>
+"""
+            
+            if 'samples_processed' in perf_data:
+                html_content += f"""
+                <div class="metric-card">
+                    <div class="metric-value">{perf_data['samples_processed']}</div>
+                    <div class="metric-label">Samples Processed</div>
+                </div>
+"""
+            
+            html_content += "</div></div>"
+        
+        # Add accuracy metrics
+        if 'accuracy' in results and results['accuracy']:
+            acc_data = results['accuracy']
+            html_content += """
+        <div class="accuracy-scores">
+            <h2>🎯 Accuracy Metrics</h2>
+            <div class="metric-grid">
+"""
+            
+            if 'rouge_scores' in acc_data:
+                rouge_scores = acc_data['rouge_scores']
+                for metric, score in rouge_scores.items():
+                    html_content += f"""
+                <div class="metric-card">
+                    <div class="metric-value">{score:.4f}</div>
+                    <div class="metric-label">{metric.upper()}</div>
+                </div>
+"""
+            elif 'rouge1' in acc_data:
+                # Direct ROUGE scores
+                for metric in ['rouge1', 'rouge2', 'rougeL']:
+                    if metric in acc_data:
+                        html_content += f"""
+                <div class="metric-card">
+                    <div class="metric-value">{acc_data[metric]:.4f}</div>
+                    <div class="metric-label">{metric.upper()}</div>
+                </div>
+"""
+            
+            html_content += "</div></div>"
+        
+        # Add system information
+        html_content += """
+        <div class="info-section">
+            <h2>💻 System Information</h2>
+            <table>
+                <tr><th>Property</th><th>Value</th></tr>
+"""
+        
+        # Try to get system info
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_name = torch.cuda.get_device_name(0)
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+                html_content += f"""
+                <tr><td>GPU</td><td>{gpu_name}</td></tr>
+                <tr><td>GPU Memory</td><td>{gpu_memory:.1f} GB</td></tr>
+"""
+        except:
+            pass
+        
+        html_content += """
+            </table>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        
+        # Save HTML report
+        timestamp_file = datetime.now().strftime("%Y%m%d_%H%M%S")
+        html_file = self.output_dir / f"mlperf_report_{timestamp_file}.html"
+        
+        with open(html_file, 'w') as f:
+            f.write(html_content)
+        
+        logger.info(f"✅ HTML report saved to: {html_file}")
+        return html_file
+    
+    def generate_json_report(self, results):
+        """Generate JSON report"""
+        logger.info("📋 Generating JSON report...")
+        
+        # Create comprehensive report
+        report = {
+            "metadata": {
+                "generated_at": datetime.now().isoformat(),
+                "benchmark_type": "MLPerf LLaMA3.1-8B Inference",
+                "model": "meta-llama/Llama-3.1-8B-Instruct",
+                "dataset": "CNN-DailyMail",
+                "framework": "VLLM"
             },
-            "results": all_results,
-            "summary_statistics": self._calculate_summary_stats(all_results)
+            "results": results,
+            "summary": {
+                "performance_completed": bool(results.get('performance')),
+                "accuracy_completed": bool(results.get('accuracy')),
+                "total_samples": results.get('metadata', {}).get('samples', 0)
+            }
         }
         
-        return json.dumps(detailed_report, indent=2)
-    
-    def _calculate_summary_stats(self, all_results: Dict[str, Any]) -> Dict:
-        """Calculate summary statistics across all benchmarks"""
-        stats = {
-            "total_benchmarks": sum(len(results) for results in all_results.values()),
-            "benchmark_types": list(all_results.keys()),
-            "latest_runs": {}
-        }
+        # Save JSON report
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_file = self.output_dir / f"mlperf_report_{timestamp}.json"
         
-        # Find latest run for each benchmark type
-        for benchmark_type, results in all_results.items():
-            if results:
-                latest = max(results, key=lambda x: x.get("timestamp", ""))
-                stats["latest_runs"][benchmark_type] = {
-                    "timestamp": latest.get("timestamp"),
-                    "directory": latest.get("result_directory")
-                }
+        with open(json_file, 'w') as f:
+            json.dump(report, f, indent=2)
         
-        return stats
+        logger.info(f"✅ JSON report saved to: {json_file}")
+        return json_file
     
-    def save_reports(self) -> Dict[str, Path]:
-        """Save all generated reports and return file paths"""
-        all_results = self.collect_all_results()
+    def generate_reports(self):
+        """Generate all reports"""
+        logger.info("🎯 Starting report generation...")
+        
+        # Try to parse mlcr output first
+        results = self.parse_mlcr_output()
+        
+        # If no mlcr results, try custom results
+        if not results or not any(results.values()):
+            results = self.parse_custom_results()
+        
+        if not results:
+            logger.error("❌ No results found to generate reports")
+            return False
         
         # Generate reports
-        summary_md = self.generate_summary_report(all_results)
-        detailed_json = self.generate_detailed_report(all_results)
-        
-        # Save files
-        summary_file = self.report_dir / "summary_report.md"
-        detailed_file = self.report_dir / "detailed_report.json"
-        
-        with open(summary_file, 'w') as f:
-            f.write(summary_md)
-        
-        with open(detailed_file, 'w') as f:
-            f.write(detailed_json)
-        
-        # Create latest symlinks
-        latest_summary = config.reports_dir / "latest_summary.md"
-        latest_detailed = config.reports_dir / "latest_detailed.json"
-        
-        # Remove existing symlinks if they exist
-        for symlink in [latest_summary, latest_detailed]:
-            if symlink.exists() or symlink.is_symlink():
-                symlink.unlink()
-        
-        # Create new symlinks
-        latest_summary.symlink_to(summary_file.relative_to(config.reports_dir))
-        latest_detailed.symlink_to(detailed_file.relative_to(config.reports_dir))
-        
-        return {
-            "summary": summary_file,
-            "detailed": detailed_file,
-            "latest_summary": latest_summary,
-            "latest_detailed": latest_detailed
-        }
+        try:
+            html_file = self.generate_html_report(results)
+            json_file = self.generate_json_report(results)
+            
+            logger.info("🎉 Report generation completed successfully!")
+            logger.info(f"📋 HTML Report: {html_file}")
+            logger.info(f"📋 JSON Report: {json_file}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Report generation failed: {e}")
+            return False
 
 def main():
-    """Main function to generate reports"""
-    print("🎯 Generating MLPerf Benchmark Reports...")
+    parser = argparse.ArgumentParser(description="MLPerf Report Generator")
+    parser.add_argument("--input-dir", required=True, help="Input directory with benchmark results")
+    parser.add_argument("--output-dir", required=True, help="Output directory for reports")
     
-    generator = MLPerfReportGenerator()
-    report_files = generator.save_reports()
+    args = parser.parse_args()
     
-    print("✅ Reports generated successfully:")
-    for report_type, file_path in report_files.items():
-        print(f"   {report_type}: {file_path}")
+    generator = MLPerfReportGenerator(args.input_dir, args.output_dir)
+    success = generator.generate_reports()
     
-    return report_files
+    return 0 if success else 1
 
 if __name__ == "__main__":
-    main()
+    exit(main())

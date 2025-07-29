@@ -1,2 +1,0 @@
-mlcommons_loadgen
-mlperf_loadgen

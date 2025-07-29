@@ -1,5 +1,4 @@
-# MLPerf Universal Benchmark Container
-# Supports both single-node and distributed Kubernetes deployments
+# Self-contained MLPerf LLaMA3.1-8B Benchmark Container
 FROM nvcr.io/nvidia/pytorch:24.07-py3
 
 SHELL ["/bin/bash", "-c"]
@@ -8,7 +7,8 @@ SHELL ["/bin/bash", "-c"]
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
-ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+ENV PYTHONPATH=/app
+ENV HF_HOME=/app/.cache/huggingface
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,45 +20,60 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-pip \
     rsync \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Create working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip3 install --upgrade pip setuptools wheel
-RUN pip3 install -r requirements.txt
+# Install MLCommons CLI and dependencies
+RUN pip3 install --upgrade pip setuptools wheel && \
+    pip3 install mlc-scripts && \
+    pip3 install transformers datasets rouge-score nltk evaluate && \
+    pip3 install vllm && \
+    pip3 install pandas numpy
 
 # Install MLPerf loadgen
-WORKDIR /tmp
-RUN git clone --depth 1 https://github.com/mlcommons/inference.git && \
-    cd inference/loadgen && \
-    pip install pybind11 && \
-    python setup.py install && \
-    cd / && rm -rf /tmp/inference
-
-# Copy MLPerf framework
-WORKDIR /app
-COPY . .
+RUN git clone --depth 1 https://github.com/mlcommons/inference.git /tmp/inference && \
+    cd /tmp/inference/loadgen && \
+    pip3 install pybind11 && \
+    python3 setup.py install && \
+    rm -rf /tmp/inference
 
 # Create necessary directories
-RUN mkdir -p /app/results /app/reports /app/cache /app/logs
+RUN mkdir -p /app/results /app/data /app/logs /app/.cache
 
-# Set proper permissions
-RUN chmod +x bin/*.py
-RUN chmod +x *.py
+# Copy benchmark automation scripts
+COPY entrypoint.sh /app/entrypoint.sh
+COPY benchmark_runner.py /app/benchmark_runner.py
+COPY report_generator.py /app/report_generator.py
 
-# Default environment variables (can be overridden)
-ENV HF_TOKEN=""
-ENV SAMPLES=13368
-ENV ACCURACY=false
-ENV NODE_NAME="local"
-ENV OUTPUT_DIR="/app/results"
+# Set executable permissions
+RUN chmod +x /app/entrypoint.sh
+
+# Default environment variables
+ENV MODEL_NAME="llama3_1-8b"
+ENV SCENARIO="_all-scenarios"
+ENV CATEGORY="datacenter"
+ENV FRAMEWORK="vllm"
+ENV DEVICE="cuda"
+ENV EXECUTION_MODE="valid"
+ENV IMPLEMENTATION="reference"
+ENV MLPerf_VERSION="r5.1-dev"
+ENV GPU_NAME="A30"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD python3 -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
 
-# Default command - run full benchmark
-CMD ["python3", "bin/run_benchmark.py", "--samples", "13368"]
+# Expose results volume
+VOLUME ["/app/results", "/app/data"]
+
+# Default entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["all-scenarios"]
+
+# Metadata labels
+LABEL org.opencontainers.image.title="MLPerf LLaMA3.1-8B Benchmark"
+LABEL org.opencontainers.image.description="Self-contained MLPerf inference benchmark for LLaMA3.1-8B with automated accuracy scoring"
+LABEL org.opencontainers.image.version="1.0"
+LABEL org.opencontainers.image.vendor="MLCommons"
