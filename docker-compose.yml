@@ -6,7 +6,7 @@ services:
     image: mlperf-universal:latest
     container_name: mlperf-benchmark
     environment:
-      - HF_TOKEN=your-huggingface-token-here
+      - HF_TOKEN=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
       - SAMPLES=13368
       - ACCURACY=false
       - NODE_NAME=local
@@ -30,7 +30,7 @@ services:
     image: mlperf-universal:latest
     container_name: mlperf-accuracy
     environment:
-      - HF_TOKEN=your-huggingface-token-here
+      - HF_TOKEN=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
       - SAMPLES=13368
       - ACCURACY=true
       - NODE_NAME=local
@@ -56,7 +56,7 @@ services:
     image: mlperf-universal:latest
     container_name: mlperf-distributed-${NODE_ID:-1}
     environment:
-      - HF_TOKEN=your-huggingface-token-here
+      - HF_TOKEN=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
       - SAMPLES=13368
       - ACCURACY=false
       - NODE_NAME=node-${NODE_ID:-1}

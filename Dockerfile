@@ -34,7 +34,8 @@ RUN pip3 install -r requirements.txt
 WORKDIR /tmp
 RUN git clone --depth 1 https://github.com/mlcommons/inference.git && \
     cd inference/loadgen && \
-    pip install -e . && \
+    pip install pybind11 && \
+    python setup.py install && \
     cd / && rm -rf /tmp/inference
 
 # Copy MLPerf framework
