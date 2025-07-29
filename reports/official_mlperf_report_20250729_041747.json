@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "generated_at": "2025-07-29T04:17:47.420740",
+    "benchmark_type": "Official MLCommons MLPerf Inference",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "implementation": "Official Reference Implementation"
+  },
+  "performance": {},
+  "accuracy": {},
+  "system_info": {}
+}

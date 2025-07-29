@@ -46,14 +46,12 @@ RUN pip3 install -r requirements.txt
 # Copy automation scripts
 WORKDIR /app
 COPY run_official_benchmark.py .
-COPY benchmark_results_report.py .
 
 # Create necessary directories
 RUN mkdir -p /app/results /app/reports /app/dataset /app/logs
 
 # Set proper permissions
 RUN chmod +x run_official_benchmark.py
-RUN chmod +x benchmark_results_report.py
 
 # Default environment variables
 ENV HF_TOKEN=""

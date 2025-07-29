@@ -2,10 +2,7 @@ version: '3.8'
 
 services:
   mlperf-official-benchmark:
-    build: 
-      context: .
-      dockerfile: Dockerfile.official
-    image: mlperf-official:latest
+    image: mlperf-universal:latest
     container_name: mlperf-official-benchmark
     environment:
       - HF_TOKEN=${HF_TOKEN}
@@ -17,6 +14,8 @@ services:
       - ./results:/app/results
       - ./reports:/app/reports
       - ./dataset:/app/dataset
+      - ./official_mlperf_benchmark:/app/official_mlperf_benchmark
+      - ./run_official_benchmark.py:/app/run_official_benchmark.py
       - huggingface-cache:/root/.cache/huggingface
     deploy:
       resources:
@@ -25,13 +24,14 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
     command: ["python3", "run_official_benchmark.py", "--samples", "100"]
 
   mlperf-official-performance:
-    build: 
-      context: .
-      dockerfile: Dockerfile.official
-    image: mlperf-official:latest
+    image: mlperf-universal:latest
     container_name: mlperf-official-performance
     environment:
       - HF_TOKEN=${HF_TOKEN}
@@ -43,6 +43,8 @@ services:
       - ./results:/app/results
       - ./reports:/app/reports
       - ./dataset:/app/dataset
+      - ./official_mlperf_benchmark:/app/official_mlperf_benchmark
+      - ./run_official_benchmark.py:/app/run_official_benchmark.py
       - huggingface-cache:/root/.cache/huggingface
     deploy:
       resources:
@@ -51,15 +53,16 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
     command: ["python3", "run_official_benchmark.py", "--samples", "100", "--performance-only"]
     profiles:
       - performance
 
   mlperf-official-accuracy:
-    build: 
-      context: .
-      dockerfile: Dockerfile.official
-    image: mlperf-official:latest
+    image: mlperf-universal:latest
     container_name: mlperf-official-accuracy
     environment:
       - HF_TOKEN=${HF_TOKEN}
@@ -71,6 +74,8 @@ services:
       - ./results:/app/results
       - ./reports:/app/reports
       - ./dataset:/app/dataset
+      - ./official_mlperf_benchmark:/app/official_mlperf_benchmark
+      - ./run_official_benchmark.py:/app/run_official_benchmark.py
       - huggingface-cache:/root/.cache/huggingface
     deploy:
       resources:
@@ -79,6 +84,10 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
     command: ["python3", "run_official_benchmark.py", "--samples", "100", "--accuracy-only"]
     profiles:
       - accuracy

@@ -1,33 +1,9 @@
-# MLPerf Local Test Requirements
-# Core dependencies
-python-dotenv>=1.0.0
-requests>=2.31.0
-tqdm>=4.66.0
-psutil>=5.9.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-
-# MLPerf and ML dependencies  
-torch>=2.0.0
-transformers>=4.40.0
-datasets>=2.14.0
-rouge-score>=0.1.2
-nltk>=3.8.0
-accelerate>=0.25.0
-
-# VLLM for inference
-vllm>=0.4.0
-ray>=2.9.0
-
-# Monitoring and reporting
-plotly>=5.18.0
-kaleido>=0.2.1
-
-# Development tools
-pytest>=7.4.0
-black>=23.0.0
-flake8>=6.0.0
-
-# Optional for GPU monitoring (removed GPUtil)
-# nvidia-ml-py3>=7.352.0
+transformers==4.46.2
+nltk==3.8.1
+evaluate==0.4.0
+absl-py==1.4.0
+rouge-score==0.1.2
+sentencepiece==0.2.0
+accelerate==0.21.0
+vllm==0.6.3
+pybind11==2.10.4

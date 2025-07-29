@@ -36,13 +36,88 @@ class OfficialMLPerfRunner:
         """Download and prepare the CNN-DailyMail dataset"""
         print("📊 Downloading CNN-DailyMail dataset...")
         dataset_script = self.benchmark_dir / "download_cnndm.py"
+        dataset_dir = self.benchmark_dir / "dataset"
+        dataset_dir.mkdir(exist_ok=True)
+        
+        # Check if dataset already exists
+        dataset_file = dataset_dir / "data" / "cnn_dailymail_v3.json"
+        if dataset_file.exists():
+            print(f"✅ Dataset already exists at {dataset_file}")
+            return
+        
         if dataset_script.exists():
-            subprocess.run([
+            print("📥 Downloading CNN-DailyMail dataset (this may take several minutes)...")
+            # Set environment for dataset download
+            env = os.environ.copy()
+            env['HF_TOKEN'] = os.getenv('HF_TOKEN', '')
+            env['DATASET_CNNDM_PATH'] = str(dataset_dir / "data")
+            
+            # Run dataset download with proper environment
+            result = subprocess.run([
                 sys.executable, str(dataset_script),
-                "--output_dir", str(self.benchmark_dir / "dataset")
-            ], check=True)
+                "--n-samples", "1000"  # Download smaller subset for testing
+            ], cwd=str(self.benchmark_dir), env=env, capture_output=False, text=True)
+            
+            if result.returncode != 0:
+                print(f"⚠️  Dataset download failed with code {result.returncode}")
+                print("⚠️  Trying alternative download method...")
+                self._download_dataset_alternative(dataset_dir)
+            else:
+                print("✅ Dataset download completed successfully")
         else:
-            print("⚠️  Dataset download script not found, using existing dataset")
+            print("⚠️  Dataset download script not found, trying alternative...")
+            self._download_dataset_alternative(dataset_dir)
+    
+    def _download_dataset_alternative(self, dataset_dir):
+        """Alternative dataset download method"""
+        try:
+            import json
+            from datasets import load_dataset
+            from transformers import AutoTokenizer
+            
+            print("📥 Using alternative dataset download...")
+            
+            # Create data directory
+            data_dir = dataset_dir / "data"
+            data_dir.mkdir(exist_ok=True)
+            
+            # Load dataset for benchmark
+            print("Loading CNN-DailyMail dataset...")
+            dataset = load_dataset("cnn_dailymail", "3.0.0", split="validation[:500]")
+            
+            # Load tokenizer
+            print("Loading tokenizer...")
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
+            tokenizer.padding_side = "left"
+            tokenizer.pad_token = tokenizer.eos_token
+            
+            # Convert to required format
+            dataset_samples = []
+            print("Processing samples...")
+            for i, item in enumerate(dataset):
+                # Create prompt format
+                instruction = f"Summarize the following article:\n\n{item['article']}\n\nSummary:"
+                
+                # Tokenize input
+                tokenized = tokenizer(instruction, truncation=True, max_length=2048)
+                
+                sample = {
+                    "input": instruction,
+                    "tok_input": tokenized["input_ids"],
+                    "output": item["highlights"]
+                }
+                dataset_samples.append(sample)
+            
+            # Save dataset
+            dataset_file = data_dir / "cnn_dailymail_v3.json"
+            with open(dataset_file, 'w') as f:
+                json.dump(dataset_samples, f, indent=2)
+            
+            print(f"✅ Alternative dataset created with {len(dataset_samples)} samples")
+            
+        except Exception as e:
+            print(f"❌ Alternative dataset download failed: {e}")
+            print("⚠️  Benchmark may fail without dataset")
             
     def run_offline_benchmark(self, samples=100):
         """Run the official offline scenario benchmark"""
@@ -52,6 +127,12 @@ class OfficialMLPerfRunner:
         output_dir = self.results_dir / f"official_offline_{timestamp}"
         output_dir.mkdir(exist_ok=True)
         
+        # Get dataset path
+        dataset_file = self.benchmark_dir / "dataset" / "data" / "cnn_dailymail_v3.json"
+        if not dataset_file.exists():
+            print(f"❌ Dataset file not found at {dataset_file}")
+            return None
+        
         # Run the official benchmark
         env = os.environ.copy()
         env['CUDA_VISIBLE_DEVICES'] = '0'
@@ -60,6 +141,7 @@ class OfficialMLPerfRunner:
             sys.executable, str(self.benchmark_dir / "main.py"),
             "--scenario", "Offline",
             "--model-path", "meta-llama/Llama-3.1-8B-Instruct",
+            "--dataset-path", str(dataset_file),
             "--total-sample-count", str(samples),
             "--output-log-dir", str(output_dir),
             "--dtype", "float16",
@@ -71,8 +153,10 @@ class OfficialMLPerfRunner:
         
         if result.returncode != 0:
             print(f"❌ Benchmark failed: {result.stderr}")
+            print(f"❌ Stdout: {result.stdout}")
             return None
             
+        print("✅ Performance benchmark completed successfully")
         return output_dir
         
     def run_accuracy_benchmark(self, samples=100):
@@ -83,6 +167,12 @@ class OfficialMLPerfRunner:
         output_dir = self.results_dir / f"official_accuracy_{timestamp}"
         output_dir.mkdir(exist_ok=True)
         
+        # Get dataset path
+        dataset_file = self.benchmark_dir / "dataset" / "data" / "cnn_dailymail_v3.json"
+        if not dataset_file.exists():
+            print(f"❌ Dataset file not found at {dataset_file}")
+            return None
+        
         # Run the official accuracy benchmark
         env = os.environ.copy()
         env['CUDA_VISIBLE_DEVICES'] = '0'
@@ -91,6 +181,7 @@ class OfficialMLPerfRunner:
             sys.executable, str(self.benchmark_dir / "main.py"),
             "--scenario", "Offline", 
             "--model-path", "meta-llama/Llama-3.1-8B-Instruct",
+            "--dataset-path", str(dataset_file),
             "--total-sample-count", str(samples),
             "--output-log-dir", str(output_dir),
             "--dtype", "float16",
@@ -103,8 +194,10 @@ class OfficialMLPerfRunner:
         
         if result.returncode != 0:
             print(f"❌ Accuracy benchmark failed: {result.stderr}")
+            print(f"❌ Stdout: {result.stdout}")
             return None
             
+        print("✅ Accuracy benchmark completed successfully")
         return output_dir
         
     def evaluate_accuracy(self, accuracy_dir):
