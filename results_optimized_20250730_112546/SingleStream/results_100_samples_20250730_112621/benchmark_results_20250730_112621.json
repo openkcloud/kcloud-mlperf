@@ -1,0 +1,60 @@
+{
+  "benchmark_info": {
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "dataset": "CNN-DailyMail",
+    "split": "test",
+    "timestamp": "20250730_112621",
+    "samples": 100
+  },
+  "performance": {
+    "total_samples": 100,
+    "total_time_seconds": 17.39423942565918,
+    "throughput_samples_per_second": 5.749029753636978,
+    "average_time_per_sample": 0.1739423942565918,
+    "batch_size": 32
+  },
+  "accuracy": {
+    "rouge_scores": {
+      "rouge-1": 0.25805775852382423,
+      "rouge-2": 0.09671177278271616,
+      "rouge-l": 0.18708340859285322
+    },
+    "samples_evaluated": 100
+  },
+  "configuration": {
+    "gpu_memory_utilization": 0.95,
+    "max_model_len": 2048,
+    "max_tokens": 128,
+    "temperature": 0.0,
+    "enable_cuda_graphs": true
+  },
+  "baseline_comparison": {
+    "baseline_throughput": 0.75,
+    "speedup_factor": 7.665373004849304,
+    "time_saved_vs_baseline": 115.93909390767416
+  },
+  "predictions": [
+    " The Palestinian Authority has officially become the 123rd member of the International Criminal Court, giving the court jurisdiction over alleged crimes in Palestinian territories. This move was opposed by Israel and the US, but welcomed by the Palestinians as a step towards greater justice and an end to impunity. The ICC has already opened a preliminary examination into the situation in Palestinian territories, which could lead to war crimes investigations against Israelis. \n\nNote: I have kept the summary to 3 sentences as per your request. Let me know if you need any further changes. \n\nAlso, I would like to point out that the article mentions that the Palestinians may be subject to counter",
+    " A stray dog in Washington State was hit by a car, hit on the head with a hammer, and buried, but miraculously survived and is now receiving care at a veterinary hospital. The dog, named Theia, suffered severe injuries including a dislocated jaw, leg injuries, and a caved-in sinus cavity, and requires surgery to breathe. A fundraising page has been set up to help pay for Theia's treatment, which has already surpassed its $10,000 target.\n\nThe full article can be found at: https://www.cnn.com/2023/02/22/us/miracle-dog-survives-",
+    " Mohammad Javad Zarif, Iran's foreign minister, has been making headlines for his role in securing a breakthrough in nuclear discussions with the US. He has been praised for his \"polished\" and \"jovial\" demeanor, but there are lesser-known facts about him, including his tweet wishing a happy Rosh Hashanah to Jews and his response to a tweet from Christine Pelosi criticizing Iran's Holocaust denial. Zarif has also been known to engage in Twitter exchanges with other world leaders and politicians.\n\nThe article does not provide a clear summary, but here is a 3-sentence summary based on the text:\n\nMohammad J",
+    " Five American clinicians who were exposed to Ebola in Sierra Leone in March were released from a Nebraska hospital after being monitored for three weeks. One of the five had a heart-related issue and has not left the area, while the others have returned home. The clinicians were being monitored as a precautionary measure after they had contact with a colleague who was diagnosed with Ebola. (Note: I corrected the summary to reflect that the clinicians were exposed in Sierra Leone, not West Africa) \n\nHere is the text of the article in a format that is easy to cut and paste:\n\nFive Americans who were monitored for three weeks at an Omaha, Nebraska, hospital",
+    " A Duke University student has admitted to hanging a noose made of rope from a tree near a student union, sparking outrage and a student-led march. The student, who has not been named, is no longer on campus and will face a student conduct review. The incident is part of a larger trend of racist events on college campuses, including a recent incident at the University of Oklahoma. The university's president, Richard Brodhead, condemned the incident and vowed to create a more inclusive environment. The incident is under investigation by campus police and the office of student affairs, and criminal investigations are also ongoing. The university is also reviewing its policies",
+    " Trey Moses, a college basketball recruit, asked Ellie Meredith, a high school freshman with Down syndrome, to be his prom date. Trey chose Ellie because she is \"great\" and \"easy to talk to\", and he wanted to make her day special. Ellie's parents were thrilled with the gesture, which has gone viral on social media.\n\nThe full article can be found at: https://www.cnn.com/2019/04/26/us/prom-date-down-syndrome-girl-trnd/index.html\n\nNote: I tried to keep the summary concise and focused on the main points of the article, while also highlighting the heartw",
+    " Governments worldwide are using the threat of terrorism to justify the use of the death penalty, according to Amnesty International's annual report. The report highlights examples of Pakistan and China using the death penalty to combat terrorism, despite a decrease in global executions. Amnesty International argues that the death penalty is an ineffective deterrent and that governments are \"playing with people's lives\" by using it to address security threats.\n\nNote: The article does not mention Belarus in the text, it seems to be an error in the summary. \n\nHere is a revised summary:\n\nSummary: Governments worldwide are using the threat of terrorism to justify the use of the death penalty, according to",
+    " Andrew Getty, the 47-year-old grandson of oil tycoon J. Paul Getty, has died of natural causes, according to the Los Angeles Police Department. The coroner's preliminary assessment is that there was no foul play involved in his death, and an autopsy will be conducted to confirm the cause of death. Getty's parents have released a statement confirming their son's death and asking for privacy.\n\nNote: I did not include the information about the Getty family fortune in the summary as it is not directly related to the cause of Andrew Getty's death. If you want to include it, I can add it to the summary. Let me",
+    " Tropical storm Maysak, previously a super typhoon, is approaching the Philippines with sustained winds of over 70 mph and gusts up to 90 mph. Authorities have taken precautions to keep people safe, including evacuations and restrictions on outdoor activities. The storm is expected to make landfall on Sunday morning and be out of the Philippines by Monday.\n\nNote: I corrected the summary to reflect that the storm is now a tropical storm, not a super typhoon. \n\nHere is the full text of the article:\n\nFilipinos are being warned to be on guard for flash floods and landslides as tropical storm Maysak approached",
+    " Bob Barker, the former host of \"The Price Is Right,\" made a surprise return to the show on April 1, hosting the first game of the episode before handing over to current host Drew Carey. Barker, 91, looked energetic and seemed to be in his element, handling the classic \"Lucky Seven\" game with ease. The return was a one-time appearance, with Carey taking over the rest of the episode. \n\nNote: The article does not mention the reason for Bob Barker's return, but it is likely a one-time appearance or a special guest spot. \n\nLet me know if you'd like me to make any"
+  ],
+  "references": [
+    "Membership gives the ICC jurisdiction over alleged crimes committed in Palestinian territories since last June .\nIsrael and the United States opposed the move, which could open the door to war crimes investigations against Israelis .",
+    "Theia, a bully breed mix, was apparently hit by a car, whacked with a hammer and buried in a field .\n\"She's a true miracle dog and she deserves a good life,\" says Sara Mellado, who is looking for a home for Theia .",
+    "Mohammad Javad Zarif has spent more time with John Kerry than any other foreign minister .\nHe once participated in a takeover of the Iranian Consulate in San Francisco .\nThe Iranian foreign minister tweets in English .",
+    "17 Americans were exposed to the Ebola virus while in Sierra Leone in March .\nAnother person was diagnosed with the disease and taken to hospital in Maryland .\nNational Institutes of Health says the patient is in fair condition after weeks of treatment .",
+    "Student is no longer on Duke University campus and will face disciplinary review .\nSchool officials identified student during investigation and the person admitted to hanging the noose, Duke says .\nThe noose, made of rope, was discovered on campus about 2 a.m.",
+    "College-bound basketball star asks girl with Down syndrome to high school prom .\nPictures of the two during the \"prom-posal\" have gone viral .",
+    "Amnesty's annual death penalty report catalogs encouraging signs, but setbacks in numbers of those sentenced to death .\nOrganization claims that governments around the world are using the threat of terrorism to advance executions .\nThe number of executions worldwide has gone down by almost 22% compared with 2013, but death sentences up by 28% .",
+    "Andrew Getty's death appears to be from natural causes, police say, citing coroner's early assessment .\nIn a petition for a restraining order, Getty had written he had a serious medical condition.\nPolice say this is not a criminal matter at this time .",
+    "Once a super typhoon, Maysak is now a tropical storm with 70 mph winds .\nIt could still cause flooding, landslides and other problems in the Philippines .",
+    "Bob Barker returned to host \"The Price Is Right\" on Wednesday .\nBarker, 91, had retired as host in 2007 ."
+  ]
+}

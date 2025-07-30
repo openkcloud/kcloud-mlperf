@@ -1,0 +1,48 @@
+{
+  "overall_accuracy": 0.22800000000000004,
+  "total_subjects": 5,
+  "successful_subjects": 5,
+  "total_time_seconds": 22.631341218948364,
+  "detailed_results": {
+    "elementary_mathematics": {
+      "subject": "elementary_mathematics",
+      "total_questions": 50,
+      "correct_answers": 11,
+      "accuracy": 0.22,
+      "time_seconds": 0.9407672882080078,
+      "throughput": 53.14810647300566
+    },
+    "high_school_physics": {
+      "subject": "high_school_physics",
+      "total_questions": 50,
+      "correct_answers": 9,
+      "accuracy": 0.18,
+      "time_seconds": 1.2872016429901123,
+      "throughput": 38.84395290535228
+    },
+    "high_school_chemistry": {
+      "subject": "high_school_chemistry",
+      "total_questions": 50,
+      "correct_answers": 10,
+      "accuracy": 0.2,
+      "time_seconds": 1.050079584121704,
+      "throughput": 47.615438635368236
+    },
+    "computer_security": {
+      "subject": "computer_security",
+      "total_questions": 50,
+      "correct_answers": 13,
+      "accuracy": 0.26,
+      "time_seconds": 1.0230276584625244,
+      "throughput": 48.874533925254184
+    },
+    "moral_scenarios": {
+      "subject": "moral_scenarios",
+      "total_questions": 50,
+      "correct_answers": 14,
+      "accuracy": 0.28,
+      "time_seconds": 1.3301453590393066,
+      "throughput": 37.589876670405665
+    }
+  }
+}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMLU Quick Mode Results - LLaMA 3.1-8B</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f8f9fa; }
+        .container { max-width: 1000px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%); color: white; padding: 30px; text-align: center; border-radius: 12px 12px 0 0; }
+        .header h1 { margin: 0; font-size: 2.2em; font-weight: 300; }
+        .content { padding: 30px; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 25px 0; }
+        .metric-card { background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center; border-left: 4px solid #9c27b0; }
+        .metric-value { font-size: 1.8em; font-weight: 600; color: #2c3e50; }
+        .metric-label { color: #6c757d; font-size: 0.9em; margin-top: 5px; }
+        .section { margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .section h3 { color: #2c3e50; margin-top: 0; }
+        .performance { background: #e8f5e8; border-left: 4px solid #28a745; }
+        .accuracy { background: #fff3cd; border-left: 4px solid #ffc107; }
+        .baseline-comparison { background: #e3f2fd; border-left: 4px solid #2196f3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 MMLU Quick Results</h1>
+            <p>LLaMA 3.1-8B | Generated on July 30, 2025 at 11:36:38</p>
+        </div>
+        
+        <div class="content">
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">0.228</div>
+                    <div class="metric-label">Overall Accuracy</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">5/5</div>
+                    <div class="metric-label">Subjects Completed</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">22.6s</div>
+                    <div class="metric-label">Total Time</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">.2</div>
+                    <div class="metric-label">Subjects/Minute</div>
+                </div>
+            </div>
+            
+            <div class="section accuracy">
+                <h3>🎯 Accuracy Results</h3>
+                <p><strong>Overall Accuracy:</strong> 0.228 (22.800%)</p>
+                <p><strong>Subjects Evaluated:</strong> 5 out of 5</p>
+                <p><strong>Mode:</strong> Quick evaluation</p>
+            </div>
+            
+            <div class="section performance">
+                <h3>⚡ Performance Metrics</h3>
+                <p><strong>Total Time:</strong> 22.6 seconds (.3 minutes)</p>
+                <p><strong>Average per Subject:</strong> 4.52 seconds</p>
+                <p><strong>Optimization:</strong> VLLM with batched inference</p>
+            </div>
+            
+            <div class="section baseline-comparison">
+                <h3>📊 Baseline Comparison</h3>
+                <p><strong>Random Baseline:</strong> 0.250 (25%)</p>
+                <p><strong>Our Result:</strong> 0.228 (22.800%)</p>
+                <p><strong>Improvement:</strong> -2.200 percentage points above random</p>
+                <p><strong>Model:</strong> LLaMA 3.1-8B-Instruct</p>
+            </div>
+            
+            <div class="section">
+                <h3>⚙️ Configuration</h3>
+                <p><strong>Model:</strong> meta-llama/Llama-3.1-8B-Instruct</p>
+                <p><strong>Framework:</strong> VLLM with optimized inference</p>
+                <p><strong>Mode:</strong> Quick evaluation</p>
+                <p><strong>Batch Processing:</strong> Enabled</p>
+                <p><strong>Temperature:</strong> 0.0 (deterministic)</p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px; color: #6c757d; font-size: 0.9em;">
+                <p>🤖 Auto-generated MMLU report | Completed at 2025-07-30 11:36:38</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

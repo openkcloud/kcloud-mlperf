@@ -1,0 +1,13 @@
+{
+    "timestamp": "2025-07-30T11:32:48+09:00",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "optimization": "VLLM + CUDA Graphs + Batching",
+    "expected_speedup": "8.7x",
+    "baseline_throughput": 0.75,
+    "full_dataset_size": 11490,
+    "scenarios": [
+        {"name": "SingleStream", "samples": 100, "description": "Single query processing test"},
+        {"name": "Offline", "samples": 11490, "description": "Full dataset batch processing"},
+        {"name": "Server", "samples": 1000, "description": "Server scenario simulation"}
+    ]
+}
