@@ -1,57 +1,0 @@
-/home/jungwooshim/.local/lib/python3.10/site-packages/vllm/connections.py:8: RuntimeWarning: Failed to read commit hash:
-No module named 'vllm._version'
-  from vllm.version import __version__ as VLLM_VERSION
-WARNING 07-30 11:35:53 config.py:1674] Casting torch.bfloat16 to torch.float16.
-INFO 07-30 11:35:57 llm_engine.py:237] Initializing an LLM engine (vdev) with config: model='meta-llama/Llama-3.1-8B-Instruct', speculative_config=None, tokenizer='meta-llama/Llama-3.1-8B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, override_neuron_config=None, rope_scaling=None, rope_theta=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.float16, max_seq_len=1024, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=1, pipeline_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, quantization_param_path=None, device_config=cuda, decoding_config=DecodingConfig(guided_decoding_backend='outlines'), observability_config=ObservabilityConfig(otlp_traces_endpoint=None, collect_model_forward_time=False, collect_model_execute_time=False), seed=42, served_model_name=meta-llama/Llama-3.1-8B-Instruct, use_v2_block_manager=True, num_scheduler_steps=1, chunked_prefill_enabled=False multi_step_stream_outputs=True, enable_prefix_caching=False, use_async_output_proc=True, use_cached_outputs=False, mm_processor_kwargs=None)
-[W730 11:35:58.519708288 CUDAAllocatorConfig.h:28] Warning: expandable_segments not supported on this platform (function operator())
-INFO 07-30 11:35:58 model_runner.py:1060] Starting to load model meta-llama/Llama-3.1-8B-Instruct...
-INFO 07-30 11:35:59 weight_utils.py:243] Using model weights format ['*.safetensors']
-Loading safetensors checkpoint shards:   0% Completed | 0/4 [00:00<?, ?it/s]
-Loading safetensors checkpoint shards:  25% Completed | 1/4 [00:01<00:05,  1.99s/it]
-Loading safetensors checkpoint shards:  50% Completed | 2/4 [00:02<00:02,  1.12s/it]
-Loading safetensors checkpoint shards:  75% Completed | 3/4 [00:04<00:01,  1.52s/it]
-Loading safetensors checkpoint shards: 100% Completed | 4/4 [00:06<00:00,  1.74s/it]
-Loading safetensors checkpoint shards: 100% Completed | 4/4 [00:06<00:00,  1.64s/it]
-
-INFO 07-30 11:36:06 model_runner.py:1071] Loading model weights took 14.9888 GB
-INFO 07-30 11:36:08 gpu_executor.py:122] # GPU blocks: 3248, # CPU blocks: 2048
-INFO 07-30 11:36:08 gpu_executor.py:126] Maximum concurrency for 1024 tokens per request: 50.75x
-INFO 07-30 11:36:10 model_runner.py:1402] Capturing the model for CUDA graphs. This may lead to unexpected consequences if the model is not static. To run the model in eager mode, set 'enforce_eager=True' or use '--enforce-eager' in the CLI.
-INFO 07-30 11:36:10 model_runner.py:1406] CUDA graphs can take additional 1~3 GiB memory per GPU. If you are running out of memory, consider decreasing `gpu_memory_utilization` or enforcing eager mode. You can also reduce the `max_num_seqs` as needed to decrease memory usage.
-INFO 07-30 11:36:13 model_runner.py:1530] Graph capturing finished in 4 secs.
-🧠 MMLU Benchmark initialized
-🧪 Quick test on 5 subjects with 50 samples each
-Progress: 1/5 subjects 
-📚 Evaluating subject: elementary_mathematics
-Processed prompts:   0%|          | 0/32 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   3%|▎         | 1/32 [00:00<00:17,  1.73it/s, est. speed input: 162.85 toks/s, output: 1.73 toks/s]Processed prompts: 100%|██████████| 32/32 [00:00<00:00, 55.35it/s, est. speed input: 5828.19 toks/s, output: 55.36 toks/s]
-Processed prompts:   0%|          | 0/18 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   6%|▌         | 1/18 [00:00<00:05,  2.97it/s, est. speed input: 299.58 toks/s, output: 2.97 toks/s]Processed prompts: 100%|██████████| 18/18 [00:00<00:00, 53.31it/s, est. speed input: 5950.75 toks/s, output: 53.32 toks/s]
-   ✅ Accuracy: 0.220 (11/50) | Time: 0.9s
-Progress: 2/5 subjects 
-📚 Evaluating subject: high_school_physics
-Processed prompts:   0%|          | 0/32 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   3%|▎         | 1/32 [00:00<00:25,  1.23it/s, est. speed input: 146.28 toks/s, output: 1.23 toks/s]Processed prompts: 100%|██████████| 32/32 [00:00<00:00, 39.29it/s, est. speed input: 6074.59 toks/s, output: 39.29 toks/s]
-Processed prompts:   0%|          | 0/18 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   6%|▌         | 1/18 [00:00<00:07,  2.27it/s, est. speed input: 358.65 toks/s, output: 2.27 toks/s]Processed prompts: 100%|██████████| 18/18 [00:00<00:00, 40.81it/s, est. speed input: 5963.33 toks/s, output: 40.81 toks/s]
-   ✅ Accuracy: 0.180 (9/50) | Time: 1.3s
-Progress: 3/5 subjects 
-📚 Evaluating subject: high_school_chemistry
-Processed prompts:   0%|          | 0/32 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   3%|▎         | 1/32 [00:00<00:19,  1.58it/s, est. speed input: 202.69 toks/s, output: 1.58 toks/s]Processed prompts: 100%|██████████| 32/32 [00:00<00:00, 50.61it/s, est. speed input: 5876.97 toks/s, output: 50.61 toks/s]
-Processed prompts:   0%|          | 0/18 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   6%|▌         | 1/18 [00:00<00:06,  2.58it/s, est. speed input: 518.49 toks/s, output: 2.58 toks/s]Processed prompts: 100%|██████████| 18/18 [00:00<00:00, 46.36it/s, est. speed input: 5754.67 toks/s, output: 46.37 toks/s]
-   ✅ Accuracy: 0.200 (10/50) | Time: 1.1s
-Progress: 4/5 subjects 
-📚 Evaluating subject: computer_security
-Processed prompts:   0%|          | 0/32 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   3%|▎         | 1/32 [00:00<00:20,  1.50it/s, est. speed input: 143.61 toks/s, output: 1.50 toks/s]Processed prompts: 100%|██████████| 32/32 [00:00<00:00, 47.81it/s, est. speed input: 6040.43 toks/s, output: 47.81 toks/s]
-Processed prompts:   0%|          | 0/18 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   6%|▌         | 1/18 [00:00<00:05,  3.09it/s, est. speed input: 478.39 toks/s, output: 3.09 toks/s]Processed prompts: 100%|██████████| 18/18 [00:00<00:00, 55.46it/s, est. speed input: 5895.38 toks/s, output: 55.47 toks/s]
-   ✅ Accuracy: 0.260 (13/50) | Time: 1.0s
-Progress: 5/5 subjects 
-📚 Evaluating subject: moral_scenarios
-Processed prompts:   0%|          | 0/32 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   3%|▎         | 1/32 [00:00<00:25,  1.21it/s, est. speed input: 184.39 toks/s, output: 1.21 toks/s]Processed prompts: 100%|██████████| 32/32 [00:00<00:00, 38.52it/s, est. speed input: 6032.98 toks/s, output: 38.53 toks/s]
-Processed prompts:   0%|          | 0/18 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]Processed prompts:   6%|▌         | 1/18 [00:00<00:07,  2.18it/s, est. speed input: 344.08 toks/s, output: 2.18 toks/s]Processed prompts: 100%|██████████| 18/18 [00:00<00:00, 39.15it/s, est. speed input: 6012.34 toks/s, output: 39.15 toks/s]
-   ✅ Accuracy: 0.280 (14/50) | Time: 1.3s
-
-============================================================
-📊 MMLU BENCHMARK RESULTS
-============================================================
-Overall Accuracy: 0.228
-Subjects Tested: 5/5
-Total Time: 22.6 seconds
-
-💾 Results saved to: mmlu_results_quick.json
