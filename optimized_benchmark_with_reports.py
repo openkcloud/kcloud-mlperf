@@ -28,11 +28,11 @@ class OptimizedBenchmarkWithReports:
             model=model_path,
             dtype="float16",
             tensor_parallel_size=1,
-            gpu_memory_utilization=0.95,
+            gpu_memory_utilization=0.85,
             max_model_len=2048,
             enforce_eager=False,
-            max_num_batched_tokens=16384,
-            max_num_seqs=128,
+            max_num_batched_tokens=8192,
+            max_num_seqs=64,
             seed=42
         )
         
