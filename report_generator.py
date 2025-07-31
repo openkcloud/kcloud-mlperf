@@ -19,10 +19,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class MLPerfReportGenerator:
-    def __init__(self, input_dir, output_dir):
+    def __init__(self, input_dir, output_dir, mlcflow_mode=False):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.mlcflow_mode = mlcflow_mode
         
     def parse_mlcr_output(self):
         """Parse mlcr command output files"""
@@ -103,9 +104,19 @@ class MLPerfReportGenerator:
         return metrics
     
     def _calculate_accuracy_metrics(self, accuracy_data):
-        """Calculate accuracy metrics from MLPerf accuracy log"""
+        """Calculate accuracy metrics from MLPerf accuracy log with MLCFlow targets"""
         if not accuracy_data:
             return {}
+        
+        # Official MLCFlow accuracy targets for datacenter (BF16)
+        datacenter_targets = {
+            "rouge1": 38.7792,  # 99% target
+            "rouge2": 15.9075,  # 99% target 
+            "rougeL": 24.4957,  # 99% target
+            "rougeLsum": 35.793,  # 99% target
+            "generated_length": 8167644,  # 90% target
+            "total_samples": 13368
+        }
         
         try:
             # Calculate ROUGE scores if predictions are available
@@ -120,21 +131,40 @@ class MLPerfReportGenerator:
                     references.append(entry['reference'])
             
             if predictions and references:
-                scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-                rouge_scores = {"rouge1": [], "rouge2": [], "rougeL": []}
+                scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL', 'rougeLsum'], use_stemmer=True)
+                rouge_scores = {"rouge1": [], "rouge2": [], "rougeL": [], "rougeLsum": []}
+                total_generated_length = 0
                 
                 for pred, ref in zip(predictions, references):
                     scores = scorer.score(ref, pred)
                     rouge_scores["rouge1"].append(scores["rouge1"].fmeasure)
                     rouge_scores["rouge2"].append(scores["rouge2"].fmeasure)
                     rouge_scores["rougeL"].append(scores["rougeL"].fmeasure)
+                    rouge_scores["rougeLsum"].append(scores["rougeLsum"].fmeasure)
+                    total_generated_length += len(pred.split())
                 
-                return {
-                    "rouge1": sum(rouge_scores["rouge1"]) / len(rouge_scores["rouge1"]),
-                    "rouge2": sum(rouge_scores["rouge2"]) / len(rouge_scores["rouge2"]),
-                    "rougeL": sum(rouge_scores["rougeL"]) / len(rouge_scores["rougeL"]),
-                    "samples_evaluated": len(predictions)
+                # Calculate averages
+                results = {
+                    "rouge1": sum(rouge_scores["rouge1"]) / len(rouge_scores["rouge1"]) * 100,
+                    "rouge2": sum(rouge_scores["rouge2"]) / len(rouge_scores["rouge2"]) * 100,
+                    "rougeL": sum(rouge_scores["rougeL"]) / len(rouge_scores["rougeL"]) * 100,
+                    "rougeLsum": sum(rouge_scores["rougeLsum"]) / len(rouge_scores["rougeLsum"]) * 100,
+                    "generated_length": total_generated_length,
+                    "samples_evaluated": len(predictions),
+                    "datacenter_targets": datacenter_targets
                 }
+                
+                # Calculate pass/fail against targets
+                results["target_compliance"] = {
+                    "rouge1_pass": results["rouge1"] >= datacenter_targets["rouge1"] * 0.99,
+                    "rouge2_pass": results["rouge2"] >= datacenter_targets["rouge2"] * 0.99,
+                    "rougeL_pass": results["rougeL"] >= datacenter_targets["rougeL"] * 0.99,
+                    "rougeLsum_pass": results["rougeLsum"] >= datacenter_targets["rougeLsum"] * 0.99,
+                    "generated_length_pass": results["generated_length"] >= datacenter_targets["generated_length"] * 0.90
+                }
+                
+                return results
+                
         except Exception as e:
             logger.warning(f"⚠️  Accuracy calculation failed: {e}")
         
@@ -205,6 +235,28 @@ class MLPerfReportGenerator:
             <p><strong>Dataset:</strong> CNN-DailyMail</p>
             <p><strong>Framework:</strong> VLLM</p>
             <p><strong>Device:</strong> CUDA</p>
+        </div>
+"""
+        
+        # Add MLCFlow accuracy targets if available
+        if self.mlcflow_mode and 'accuracy' in results and 'datacenter_targets' in results['accuracy']:
+            accuracy_data = results['accuracy']
+            targets = accuracy_data['datacenter_targets']
+            compliance = accuracy_data.get('target_compliance', {})
+            
+            html_content += f"""
+        <div class="accuracy-scores">
+            <h2>🎯 MLCFlow Accuracy Results vs Official Targets</h2>
+            <p><strong>Official MLCommons Datacenter Targets (BF16 precision)</strong></p>
+            <table>
+                <tr><th>Metric</th><th>Achieved</th><th>Target (99%)</th><th>Status</th></tr>
+                <tr><td>ROUGE-1</td><td>{accuracy_data.get('rouge1', 0):.4f}</td><td>{targets['rouge1']:.4f}</td><td>{'✅ PASS' if compliance.get('rouge1_pass', False) else '❌ FAIL'}</td></tr>
+                <tr><td>ROUGE-2</td><td>{accuracy_data.get('rouge2', 0):.4f}</td><td>{targets['rouge2']:.4f}</td><td>{'✅ PASS' if compliance.get('rouge2_pass', False) else '❌ FAIL'}</td></tr>
+                <tr><td>ROUGE-L</td><td>{accuracy_data.get('rougeL', 0):.4f}</td><td>{targets['rougeL']:.4f}</td><td>{'✅ PASS' if compliance.get('rougeL_pass', False) else '❌ FAIL'}</td></tr>
+                <tr><td>ROUGE-Lsum</td><td>{accuracy_data.get('rougeLsum', 0):.4f}</td><td>{targets['rougeLsum']:.4f}</td><td>{'✅ PASS' if compliance.get('rougeLsum_pass', False) else '❌ FAIL'}</td></tr>
+                <tr><td>Generated Length</td><td>{accuracy_data.get('generated_length', 0):,}</td><td>{targets['generated_length']:,} (90%)</td><td>{'✅ PASS' if compliance.get('generated_length_pass', False) else '❌ FAIL'}</td></tr>
+                <tr><td>Total Samples</td><td>{accuracy_data.get('samples_evaluated', 0):,}</td><td>{targets['total_samples']:,}</td><td>{'✅ COMPLETE' if accuracy_data.get('samples_evaluated', 0) == targets['total_samples'] else '⚠️ PARTIAL'}</td></tr>
+            </table>
         </div>
 """
         
@@ -378,10 +430,13 @@ def main():
     parser = argparse.ArgumentParser(description="MLPerf Report Generator")
     parser.add_argument("--input-dir", required=True, help="Input directory with benchmark results")
     parser.add_argument("--output-dir", required=True, help="Output directory for reports")
+    parser.add_argument("--mlcflow", action="store_true", help="Enable MLCFlow mode with official targets")
+    parser.add_argument("--official-mlperf", action="store_true", help="Use official MLPerf mode (alias for --mlcflow)")
     
     args = parser.parse_args()
     
-    generator = MLPerfReportGenerator(args.input_dir, args.output_dir)
+    mlcflow_mode = args.mlcflow or args.official_mlperf
+    generator = MLPerfReportGenerator(args.input_dir, args.output_dir, mlcflow_mode=mlcflow_mode)
     success = generator.generate_reports()
     
     return 0 if success else 1

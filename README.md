@@ -1,6 +1,24 @@
 # MLPerf LLaMA3.1-8B Benchmark (A30 Optimized)
 
-High-performance MLPerf inference benchmark optimized for NVIDIA A30 GPUs.
+High-performance MLPerf inference benchmark optimized for NVIDIA A30 GPUs with **official ROUGE scoring** and **MLCommons authentication**.
+
+## 🔐 Authentication Options
+
+### Option 1: Official MLPerf with ROUGE Scoring (Recommended)
+Requires MLCommons Datasets Working Group access for proper ROUGE-1, ROUGE-2, ROUGE-L scores.
+
+#### Setup Authentication:
+```bash
+./setup_mlcommons_auth.sh
+```
+
+#### Prerequisites:
+1. **Join MLCommons Datasets Working Group**: https://mlcommons.org/working-groups/data/datasets/
+2. **Use organizational email** (corporate/academic)
+3. **Fill subscription form** if access issues
+
+### Option 2: HuggingFace Fallback (No Auth Required)
+Uses synthetic dataset with word overlap scoring (not official ROUGE).
 
 ## Quick Start
 
@@ -9,23 +27,32 @@ High-performance MLPerf inference benchmark optimized for NVIDIA A30 GPUs.
 docker build -t mlperf-llama3-benchmark .
 ```
 
-### 2. Run
+### 2. Run with Official ROUGE Scoring
 ```bash
-# Fastest benchmark (performance-only, ~10-15 min)
+# ✅ Official MLPerf with ROUGE-1, ROUGE-2, ROUGE-L scores
+# First run opens browser for MLCommons authentication
+
+# Performance mode (~15-20 min)
 docker run --gpus all -v $(pwd)/.cache:/app/.cache \
     -e HF_TOKEN=your_huggingface_token \
     mlperf-llama3-benchmark performance
 
-# Fast complete benchmark (~20-30 min)  
-docker run --gpus all -v $(pwd)/.cache:/app/.cache \
-    -e HF_TOKEN=your_huggingface_token \
-    mlperf-llama3-benchmark offline
-
-# Full benchmark suite (~60-90 min)
+# Full benchmark (~60-90 min)
 docker run --gpus all -v $(pwd)/.cache:/app/.cache \
     -v $(pwd)/results:/app/results \
     -e HF_TOKEN=your_huggingface_token \
     mlperf-llama3-benchmark all-scenarios
+```
+
+### 3. Fallback Mode (No MLCommons Auth)
+```bash
+# ⚠️ Fallback: Word overlap scoring instead of ROUGE
+# Automatic fallback if MLCommons authentication fails
+
+docker run --gpus all -v $(pwd)/.cache:/app/.cache \
+    -v $(pwd)/results:/app/results \
+    -e HF_TOKEN=your_huggingface_token \
+    mlperf-llama3-benchmark offline
 ```
 
 ## Performance Optimizations
@@ -46,16 +73,29 @@ This container includes A30-specific optimizations:
 | **Subsequent Runs** | ~45-60 min | ~15-25 min | **65-70% faster** |
 | **Performance Mode** | ~25-30 min | ~10-15 min | **50-60% faster** |
 
+## 📊 Accuracy Scoring Comparison
+
+| Method | Dataset | Scoring | Official MLPerf | Use Case |
+|--------|---------|---------|-----------------|----------|
+| **Official MLPerf** | Real CNN-DailyMail (13,368 samples) | ROUGE-1, ROUGE-2, ROUGE-L | ✅ Yes | Submissions, research |
+| **HuggingFace Fallback** | Synthetic CNN-DailyMail-style | Word overlap | ❌ No | Development, testing |
+
+### Example Scores:
+- **Official ROUGE-1**: ~0.42-0.48 (typical MLPerf range)
+- **Official ROUGE-2**: ~0.19-0.24 (typical MLPerf range)  
+- **Official ROUGE-L**: ~0.29-0.35 (typical MLPerf range)
+- **Fallback Word Overlap**: ~0.46 (not comparable to ROUGE)
+
 ## Available Commands
 
-| Command | Description | Est. Time |
-|---------|-------------|-----------|
-| `performance` | Performance-only (no accuracy) | ~10-15 min |
-| `offline` | Offline scenario only | ~20-30 min |
-| `server` | Server scenario only | ~30-45 min |
-| `singlestream` | SingleStream scenario only | ~30-45 min |
-| `all-scenarios` | All MLPerf scenarios | ~60-90 min |
-| `help` | Show detailed help | - |
+| Command | Description | Est. Time | Accuracy Method |
+|---------|-------------|-----------|-----------------|
+| `performance` | Performance-only (no accuracy) | ~10-15 min | None |
+| `offline` | Offline scenario only | ~20-30 min | ROUGE (official) or word overlap (fallback) |
+| `server` | Server scenario only | ~30-45 min | ROUGE (official) or word overlap (fallback) |
+| `singlestream` | SingleStream scenario only | ~30-45 min | ROUGE (official) or word overlap (fallback) |
+| `all-scenarios` | All MLPerf scenarios | ~60-90 min | ROUGE (official) or word overlap (fallback) |
+| `help` | Show detailed help | - | - |
 
 ## Environment Variables
 

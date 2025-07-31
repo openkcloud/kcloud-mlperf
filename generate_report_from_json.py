@@ -19,11 +19,21 @@ def generate_report_from_json(json_file):
     with open(json_path, 'r') as f:
         results = json.load(f)
     
-    # Extract data with fallbacks
-    samples = results.get('samples', results.get('total_samples', 0))
-    throughput = results.get('throughput', results.get('throughput_samples_per_second', 0))
-    total_time = results.get('total_time', results.get('total_time_seconds', 0))
-    rouge_scores = results.get('rouge_scores', {})
+    # Extract data with fallbacks for MLPerf format
+    metadata = results.get('metadata', {})
+    performance = results.get('performance', {})
+    accuracy = results.get('accuracy', {})
+    
+    samples = metadata.get('samples', performance.get('samples_processed', results.get('samples', 0)))
+    throughput = performance.get('throughput_samples_per_second', results.get('throughput', 0))
+    total_time = performance.get('total_time_seconds', results.get('total_time', 0))
+    
+    # ROUGE scores from accuracy section
+    rouge_scores = {
+        'rouge-1': accuracy.get('rouge1', results.get('rouge_scores', {}).get('rouge-1', 0)),
+        'rouge-2': accuracy.get('rouge2', results.get('rouge_scores', {}).get('rouge-2', 0)),
+        'rouge-l': accuracy.get('rougeL', results.get('rouge_scores', {}).get('rouge-l', 0))
+    }
     
     # Calculate derived metrics
     baseline_throughput = 0.75

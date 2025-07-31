@@ -1,6 +1,10 @@
 # Optimized MLPerf LLaMA3.1-8B Benchmark Container for NVIDIA A30  
 FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
 
+# Ensure NVIDIA Container Runtime compatibility
+LABEL com.nvidia.containers.runtime.enabled="true"
+LABEL com.nvidia.volumes.needed="nvidia_driver"
+
 SHELL ["/bin/bash", "-c"]
 
 # Environment setup with A30 optimizations
@@ -15,7 +19,7 @@ ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 # A30-specific optimizations with compatible backends
 ENV VLLM_USE_TRITON_FLASH_ATTN=0
-ENV VLLM_ATTENTION_BACKEND=FLASH_ATTN
+ENV VLLM_ATTENTION_BACKEND=XFORMERS
 ENV CUDA_LAUNCH_BLOCKING=0
 ENV GPU_MAX_HW_QUEUES=8
 
@@ -34,11 +38,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install cloudflared to fix MLPerf authentication issues
+# Install cloudflared and MLCommons R2 downloader for proper authentication
 RUN curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
     && dpkg -i cloudflared.deb \
     && rm cloudflared.deb \
-    || echo "⚠️  cloudflared installation failed, will use HuggingFace fallback"
+    && echo "✅ cloudflared installed for MLCommons Cloudflare Access authentication"
+
+# Install MLCommons R2 downloader for dataset access
+RUN git clone --depth 1 https://github.com/mlcommons/r2-downloader.git /app/r2-downloader \
+    && chmod +x /app/r2-downloader/mlc-r2-downloader.sh \
+    && echo "✅ MLCommons R2 downloader installed"
 
 WORKDIR /app
 
@@ -51,10 +60,10 @@ RUN mkdir -p /app/results /app/data /app/logs /app/.cache \
 # Install optimized Python packages in order of dependency
 RUN pip3 install --upgrade pip setuptools wheel ninja
 
-# Skip FlashInfer to avoid compatibility issues - use XFormers instead
-RUN echo "⚠️  Skipping FlashInfer due to compatibility - using XFormers for optimization"
+# Skip Flash Attention to avoid compatibility issues - use XFormers instead
+RUN echo "⚠️  Skipping Flash Attention due to compatibility - using XFormers for optimization"
 
-# Install core ML packages with CUDA optimizations and compatible versions
+# Install core ML packages with CUDA optimizations (no flash-attn)
 RUN pip3 install --no-cache-dir \
     mlc-scripts \
     transformers[torch] \
@@ -65,7 +74,7 @@ RUN pip3 install --no-cache-dir \
     pandas \
     "numpy>=1.24.0,<1.27.0" \
     accelerate \
-    "flash-attn>=2.7.1,<=2.8.0" \
+    scipy \
     && pip3 install --no-cache-dir vllm[triton]
 
 # Install MLPerf loadgen (cached layer)
@@ -77,8 +86,12 @@ RUN git clone --depth 1 https://github.com/mlcommons/inference.git /tmp/inferenc
 
 # Copy scripts (these change frequently, so put them last)
 COPY entrypoint.sh /app/entrypoint.sh
-COPY benchmark_runner.py /app/benchmark_runner.py
+COPY benchmark_simplified.py /app/benchmark_simplified.py
+COPY benchmark_official_rouge.py /app/benchmark_official_rouge.py
 COPY report_generator.py /app/report_generator.py
+COPY generate_report_from_json.py /app/generate_report_from_json.py
+COPY run_submittable_benchmark.py /app/run_submittable_benchmark.py
+COPY setup_mlcommons_auth.sh /app/setup_mlcommons_auth.sh
 
 # Set executable permissions
 RUN chmod +x /app/entrypoint.sh
@@ -104,9 +117,9 @@ ENV BLOCK_SIZE="16"
 ENV MAX_NUM_BATCHED_TOKENS="8192"
 ENV MAX_NUM_SEQS="256"
 
-# Health check optimized for performance
+# Health check optimized for performance with GPU validation
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD python3 -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+  CMD python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print('✅ GPU Health Check Passed:', torch.cuda.get_device_name(0))" || nvidia-smi --query-gpu=name --format=csv,noheader
 
 # Expose results volume
 VOLUME ["/app/results", "/app/data", "/app/.cache"]
