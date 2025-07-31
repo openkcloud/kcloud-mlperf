@@ -22,12 +22,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class MLPerfBenchmarkRunner:
-    def __init__(self, model_name="llama3_1-8b", scenario="Offline", output_dir="/app/results", hf_token="", device="cuda"):
+    def __init__(self, model_name="llama3_1-8b", scenario="Offline", output_dir="/app/results", 
+                 hf_token="", device="cuda", gpu_memory_utilization=0.9, max_model_len=8192,
+                 tensor_parallel_size=1, max_num_batched_tokens=8192, max_num_seqs=256):
         self.model_name = model_name
         self.scenario = scenario
         self.output_dir = Path(output_dir)
         self.hf_token = hf_token
         self.device = device
+        self.gpu_memory_utilization = gpu_memory_utilization
+        self.max_model_len = max_model_len
+        self.tensor_parallel_size = tensor_parallel_size
+        self.max_num_batched_tokens = max_num_batched_tokens
+        self.max_num_seqs = max_num_seqs
         
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -103,14 +110,17 @@ class MLPerfBenchmarkRunner:
                 dataset = dataset[:samples]
                 logger.info(f"Using first {samples} samples")
             
-            # Initialize VLLM
-            logger.info("Initializing VLLM model...")
+            # Initialize VLLM with A30 optimizations
+            logger.info("Initializing VLLM model with A30 optimizations...")
             llm = LLM(
                 model="meta-llama/Llama-3.1-8B-Instruct",
                 dtype="float16",
-                tensor_parallel_size=1,
-                gpu_memory_utilization=0.9,
-                max_model_len=8192
+                tensor_parallel_size=self.tensor_parallel_size,
+                gpu_memory_utilization=self.gpu_memory_utilization,
+                max_model_len=self.max_model_len,
+                max_num_batched_tokens=self.max_num_batched_tokens,
+                max_num_seqs=self.max_num_seqs,
+                trust_remote_code=True
             )
             
             # Sampling parameters
@@ -246,6 +256,11 @@ def main():
     parser.add_argument("--hf-token", required=True, help="HuggingFace token")
     parser.add_argument("--device", default="cuda", help="Device (cuda/cpu)")
     parser.add_argument("--samples", type=int, help="Number of samples to process")
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.9, help="GPU memory utilization")
+    parser.add_argument("--max-model-len", type=int, default=8192, help="Max model length")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallel size")
+    parser.add_argument("--max-num-batched-tokens", type=int, default=8192, help="Max batched tokens")
+    parser.add_argument("--max-num-seqs", type=int, default=256, help="Max sequences")
     
     args = parser.parse_args()
     
@@ -254,7 +269,12 @@ def main():
         scenario=args.scenario,
         output_dir=args.output_dir,
         hf_token=args.hf_token,
-        device=args.device
+        device=args.device,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=args.max_model_len,
+        tensor_parallel_size=args.tensor_parallel_size,
+        max_num_batched_tokens=args.max_num_batched_tokens,
+        max_num_seqs=args.max_num_seqs
     )
     
     success = runner.run_complete_benchmark(args.samples)
