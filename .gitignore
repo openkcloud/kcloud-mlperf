@@ -40,10 +40,23 @@ ENV/
 env.bak/
 venv.bak/
 
-# Environment variables
+# Environment variables and credentials
 .env
 .env.local
+.env.production
+.env.development
+.env.test
 .env.*.local
+.git-credentials
+credentials.json
+secrets.json
+*_token.txt
+*_key.txt
+*.pem
+*.key
+*.p12
+*.crt
+auth.json
 
 # IDE files
 .vscode/
