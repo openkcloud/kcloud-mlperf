@@ -14,9 +14,10 @@ import time
 import logging
 from pathlib import Path
 from datetime import datetime
-from datasets import load_dataset
-from rouge_score import rouge_scorer
+from datasets import load_dataset  
 import numpy as np
+# Import our MLPerf Official Scorer
+from mlperf_official_scoring import evaluate_with_mlperf
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -129,27 +130,20 @@ def run_vllm_with_official_dataset(dataset, hf_token, output_dir):
         logger.info(f"⏱️  Total time: {total_inference_time:.1f} seconds ({total_inference_time/60:.1f} minutes)")
         logger.info(f"⚡ Throughput: {overall_throughput:.2f} samples/sec")
         
-        # Process results and calculate ROUGE scores
-        logger.info("📊 Calculating official ROUGE scores...")
+        # Process results and extract predictions/references
+        logger.info("📊 Processing results for MLPerf Official ROUGE scoring...")
         
-        # Initialize ROUGE scorer
-        scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-        
+        predictions = []
+        references = []
         results = []
-        rouge1_scores = []
-        rouge2_scores = []
-        rougeL_scores = []
         total_generated_tokens = 0
         
         for i, (prompt, output, original) in enumerate(zip(prompts, outputs, dataset)):
             generated_text = output.outputs[0].text.strip()
             reference_text = original["highlights"]
             
-            # Calculate ROUGE scores
-            rouge_scores = scorer.score(reference_text, generated_text)
-            rouge1_scores.append(rouge_scores['rouge1'].fmeasure)
-            rouge2_scores.append(rouge_scores['rouge2'].fmeasure)
-            rougeL_scores.append(rouge_scores['rougeL'].fmeasure)
+            predictions.append(generated_text)
+            references.append(reference_text)
             
             # Token counting
             generated_tokens = len(output.outputs[0].token_ids) if output.outputs[0].token_ids else 0
@@ -160,42 +154,45 @@ def run_vllm_with_official_dataset(dataset, hf_token, output_dir):
                 "prompt": prompt,
                 "generated": generated_text,
                 "reference": reference_text,
-                "rouge1": rouge_scores['rouge1'].fmeasure,
-                "rouge2": rouge_scores['rouge2'].fmeasure,
-                "rougeL": rouge_scores['rougeL'].fmeasure,
                 "generated_tokens": generated_tokens
             })
             
             if (i + 1) % 1000 == 0:
                 logger.info(f"Processed {i + 1}/{len(dataset)} results")
         
-        # Calculate final ROUGE scores
-        avg_rouge1 = np.mean(rouge1_scores) * 100  # Convert to percentage
-        avg_rouge2 = np.mean(rouge2_scores) * 100
-        avg_rougeL = np.mean(rougeL_scores) * 100
+        # Calculate ROUGE scores using MLPerf Official methodology
+        logger.info("🎯 Using MLPerf Official ROUGE Scoring...")
+        mlperf_results = evaluate_with_mlperf(predictions, references, "meta-llama/Llama-3.1-8B-Instruct")
         
-        logger.info("🎯 Official ROUGE Scores:")
+        # Extract scores from MLPerf results
+        rouge_scores = mlperf_results["accuracy"]
+        avg_rouge1 = rouge_scores.get("rouge1", 0)
+        avg_rouge2 = rouge_scores.get("rouge2", 0)
+        avg_rougeL = rouge_scores.get("rougeL", 0)
+        avg_rougeLsum = rouge_scores.get("rougeLsum", 0)
+        
+        logger.info("🎯 MLPerf Official Comprehensive Scores:")
         logger.info(f"   • ROUGE-1: {avg_rouge1:.4f}")
         logger.info(f"   • ROUGE-2: {avg_rouge2:.4f}")  
         logger.info(f"   • ROUGE-L: {avg_rougeL:.4f}")
+        logger.info(f"   • ROUGE-Lsum: {avg_rougeLsum:.4f}")
+        logger.info(f"   • Ref ROUGE-L: {rouge_scores.get('ref_rougeL', 0):.4f}")
+        logger.info(f"   • QA Exact Match: {rouge_scores.get('qa_exact_match', 0):.4f}%")
+        logger.info(f"   • NIAH Exact Match: {rouge_scores.get('niah_exact_match', 0):.4f}%")
+        logger.info(f"   • Generation Length: {rouge_scores.get('gen_len', 0):,}")
+        logger.info(f"   • Generation Count: {rouge_scores.get('gen_num', 0):,}")
         
-        # MLPerf compliance check
-        mlperf_targets = {
-            "rouge1": 38.7792,  # 99% target
-            "rouge2": 15.9075,  # 99% target
-            "rougeL": 24.4957,  # 99% target
-        }
+        # Get MLPerf compliance from official evaluation
+        compliance = mlperf_results["mlperf_compliance"]
         
-        compliance_status = {
-            "rouge1": "✅ PASS" if avg_rouge1 >= mlperf_targets["rouge1"] else "❌ FAIL",
-            "rouge2": "✅ PASS" if avg_rouge2 >= mlperf_targets["rouge2"] else "❌ FAIL", 
-            "rougeL": "✅ PASS" if avg_rougeL >= mlperf_targets["rougeL"] else "❌ FAIL"
-        }
-        
-        logger.info("📊 MLPerf Compliance:")
-        logger.info(f"   • ROUGE-1: {compliance_status['rouge1']} ({avg_rouge1:.4f} vs {mlperf_targets['rouge1']})")
-        logger.info(f"   • ROUGE-2: {compliance_status['rouge2']} ({avg_rouge2:.4f} vs {mlperf_targets['rouge2']})")
-        logger.info(f"   • ROUGE-L: {compliance_status['rougeL']} ({avg_rougeL:.4f} vs {mlperf_targets['rougeL']})")
+        logger.info("📊 MLPerf Official Compliance:")
+        for metric in ["rouge1", "rouge2", "rougeL", "rougeLsum"]:
+            if f"{metric}_pass" in compliance:
+                target = compliance[f"{metric}_target"]
+                achieved = compliance[f"{metric}_achieved"]
+                passed = compliance[f"{metric}_pass"]
+                status = "✅ PASS" if passed else "❌ FAIL"
+                logger.info(f"   • {metric.upper()}: {status} ({achieved:.4f} vs {target:.4f})")
         
         # Create MLPerf-compliant results
         benchmark_results = {
@@ -224,16 +221,16 @@ def run_vllm_with_official_dataset(dataset, hf_token, output_dir):
                 "rouge1": avg_rouge1,
                 "rouge2": avg_rouge2,
                 "rougeL": avg_rougeL,
-                "evaluation_method": "Official ROUGE Scorer",
+                "rougeLsum": avg_rougeLsum,
+                "ref_rougeL": rouge_scores.get("ref_rougeL", 0),
+                "qa_exact_match": rouge_scores.get("qa_exact_match", 0),
+                "niah_exact_match": rouge_scores.get("niah_exact_match", 0),
+                "gen_len": rouge_scores.get("gen_len", 0),
+                "gen_num": rouge_scores.get("gen_num", 0),
+                "evaluation_method": "MLPerf Official Comprehensive Scorer",
                 "samples_evaluated": len(results),
-                "mlperf_compliance": {
-                    "rouge1_target": mlperf_targets["rouge1"],
-                    "rouge2_target": mlperf_targets["rouge2"], 
-                    "rougeL_target": mlperf_targets["rougeL"],
-                    "rouge1_pass": avg_rouge1 >= mlperf_targets["rouge1"],
-                    "rouge2_pass": avg_rouge2 >= mlperf_targets["rouge2"],
-                    "rougeL_pass": avg_rougeL >= mlperf_targets["rougeL"]
-                }
+                "metrics_included": mlperf_results.get("metrics_included", []),
+                "mlperf_compliance": compliance
             },
             "hardware_configuration": {
                 "gpu_name": gpu_name,
@@ -271,15 +268,17 @@ def run_vllm_with_official_dataset(dataset, hf_token, output_dir):
         logger.info(f"   • GPU: {gpu_name} ({gpu_memory_gb}GB)")
         logger.info(f"   • Samples: {len(results):,}")
         logger.info(f"")
-        logger.info(f"🎯 OFFICIAL ROUGE SCORES:")
-        logger.info(f"   • ROUGE-1: {avg_rouge1:.4f} {compliance_status['rouge1']}")
-        logger.info(f"   • ROUGE-2: {avg_rouge2:.4f} {compliance_status['rouge2']}")
-        logger.info(f"   • ROUGE-L: {avg_rougeL:.4f} {compliance_status['rougeL']}")
+        logger.info(f"🎯 MLPerf OFFICIAL COMPREHENSIVE SCORES:")
+        logger.info(f"   • ROUGE-1: {avg_rouge1:.4f}")
+        logger.info(f"   • ROUGE-2: {avg_rouge2:.4f}")
+        logger.info(f"   • ROUGE-L: {avg_rougeL:.4f}")
+        logger.info(f"   • ROUGE-Lsum: {avg_rougeLsum:.4f}")
+        logger.info(f"   • Ref ROUGE-L: {rouge_scores.get('ref_rougeL', 0):.4f}")
+        logger.info(f"   • QA Exact Match: {rouge_scores.get('qa_exact_match', 0):.4f}%")
+        logger.info(f"   • NIAH Exact Match: {rouge_scores.get('niah_exact_match', 0):.4f}%")
         logger.info(f"")
         logger.info(f"📋 SUBMISSION STATUS:")
-        all_pass = all([avg_rouge1 >= mlperf_targets["rouge1"], 
-                       avg_rouge2 >= mlperf_targets["rouge2"],
-                       avg_rougeL >= mlperf_targets["rougeL"]])
+        all_pass = compliance.get("all_targets_met", False)
         if all_pass:
             logger.info("✅ READY FOR MLPerf SUBMISSION!")
         else:
