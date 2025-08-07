@@ -137,11 +137,11 @@ class MLPerfScorer:
         )
         
         # Convert to percentage and round to 4 decimal places - EXACT MLPerf format
-        rouge_scores = {k: round(np.mean(v) * 100, 4) for k, v in result.items()}
+        rouge_scores = {k: round(float(np.mean(v)) * 100, 4) for k, v in result.items()}
         
         # Calculate generation metrics
         prediction_lens = [len(pred) for pred in preds]
-        rouge_scores["gen_len"] = np.sum(prediction_lens)
+        rouge_scores["gen_len"] = int(np.sum(prediction_lens))
         rouge_scores["gen_num"] = len(preds)
         
         # Additional ref_eval.py metrics for comprehensive evaluation
@@ -152,7 +152,7 @@ class MLPerfScorer:
                 ref_score = self.rouge_ref_eval(ref, pred)
                 ref_rouge_scores.append(ref_score['rougeL'])
             
-            rouge_scores["ref_rougeL"] = round(np.mean(ref_rouge_scores), 4)
+            rouge_scores["ref_rougeL"] = round(float(np.mean(ref_rouge_scores)), 4)
         
         # Calculate exact match metrics for QA-style evaluation
         qa_em_scores = []
@@ -167,8 +167,8 @@ class MLPerfScorer:
             niah_score = self.niah_em(ref, pred)
             niah_em_scores.append(niah_score['exact_match'])
         
-        rouge_scores["qa_exact_match"] = round(np.mean(qa_em_scores), 4)
-        rouge_scores["niah_exact_match"] = round(np.mean(niah_em_scores), 4)
+        rouge_scores["qa_exact_match"] = round(float(np.mean(qa_em_scores)), 4)
+        rouge_scores["niah_exact_match"] = round(float(np.mean(niah_em_scores)), 4)
         
         return rouge_scores
 

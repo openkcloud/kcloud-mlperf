@@ -12,6 +12,7 @@ import sys
 import json
 import time
 import logging
+import argparse
 from pathlib import Path
 from datetime import datetime
 from datasets import load_dataset  
@@ -292,30 +293,68 @@ def run_vllm_with_official_dataset(dataset, hf_token, output_dir):
         traceback.print_exc()
         return None
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description="MLPerf LLaMA3.1-8B Official ROUGE Benchmark")
+    
+    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.1-8B-Instruct",
+                       help="Model name or path")
+    parser.add_argument("--dataset", type=str, default=None,
+                       help="Path to local dataset JSON file")
+    parser.add_argument("--scenario", type=str, default="Offline", 
+                       choices=["Offline", "Server"], help="MLPerf scenario")
+    parser.add_argument("--output-dir", type=str, default=None,
+                       help="Output directory for results")
+    parser.add_argument("--hf-token", type=str, default=None,
+                       help="HuggingFace token")
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.95,
+                       help="GPU memory utilization factor")
+    parser.add_argument("--max-model-len", type=int, default=8192,
+                       help="Maximum model length")
+    parser.add_argument("--max-num-batched-tokens", type=int, default=8192,
+                       help="Maximum number of batched tokens")
+    parser.add_argument("--max-num-seqs", type=int, default=256,
+                       help="Maximum number of sequences")
+    parser.add_argument("--measure-performance", action="store_true",
+                       help="Measure performance metrics")
+    parser.add_argument("--measure-accuracy", action="store_true",
+                       help="Measure accuracy metrics")
+    
+    return parser.parse_args()
+
 def main():
     """Main execution"""
+    args = parse_arguments()
+    
     logger.info("🎯 MLPerf LLaMA3.1-8B Official ROUGE Benchmark")
     logger.info("=" * 50)
     
-    # Get HF token
-    hf_token = os.getenv('HF_TOKEN')
+    # Get HF token from args or environment
+    hf_token = args.hf_token or os.getenv('HF_TOKEN')
     if not hf_token:
-        logger.error("❌ HF_TOKEN environment variable required")
+        logger.error("❌ HF_TOKEN required (via --hf-token or environment)")
         return False
     
-    # Create output directory
-    output_dir = Path("/app/results") if Path("/app").exists() else Path("./results")
+    # Set output directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = Path("/app/results") if Path("/app").exists() else Path("./results")
     output_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        # Download official dataset
-        dataset = download_official_cnndm_dataset()
-        if not dataset:
-            logger.error("❌ Failed to get official dataset")
-            return False
-        
-        # Use subset for testing (uncomment for full run)
-        # dataset = dataset[:1000]  # Comment out for full 13,368 samples
+        # Load dataset
+        if args.dataset and Path(args.dataset).exists():
+            logger.info(f"📊 Loading local dataset: {args.dataset}")
+            with open(args.dataset, 'r') as f:
+                dataset = json.load(f)
+        else:
+            # Download official dataset
+            logger.info("📊 Downloading official CNN-DailyMail dataset...")
+            dataset = download_official_cnndm_dataset()
+            if not dataset:
+                logger.error("❌ Failed to get official dataset")
+                return False
         
         logger.info(f"📊 Using {len(dataset)} samples for evaluation")
         
