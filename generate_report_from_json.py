@@ -40,6 +40,9 @@ def generate_report_from_json(json_file):
     speedup_factor = throughput / baseline_throughput if throughput > 0 else 0
     time_saved = (samples / baseline_throughput) - total_time if samples > 0 and total_time > 0 else 0
     
+    # Guard division by zero
+    safe_throughput = throughput if throughput and throughput > 0 else 1e-9
+
     html_content = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -129,10 +132,10 @@ def generate_report_from_json(json_file):
                 <h3>🔮 Full Dataset Projection</h3>
                 <p>Based on this {samples}-sample benchmark:</p>
                 <div style="background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 10px 0;">
-                    <p><strong>Full Dataset (11,490 samples) Estimates:</strong></p>
-                    <p>• <strong>Time Required:</strong> {11490/throughput/60:.0f} minutes ({11490/throughput:.0f} seconds)</p>
+                        <p><strong>Full Dataset (11,490 samples) Estimates:</strong></p>
+                    <p>• <strong>Time Required:</strong> {11490/safe_throughput/60:.0f} minutes ({11490/safe_throughput:.0f} seconds)</p>
                     <p>• <strong>Baseline Time:</strong> {11490/baseline_throughput/60:.0f} minutes</p>
-                    <p>• <strong>Time Savings:</strong> <span class="success">{(11490/baseline_throughput - 11490/throughput)/60:.0f} minutes saved</span></p>
+                    <p>• <strong>Time Savings:</strong> <span class="success">{(11490/baseline_throughput - 11490/safe_throughput)/60:.0f} minutes saved</span></p>
                 </div>
             </div>
             

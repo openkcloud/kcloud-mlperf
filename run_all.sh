@@ -16,7 +16,8 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_BASE_DIR="results"
 REPORTS_DIR="reports_${TIMESTAMP}"
 DOCKER_IMAGE="mlperf-llama3"
-HF_TOKEN="${HF_TOKEN:-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}"
+# Require HF_TOKEN to be provided via environment; do not set defaults here
+HF_TOKEN="${HF_TOKEN:?HF_TOKEN environment variable is required}"
 
 # Ensure directories exist
 mkdir -p "$RESULTS_BASE_DIR"

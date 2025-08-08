@@ -1,0 +1,16 @@
+# Applies when editing Python evaluation/reporting/benchmark scripts
+
+## Style
+- Prefer explicit, readable code; use early returns and guard clauses.
+- Add type hints for public functions where practical.
+- Avoid broad `except`; raise specific errors.
+
+## Patterns
+- Separate data loading, inference, scoring, and reporting into functions.
+- Use small helpers for JSON I/O with numpy-safe serialization.
+- Keep CLI args explicit; validate required args; do not embed secrets.
+
+## Testing
+- For non-ML paths, add quick unit-style checks or dry-run flags.
+- When feasible, gate heavy runs with small-sample options.
+

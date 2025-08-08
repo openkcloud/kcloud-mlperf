@@ -1,0 +1,49 @@
+# Rule Type: Always
+
+## Project: MLPerf LLaMA3.1-8B Benchmark (A30-optimized)
+
+- Purpose: Run MLPerf-style inference benchmarks and generate reports for LLaMA 3.1-8B with A30-focused optimizations.
+- Stack: Python, vLLM, Docker, Bash, MLPerf loadgen; reports in HTML/JSON.
+- Key entrypoints: `Dockerfile`, `entrypoint.sh`, `entrypoint_with_local.sh`, `run_all.sh`, `run_all_scenarios.sh`, `generate_report.sh`, Python scripts in root and `llm_eval/`.
+
+## Context discipline (Cursor usage)
+- Keep each chat focused on a single goal; start a new thread after a logical milestone.
+- Batch actions that share context; prefer doing multiple related edits/tests in one go.
+- Prefer reading specific files over broad scans; avoid pulling large artifacts.
+- After code edits, run the relevant script/validation path; report failures precisely.
+
+## Token hygiene
+- Exclude bulky outputs from context (see `.cursorignore`). Do not load `results/`, `.cache/`, or large JSON/HTML unless directly analyzing a specific file.
+- Summarize results rather than inlining full artifacts.
+
+## Repository guardrails
+- Do NOT commit secrets. Never set defaults for `HF_TOKEN` in code or scripts.
+- Respect existing script interfaces; modify minimally and locally.
+- Prefer adding new rule-specific files over expanding monolithic ones.
+
+## Code & scripting style
+- Python: explicit, readable, typed where practical; early returns; guard clauses; no broad `except`.
+- Shell: `set -e` for failing fast, functions for stages, clear logs, environment checks, non-interactive flags.
+- Docker: keep base stable, avoid heavyweight rebuilds; pin critical tools.
+
+## Frequent tasks (AI should follow these shapes)
+- Benchmark run: build image → run benchmark (mode) → collect JSON → generate HTML report.
+- Report: given a JSON, produce HTML + concise Markdown summary under a timestamped `reports_*` dir.
+- Validation: lightweight schema checks for produced JSON; log pass/fail.
+
+## Activation hints for context rules
+- When editing Docker build or GPU/runtime settings: load `rules/docker.mdc`.
+- When working on Python reporting/evaluation: load `rules/python.mdc` and `rules/reporting.mdc`.
+- When orchestrating end-to-end runs or CI-like flows: load `rules/benchmarks.mdc`.
+- When touching shell scripts: load `rules/shell.mdc`.
+- For MMLU scripts in `llm_eval/`: load `rules/mmlu.mdc`.
+
+## Safety & QA
+- After edits, prefer running `make test` or the narrowest script validation.
+- If a long-running command is needed, provide it with non-interactive flags and clear expectations.
+- Propose rollbacks only if the change touches more than one subsystem.
+
+## Prompts to prefer
+- "Plan then act": Propose a minimal plan (files, commands), then execute edits and run validations in the same turn.
+- "Do more in one go": If the context matches, group compatible edits and one validation run.
+

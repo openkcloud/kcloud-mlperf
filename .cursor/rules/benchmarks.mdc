@@ -1,0 +1,20 @@
+# Applies when orchestrating benchmark runs, end-to-end flows, or CI-like validations
+
+## Plan
+- Identify target: `all-scenarios`, `offline`, `performance`, `accuracy`, or local ROUGE pipeline.
+- Use `run_all.sh` for full pipeline, or `entrypoint_with_local.sh` for local dataset ROUGE.
+- Ensure `HF_TOKEN` is supplied via env; never set defaults in code.
+
+## Execute
+- Prefer: build → run → validate → report.
+- Mount volumes: `results/`, `.cache/`, and `reports_*` where applicable.
+- After run, surface key metrics (throughput, samples processed, ROUGE) concisely; link artifacts instead of inlining.
+
+## Validate
+- If JSON exists, run schema checks (where available) and stop on failure.
+- If reports fail, keep benchmark results and log next steps.
+
+## Output discipline
+- Create timestamped directories for reports.
+- Avoid loading large JSON/HTML contents into context. Summarize.
+

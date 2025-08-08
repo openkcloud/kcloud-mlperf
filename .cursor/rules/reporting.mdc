@@ -1,0 +1,13 @@
+# Applies when generating reports from JSON results
+
+## Inputs
+- Accept one or more JSON inputs; validate presence and format.
+- Avoid reading all results into the chat context; compute metrics and summarize.
+
+## Outputs
+- HTML report and concise Markdown summary under `reports_YYYYMMDD_HHMMSS/`.
+- Include: samples processed, throughput, ROUGE metrics (if available), runtime.
+
+## UX
+- Name files consistently; log paths; keep summaries short.
+

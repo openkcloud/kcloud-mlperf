@@ -1,0 +1,14 @@
+# Applies when editing Docker image or build logic
+
+## Principles
+- Keep base image stable; pin critical tools.
+- Avoid unnecessary rebuilds by ordering COPY/RUN layers carefully.
+- Do not store credentials in image layers; use envs/volumes.
+
+## GPU Runtime
+- Ensure NVIDIA runtime labels remain intact.
+- Healthcheck should be fast and reliable; prefer torch + nvidia-smi fallback.
+
+## Caching & Volumes
+- Pre-create cache dirs; mount `/app/.cache` and `/app/results` at runtime.
+
