@@ -1,101 +1,161 @@
 #!/usr/bin/env bash
-# /usr/local/bin/mlbench
-set -Eeuo pipefail
+set -euo pipefail
 
-SUBCMD="${1:-}"; shift || true
-RUN_ID="${RUN_ID:-${1:-}}"; [[ "${RUN_ID:-}" == "--run-id" ]] && { shift; RUN_ID="${1:-}"; shift || true; }
-RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
+usage() {
+  cat <<'USAGE'
+mlbench <command> [options]
 
-RESULTS_DIR="/app/results/${RUN_ID}"
-CACHE_DIR="/app/.cache"
-mkdir -p "$RESULTS_DIR" "$CACHE_DIR"
+Commands:
+  run            Run a benchmark or a smoke test.
+  help           Show this help.
 
-# Cache dirs
-export HF_HOME="$CACHE_DIR/huggingface"
-export HUGGINGFACE_HUB_CACHE="$CACHE_DIR/huggingface"
-export TRANSFORMERS_CACHE="$CACHE_DIR/huggingface"
-export HF_DATASETS_CACHE="$CACHE_DIR/huggingface/datasets"
+Run options:
+  --host-model <path>   Path (inside container) to the model dir (required)
+  --run-id <id>         Run ID (optional; default: timestamp)
+  [-- ...]              Extra args passed through to a custom script if found
 
-# 👉 Tell mlcr which python to use (avoid interactive prompt)
-export CM_PYTHON_BIN_WITH_PATH=/opt/conda/bin/python3
-export CM_PYTHON_BIN=/opt/conda/bin/python3
-export CM_PYTHON=/opt/conda/bin/python3
+Behavior:
+- If /app/scripts/run_benchmark.sh exists, mlbench will exec it with
+  --host-model and --run-id (plus any extra args).
+- Otherwise it performs a quick GPU-only smoke test: loads the model and
+  generates a short response, writing outputs under /app/results/<RUN_ID>.
 
-log(){ echo "[mlbench][$SUBCMD] $*"; }
+Notes:
+- A CUDA-capable GPU must be available for the smoke test or most benchmarks.
+USAGE
+}
 
-case "$SUBCMD" in
-  mlperf)
-    log "RUN_ID=${RUN_ID}"
-    log "Starting MLPerf accuracy (Llama 3.1 8B → CNNDM datacenter spec)"
+have_gpu() {
+  python3 - <<'PY'
+import sys
+try:
+    import torch
+    sys.exit(0 if torch.cuda.is_available() else 2)
+except Exception:
+    sys.exit(3)
+PY
+}
 
-    # 👉 Feed newlines so any mlcr prompt auto-selects default
-    set -x
-    yes "" | mlcr run,accuracy,mlperf,_cnndm_llama_3,_datacenter \
-      --model=llama3_1-8b \
-      --implementation=reference \
-      --framework=vllm \
-      --precision=float16 \
-      --device=cuda \
-      --gpu_memory_utilization=0.95 \
-      --max_model_len=8192 \
-      --max_num_batched_tokens=8192 \
-      --max_num_seqs=256 \
-      | tee "${RESULTS_DIR}/mlperf_accuracy.log"
-    set +x
+ensure_pkg() {
+  local mod="$1"; shift
+  local pip_pkg="${1:-$mod}"
+  python3 - <<PY || pip3 install --no-cache-dir "$pip_pkg"
+import importlib, sys
+sys.exit(0 if importlib.util.find_spec("$mod") else 1)
+PY
+}
 
-    log "MLPerf accuracy finished. Log → ${RESULTS_DIR}/mlperf_accuracy.log"
+cmd="${1:-help}"
+case "$cmd" in
+  help|-h|--help)
+    usage
     ;;
 
-  mmlu)
-    SHOTS="${SHOTS:-5}"
-    log "RUN_ID=${RUN_ID}  SHOTS=${SHOTS}"
-    log "Running MMLU with lm-eval (hf-causal, fp16)"
+  run)
+    shift
+    HOST_MODEL=""
+    RUN_ID="$(date +%Y%m%d-%H%M%S)"
+    EXTRA_ARGS=()
 
-    OUT_DIR="${RESULTS_DIR}/mmlu"
-    mkdir -p "$OUT_DIR"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --host-model) HOST_MODEL="${2:-}"; shift 2 ;;
+        --run-id)     RUN_ID="${2:-}"; shift 2 ;;
+        --)           shift; EXTRA_ARGS+=("$@"); break ;;
+        *)            EXTRA_ARGS+=("$1"); shift ;;
+      esac
+    done
 
-    set -x
-    lm_eval \
-      --model hf-causal \
-      --model_args "pretrained=meta-llama/Llama-3.1-8B-Instruct,revision=main,dtype=float16,device_map=auto,trust_remote_code=true" \
-      --tasks "hendrycksTest-*" \
-      --num_fewshot "${SHOTS}" \
-      --batch_size auto \
-      --output_path "${OUT_DIR}" \
-      | tee "${OUT_DIR}/mmlu.log"
-    set +x
-
-    log "MMLU finished. Outputs → ${OUT_DIR}"
-    ;;
-
-  report)
-    log "RUN_ID=${RUN_ID}"
-    if [[ -f /app/report_generator.py ]]; then
-      python /app/report_generator.py --run-id "${RUN_ID}" --results-root /app/results | tee "${RESULTS_DIR}/report.log"
-    elif [[ -f /app/generate_report_from_json.py ]]; then
-      python /app/generate_report_from_json.py --run-id "${RUN_ID}" --results-root /app/results | tee "${RESULTS_DIR}/report.log"
-    else
-      log "No report script found. Skipping."
-      exit 2
+    if [[ -z "${HOST_MODEL}" ]]; then
+      echo "[ERROR] --host-model is required." >&2
+      usage
+      exit 1
     fi
-    log "Report done. See ${RESULTS_DIR}"
-    ;;
+    if [[ ! -d "${HOST_MODEL}" ]]; then
+      echo "[ERROR] Model directory not found: ${HOST_MODEL}" >&2
+      exit 1
+    fi
 
-  ""|-h|--help|help)
-    cat <<EOF
-Usage:
-  mlbench mlperf [--run-id RUN_ID]
-  mlbench mmlu   [--run-id RUN_ID]
-  mlbench report [--run-id RUN_ID]
+    RESULTS_ROOT="/app/results"
+    OUTDIR="${RESULTS_ROOT}/${RUN_ID}"
+    mkdir -p "${OUTDIR}"
 
-Env:
-  RUN_ID  ID to namespace outputs (default: timestamp)
-  SHOTS   few-shot k for MMLU (default: 5)
-EOF
+    # GPU check
+    if ! have_gpu; then
+      echo "[ERROR] No CUDA GPU visible in the container." >&2
+      echo "        Install NVIDIA drivers + NVIDIA Container Toolkit, and run with '--gpus all'." >&2
+      echo "        Docs: https://docs.nvidia.com/datacenter/cloud-native/" >&2
+      exit 1
+    fi
+
+    # If a project-specific benchmark script exists, use it.
+    if [[ -x "/app/scripts/run_benchmark.sh" ]]; then
+      echo "[INFO] Using custom benchmark: /app/scripts/run_benchmark.sh"
+      exec /app/scripts/run_benchmark.sh \
+        --host-model "${HOST_MODEL}" \
+        --run-id "${RUN_ID}" \
+        "${EXTRA_ARGS[@]}"
+    fi
+
+    echo "[INFO] No custom benchmark found; running GPU smoke test."
+    echo "[INFO] Output dir: ${OUTDIR}"
+
+    # Make sure commonly needed bits are present
+    ensure_pkg "accelerate" "accelerate>=0.31.0" >/dev/null
+    ensure_pkg "transformers" >/dev/null
+
+    # MAX_TOKENS env (defaults to 64 if unset)
+    : "${MAX_TOKENS:=64}"
+
+    # Simple generation smoke test (GPU)
+    HMODEL="${HOST_MODEL}" OUTDIR="${OUTDIR}" MTOKENS="${MAX_TOKENS}" RUN_ID="${RUN_ID}" \
+    python3 - <<'PY'
+import os, json, time
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+model_dir = os.environ["HMODEL"]
+outdir = os.environ["OUTDIR"]
+max_new = int(os.environ.get("MTOKENS","64"))
+os.makedirs(outdir, exist_ok=True)
+
+print(f"[INFO] Loading model from: {model_dir}")
+tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=True)
+model = AutoModelForCausalLM.from_pretrained(
+    model_dir,
+    torch_dtype=torch.float16,
+).to("cuda")
+
+prompt = "You are a helpful assistant. Say hello in one short sentence."
+inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+with torch.no_grad():
+    out = model.generate(**inputs, max_new_tokens=max_new, do_sample=False)
+
+text = tokenizer.decode(out[0], skip_special_tokens=True)
+
+with open(os.path.join(outdir, "smoke_output.txt"), "w", encoding="utf-8") as f:
+    f.write(text)
+
+meta = {
+    "run_id": os.environ.get("RUN_ID"),
+    "model_dir": model_dir,
+    "max_new_tokens": max_new,
+    "timestamp": time.time(),
+    "device": "cuda",
+}
+with open(os.path.join(outdir, "metadata.json"), "w", encoding="utf-8") as f:
+    json.dump(meta, f, indent=2)
+
+print("[OK] Smoke test complete.")
+print(f"[OK]   -> {os.path.join(outdir, 'smoke_output.txt')}")
+print(f"[OK]   -> {os.path.join(outdir, 'metadata.json')}")
+PY
     ;;
 
   *)
-    echo "[ERROR] Unknown subcommand: ${SUBCMD}" >&2
-    exit 2
+    echo "[ERROR] Unknown subcommand: ${cmd}" >&2
+    usage
+    exit 1
     ;;
 esac

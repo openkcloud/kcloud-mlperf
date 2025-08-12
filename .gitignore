@@ -89,3 +89,25 @@ tmp/
 temp/
 *.tmp
 *.temp
+
+# HF and model caches
+.hf_cache/
+.cache/
+
+# Generated results and reports
+results/
+reports_*/
+
+# Large model artifacts (safetensors/weights)
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+*.tar
+*.gz
+*.zip
+
+# Inference repo generated artifacts
+inference-master/**/data/
+inference-master/**/output-logs/
+inference-master/**/__pycache__/
