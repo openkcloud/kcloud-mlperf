@@ -15,6 +15,11 @@ RUN pip3 install --upgrade pip setuptools wheel && \
       nltk \
       evaluate \
       pandas \
+      simplejson \
+      accelerate \
+      scipy \
+      numexpr \
+      vllm[triton] \
       "numpy>=1.24.0,<2"
 
 # MMLU evaluation harness + HF hub CLI
