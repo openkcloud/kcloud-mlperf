@@ -182,6 +182,7 @@ generate_report_for_dir(){
 if [[ "${RUN_PERF_SERVER}" == "1" ]]; then
   out_srv_perf="${MLPERF_DIR}/server_performance"
   run_ref Server performance "${out_srv_perf}"
+  python3 scripts/mlperf_postprocess.py --outdir "${out_srv_perf}" --app-dir "${APP_DIR}" --dataset "${DATASET_PATH}" --mode performance |& tee -a "${out_srv_perf}/post.log" || true
   generate_report_for_dir "${out_srv_perf}"
 fi
 
@@ -189,6 +190,7 @@ fi
 if [[ "${RUN_ACC_SERVER}" == "1" ]]; then
   out_srv_acc="${MLPERF_DIR}/server_accuracy"
   run_ref Server accuracy "${out_srv_acc}"
+  python3 scripts/mlperf_postprocess.py --outdir "${out_srv_acc}" --app-dir "${APP_DIR}" --dataset "${DATASET_PATH}" --mode accuracy |& tee -a "${out_srv_acc}/post.log" || true
   generate_report_for_dir "${out_srv_acc}"
 fi
 
@@ -196,6 +198,7 @@ fi
 if [[ "${RUN_PERF_OFFLINE}" == "1" ]]; then
   out_off_perf="${MLPERF_DIR}/offline_performance"
   run_ref Offline performance "${out_off_perf}"
+  python3 scripts/mlperf_postprocess.py --outdir "${out_off_perf}" --app-dir "${APP_DIR}" --mode performance |& tee -a "${out_off_perf}/post.log" || true
   generate_report_for_dir "${out_off_perf}"
 fi
 
@@ -203,6 +206,7 @@ fi
 if [[ "${RUN_ACC_OFFLINE}" == "1" ]]; then
   out_off_acc="${MLPERF_DIR}/offline_accuracy"
   run_ref Offline accuracy "${out_off_acc}"
+  python3 scripts/mlperf_postprocess.py --outdir "${out_off_acc}" --app-dir "${APP_DIR}" --dataset "${DATASET_PATH}" --mode accuracy |& tee -a "${out_off_acc}/post.log" || true
   generate_report_for_dir "${out_off_acc}"
 fi
 
@@ -227,6 +231,22 @@ if [[ "${RUN_MMLU_SMOKE}" == "1" ]]; then
   if [[ -n "${mmlu_json}" ]]; then
     python3 generate_report_from_json.py "${mmlu_json}" |& tee -a "${MMLU_DIR}/report.log" || true
   fi
+  # Aggregate simple rollup for the entire run
+  rollup_dir="${RESULTS_DIR}/rollup"; mkdir -p "${rollup_dir}"
+  python3 - <<'PY'
+import json,glob,os,sys
+res_dir=os.environ.get('RESULTS_DIR','results')
+items=[]
+for p in glob.glob(os.path.join(res_dir,'**','summary.json'),recursive=True):
+    try:
+        with open(p,'r') as f: items.append({'path':p,'data':json.load(f)})
+    except Exception: pass
+out={'count':len(items),'entries':items}
+rollup=os.path.join(res_dir,'rollup','run_rollup.json')
+os.makedirs(os.path.dirname(rollup),exist_ok=True)
+with open(rollup,'w') as f: json.dump(out,f,indent=2)
+print('Wrote',rollup)
+PY
 fi
 
 log "Smoke complete → ${RESULTS_DIR}"

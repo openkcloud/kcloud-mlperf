@@ -31,6 +31,31 @@ SMOKE_FAST=1 SMOKE_SAMPLES=5 MMLU_LIMIT=20 FORCE_FREE_GPU=1 \
 bash scripts/smoke_all_10.sh
 ```
 
+#### 스모크 스크립트 플래그(독립 실행/정교 제어)
+환경변수 대신 CLI 플래그로도 동일한 제어가 가능합니다.
+
+```bash
+Usage: smoke_all_10.sh [options]
+  --server-perf [0|1]     Server 성능 실행 (기본 1)
+  --server-acc  [0|1]     Server 정확도 실행 (기본 1)
+  --offline-perf [0|1]    Offline 성능 실행 (기본 1)
+  --offline-acc  [0|1]    Offline 정확도 실행 (기본 1)
+  --mmlu         [0|1]    MMLU 실행 (기본 1)
+  --samples N             스모크 샘플 수 (기본 5)
+  --fast                  보수적 메모리/배치(기본 ON 권장)
+  --verbose               상세 로그(set -x)
+```
+
+예시:
+- 10단계 모두 실행(샘플 5, 빠른 모드)
+```bash
+bash scripts/smoke_all_10.sh --server-perf 1 --server-acc 1 --offline-perf 1 --offline-acc 1 --mmlu 1 --samples 5 --fast --verbose
+```
+- 서버 성능만 실행
+```bash
+bash scripts/smoke_all_10.sh --server-perf 1 --server-acc 0 --offline-perf 0 --offline-acc 0 --mmlu 0 --samples 5 --fast
+```
+
 ### 그 다음: 올인원 실행(스모크 기본값 포함)
 - 위 스모크 기본값으로 한 번에 실행하려면 아래만 실행해도 됩니다.
 ```bash
@@ -93,6 +118,16 @@ results/<RUN_ID>/<task>/
   - 각 단계 완료 후 `benchmark_report_*.html` 자동 생성(가능한 경우)
   - MLPerf: `results/<RUN_ID>/mlperf/<case>/benchmark_report_*.html`
   - MMLU:   `results/<RUN_ID>/mmlu/benchmark_report_*.html`
+
+#### MLPerf 결과 정규화(summary.json)
+- 스모크는 각 MLPerf 단계 완료 후 `scripts/mlperf_postprocess.py`로 `run.log`를 파싱하여
+  `results/<RUN_ID>/mlperf/<case>/summary.json`을 생성합니다.
+- 성능(throughput, latency, TTFT/TPOT)와 정확도(ROUGE; `evaluation.py`가 있을 경우 자동 계산)를
+  하나의 JSON으로 정규화해 HTML 리포트 생성에 사용됩니다.
+
+#### 전체 롤업
+- 스모크 완료 후 전체 실행 결과를 간단 집계한 머신 판독용 롤업을 생성합니다.
+  - `results/<RUN_ID>/rollup/run_rollup.json`
 
 ### 토큰/캐시 관련
 - 모델 캐시가 없으면 스크립트가 자동으로 `huggingface_hub.snapshot_download`를 호출합니다.
