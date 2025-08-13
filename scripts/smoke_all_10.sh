@@ -215,6 +215,8 @@ run_ref(){
     VLLM_GPU_MEM_UTILIZATION="${VLLM_GPU_MEM_UTILIZATION}" \
     VLLM_KV_CACHE_DTYPE="${VLLM_KV_CACHE_DTYPE}" \
     VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER}" \
+    VLLM_MAX_NUM_BATCHED_TOKENS="${VLLM_MAX_NUM_BATCHED_TOKENS:-2048}" \
+    VLLM_MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-32}" \
     TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR}" \
     MKL_THREADING_LAYER="${MKL_THREADING_LAYER}" \
     MKL_SERVICE_FORCE_INTEL="${MKL_SERVICE_FORCE_INTEL}" \
@@ -224,6 +226,7 @@ run_ref(){
       --batch-size $([[ "${SMOKE_FAST}" == "1" ]] && echo 1 || echo 16) \
       $([[ "$mode" == "accuracy" ]] && echo "--accuracy") \
       --dtype "$DTYPE" \
+      --num-workers "${SERVER_WORKERS:-4}" \
       --vllm \
       --user-conf "${SMOKE_USER_CONF}" \
       --total-sample-count "${SMOKE_SAMPLES}" \

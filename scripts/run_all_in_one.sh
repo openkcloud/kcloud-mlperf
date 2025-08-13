@@ -130,6 +130,8 @@ run_ref(){
     VLLM_GPU_MEM_UTILIZATION="${VLLM_GPU_MEM_UTILIZATION}" \
     VLLM_KV_CACHE_DTYPE="${VLLM_KV_CACHE_DTYPE}" \
     VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER}" \
+    VLLM_MAX_NUM_BATCHED_TOKENS="${VLLM_MAX_NUM_BATCHED_TOKENS:-4096}" \
+    VLLM_MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-64}" \
     python -u main.py \
       --scenario "$scenario" \
       --model-path "$CHECKPOINT_PATH" \
@@ -141,6 +143,7 @@ run_ref(){
       --dataset-path "$DATASET_PATH" \
       --output-log-dir "$outdir" \
       --tensor-parallel-size "$GPU_COUNT" \
+      --num-workers "${SERVER_WORKERS:-8}" \
       --vllm "$@"
   ) |& tee -a "$outdir/run.log"
 }

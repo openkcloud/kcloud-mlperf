@@ -182,6 +182,24 @@ docker run --gpus all --rm --env-file .env \
 
 엔트리포인트(`smoke`/`all-in-one`)를 직접 사용할 수도 있으나, 개발 중에는 위와 같이 스크립트를 마운트한 뒤 `--entrypoint /bin/bash`로 실행하는 편이 빠릅니다.
 
+#### 전체 샘플(13,368) 실행 권장 설정
+전체 실행 시에는 `MAX_LEN_USER`를 더 크게 주는 것이 안전합니다. 24GB GPU 기준 아래 설정을 추천합니다.
+
+```bash
+docker run --gpus all --rm --env-file .env \
+  -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+  -e MKL_THREADING_LAYER=GNU -e MKL_SERVICE_FORCE_INTEL=1 \
+  -e TORCHINDUCTOR_CACHE_DIR=/app/results/.torchinductor \
+  -e MAX_LEN_USER=4096 -e GPU_MEM_UTIL=0.90 -e KV_CACHE_DTYPE=fp8 \
+  -v "$(pwd)/results:/app/results" \
+  -v "$(pwd)/.hf_cache:/app/.cache/huggingface" \
+  -v "$(pwd)/scripts/run_all_in_one.sh:/app/scripts/run_all_in_one.sh:ro" \
+  --entrypoint /bin/bash mlbench -c \
+  "bash /app/scripts/run_all_in_one.sh --samples 13368 --verbose"
+```
+
+참고: 여러 GPU가 있는 경우, 여유 메모리가 가장 큰 GPU를 선택해 실행하면 안정성이 높습니다.
+
 ### 디렉터리 개요
 - `scripts/smoke_all_10.sh`: 10단계 스모크(각 단계별 리포트 포함)
 - `scripts/run_all_in_one.sh`: 스모크 기본값의 원클릭 실행
