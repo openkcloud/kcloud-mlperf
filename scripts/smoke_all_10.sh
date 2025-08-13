@@ -229,8 +229,7 @@ run_ref(){
       --total-sample-count "${SMOKE_SAMPLES}" \
       --dataset-path "$DATASET_PATH" \
       --output-log-dir "$outdir" \
-      --tensor-parallel-size "$GPU_COUNT" \
-      --max_new_tokens "${SMOKE_MAX_NEW_TOKENS}"
+      --tensor-parallel-size "$GPU_COUNT"
   ) |& tee -a "$outdir/run.log"
 }
 
