@@ -5,6 +5,10 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="${ROOT_DIR}/inference-master/language/llama3.1-8b"
+# When running in Docker, /app is the root; ensure APP_DIR exists there too
+if [[ -d "/app/inference-master/language/llama3.1-8b" ]]; then
+  APP_DIR="/app/inference-master/language/llama3.1-8b"
+fi
 RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 RESULTS_DIR="${ROOT_DIR}/results/${RUN_ID}"
 LOG_DIR="${RESULTS_DIR}/logs"
@@ -81,14 +85,14 @@ pgrep -f "python.*inference-master/language/llama3.1-8b/main.py" >/dev/null 2>&1
 pgrep -f "python.*lm_eval" >/dev/null 2>&1 && { pkill -TERM -f "python.*lm_eval" || true; sleep 1; pkill -9 -f "python.*lm_eval" || true; }
 
 # Resolve HF snapshot path
-CHECKPOINT_PATH=$(HF_HOME="${ROOT_DIR}/.hf_cache" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+CHECKPOINT_PATH=$(HF_HOME="${HF_HOME}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
 import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
 c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
 print(c[0] if c else "")
 PY
 )
 if [[ -z "$CHECKPOINT_PATH" ]]; then
-  log "Model not in cache. Downloading ${MODEL_ID} into ${ROOT_DIR}/.hf_cache..."
+  log "Model not in cache. Downloading ${MODEL_ID} into ${HF_HOME}..."
   if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -z "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
     err "HuggingFace token not found (.env HUGGINGFACE_TOKEN=hf_xxx). Cannot download protected model ${MODEL_ID}."; exit 2;
   fi
@@ -109,7 +113,7 @@ PY
   )
   # Fallback to legacy cache layout if needed
   if [[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]]; then
-    CHECKPOINT_PATH=$(HF_HOME="${ROOT_DIR}/.hf_cache" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+    CHECKPOINT_PATH=$(HF_HOME="${HF_HOME}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
 import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
 c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
 print(c[0] if c else "")
@@ -443,7 +447,7 @@ SMOKE_FAST="${SMOKE_FAST:-1}"
 [[ -z "${RUN_MMLU_SMOKE}"    ]] && RUN_MMLU_SMOKE=$([[ "${SMOKE_FAST}" == "1" ]] && echo 0 || echo 1)
 
 # Resolve model snapshot
-CHECKPOINT_PATH=$(HF_HOME="${ROOT_DIR}/.hf_cache" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+CHECKPOINT_PATH=$(HF_HOME="${HF_HOME}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
 import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
 c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
 print(c[0] if c else "")

@@ -35,7 +35,9 @@ RUN mkdir -p /app/scripts /app/configs /app/results /app/.cache
 COPY scripts /app/scripts
 COPY configs /app/configs
 COPY llm_eval /app/llm_eval
+COPY inference-master /app/inference-master
 COPY generate_report_from_json.py /app/generate_report_from_json.py
+COPY generate_mmlu_report.py /app/generate_mmlu_report.py
 COPY report_generator.py /app/report_generator.py
 COPY docker/entrypoint.sh /app/entrypoint.sh
 
