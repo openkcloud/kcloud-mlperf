@@ -1,76 +1,91 @@
-# MLPerf_local_test (Docker 전용, 한국어 기본 README)
+# MLPerf_local_test (한국어 가이드)
 
-이 저장소는 LLaMA 3.1-8B의 MLPerf 스타일 추론 벤치마크와 MMLU 평가를 위한 Docker 전용 파이프라인을 제공합니다. 결과는 표준화된 디렉터리 구조로 저장되며, 원클릭 실행을 지원합니다.
+Llama 3.1-8B 모델로 MLPerf 스타일 추론 벤치마크(서버/오프라인, 성능/정확도)와 MMLU 평가를 수행하는 파이프라인입니다. 10단계 전체 파이프라인을 “스모크(빠른 검증)”로 먼저 확인하고, 문제 없으면 전체 실행을 진행하도록 설계했습니다. 모든 산출물은 표준 디렉터리 구조와 HTML 리포트로 저장됩니다.
 
-## 준비
-- GPU가 Docker 컨테이너에서 사용 가능해야 합니다: `--gpus all`
-- `.env` 파일에 `HUGGINGFACE_TOKEN=` 값을 설정하세요 (샘플: `.env.sample`)
+### 필수 준비물
+- NVIDIA GPU + 드라이버, CUDA 런타임(로컬 실행 기준)
+- 디스크 여유 공간: 모델 다운로드에 최소 30GB 이상 권장
+- Hugging Face 토큰: Llama 3.1-8B 권한 필요
+  - `.env` 파일에 아래와 같이 설정
+    - `HUGGINGFACE_TOKEN=hf_xxx`
 
-## 이미지 빌드
+### 최초 설정
 ```bash
-docker build -t mlbench -f docker/Dockerfile .
+# 1) 토큰 준비 (.env 생성)
+cp -n .env.sample .env 2>/dev/null || true
+echo "HUGGINGFACE_TOKEN=hf_XXXXXXXXXXXXXXXX" >> .env  # 본인 토큰으로 교체
+
+# 2) (선택) Hugging Face 로그인 캐시
+huggingface-cli login  # 프롬프트에 토큰 입력
 ```
 
-## 원클릭 실행 (권장)
-- 한 번에 빌드 → MLPerf → MMLU → 리포트까지 실행:
-```bash
-make all-in-one
-# 또는
-bash scripts/run_all_in_one.sh
-```
-
-## 먼저 빠르게 전체 파이프라인 점검(스모크)
-- 전체 실행 전에, 아주 적은 샘플로 10단계 파이프라인이 정상 동작하는지 먼저 확인하세요.
-- 서버 성능/정확도, 오프라인 성능/정확도, MMLU까지 순차 실행하며 각 단계별 리포트를 생성합니다.
+### 먼저: 빠른 스모크(10단계 전체 파이프라인의 최소 샘플 검증)
+- 서버 성능 → 서버 정확도 → 오프라인 성능 → 오프라인 정확도 → MMLU 순서로 실행
+- 각 단계별 HTML 리포트 생성, 메모리 세이프/소수 샘플로 즉시 확인 가능
+- 최초 실행 시 모델이 자동 다운로드됩니다(토큰 필수)
 
 ```bash
-# 최소 샘플로 전체 10단계 검사
+# 최소 샘플(기본 5개)로 10단계 전체 검증
 RUN_PERF_SERVER=1 RUN_ACC_SERVER=1 RUN_PERF_OFFLINE=1 RUN_ACC_OFFLINE=1 RUN_MMLU_SMOKE=1 \
 SMOKE_FAST=1 SMOKE_SAMPLES=5 MMLU_LIMIT=20 FORCE_FREE_GPU=1 \
 bash scripts/smoke_all_10.sh
+```
 
-# 문제가 없으면 전체 실행(올인원) 진행
+### 그 다음: 올인원 실행(스모크 기본값 포함)
+- 위 스모크 기본값으로 한 번에 실행하려면 아래만 실행해도 됩니다.
+```bash
 bash scripts/run_all_in_one.sh
 ```
 
-## 개별 실행 예시
-- 드라이런(다운로드 없이 동작 경로만 확인):
-```bash
-docker run --gpus all --rm --env-file .env -v $(pwd):/workspace mlbench mlperf --dry-run
-docker run --gpus all --rm --env-file .env -v $(pwd):/workspace mlbench mmlu --dry-run
-```
-
-- 실제 실행(새 RUN_ID 사용):
-```bash
-RID=$(date +%Y%m%d-%H%M%S)
-docker run --gpus all --rm --env-file .env -v $(pwd):/workspace mlbench mlperf --run-id "$RID" --accuracy
-docker run --gpus all --rm --env-file .env -v $(pwd):/workspace mlbench mmlu   --run-id "$RID" --shots 5
-docker run --rm -v $(pwd):/workspace mlbench report --run-id "$RID"
-```
-
-## 출력 경로
+### 출력/결과 위치
 - 모든 산출물은 다음에 저장됩니다.
 ```
-results/<YYYYmmdd-HHMMSS>/<task>/{raw,summary}/
+results/<RUN_ID>/<task>/
+  ├─ run.log, mlperf_log_*  # 원본 로그
+  ├─ benchmark_report_*.html # HTML 리포트
+  └─ 기타 JSON
 ```
 - 최신 실행 링크: `results/latest` → 가장 최근 RUN_ID
-- 각 작업 요약: `results/<RUN_ID>/<task>/summary/summary.json`
-- 통합 요약: `results/<RUN_ID>/summary.json`, `results/<RUN_ID>/summary.md`
- - HTML 리포트: 각 작업 디렉터리에 `benchmark_report_*.html`
 
-## 문서
-- 한국어 가이드: `docs/README.ko.md`
-- 영어 가이드: `docs/README.md`
-- 트러블슈팅: `docs/troubleshooting.md`
-
-## 주의사항
-- 토큰은 절대 로그에 출력하지 않습니다. 누락 시 친절한 메시지와 함께 종료 코드 2로 종료합니다.
-- GPU/드라이버가 없거나 권한 문제가 있으면 컨테이너 실행이 실패할 수 있습니다.
-
-## 자주 사용하는 옵션
+### 자주 쓰는 환경 변수(스모크/안정성)
 - `SMOKE_SAMPLES`: 스모크에서 사용할 샘플 수(기본 5)
-- `MMLU_LIMIT`: MMLU 평가 샘플 상한(테스트 용도)
+- `MMLU_LIMIT`: MMLU 평가 샘플 상한(테스트 용)
 - `FORCE_FREE_GPU=1`: 실행 전 잔여 vLLM/벤치 프로세스 정리
-- `RUN_PERF_SERVER/ACC_SERVER/PERF_OFFLINE/ACC_OFFLINE/RUN_MMLU_SMOKE`: 단계별 활성화 토글
+- `RUN_PERF_SERVER`/`RUN_ACC_SERVER`/`RUN_PERF_OFFLINE`/`RUN_ACC_OFFLINE`/`RUN_MMLU_SMOKE`: 단계별 활성화 토글
+- 메모리 세이프 기본값(스크립트 내 지정)
+  - `VLLM_MAX_MODEL_LEN=4096`, `VLLM_GPU_MEM_UTILIZATION=0.88~0.95`, `VLLM_ENFORCE_EAGER=1`
+
+### 토큰/캐시 관련
+- 모델 캐시가 없으면 스크립트가 자동으로 `huggingface_hub.snapshot_download`를 호출합니다.
+- 401 Unauthorized 발생 시:
+  - `.env`의 `HUGGINGFACE_TOKEN` 값 확인(공백/따옴표 제거)
+  - `export HUGGINGFACE_HUB_TOKEN=hf_xxx` 후 재실행
+  - `huggingface-cli login`으로 1회 로그인
+
+### 자주 겪는 문제와 해결
+- OOM(CUDA out of memory):
+  - 스모크 기본값(배치 1, 짧은 길이, 낮은 GPU mem util)으로 재시도
+  - 다른 실행이 GPU 메모리를 점유 중일 수 있으므로 `FORCE_FREE_GPU=1` 사용
+- INVALID(성능 제약 불충족):
+  - 스모크는 샘플 수가 적어 조기 종료 조건을 충족하지 못할 수 있습니다(정상)
+  - 전체 측정이 필요할 때는 샘플 수/지속 시간/목표 QPS를 늘리세요
+
+### Docker 사용(선택 사항)
+- 로컬 환경 대신 Docker로 통합 실행하려면 이미지를 빌드하세요.
+```bash
+docker build -t mlbench -f docker/Dockerfile .
+```
+- 컨테이너 실행 예(작업 디렉터리 마운트, 토큰 전달 필요):
+```bash
+docker run --gpus all --rm --env-file .env -v $(pwd):/workspace mlbench
+```
+
+### 디렉터리 개요
+- `scripts/smoke_all_10.sh`: 10단계 스모크(각 단계별 리포트 포함)
+- `scripts/run_all_in_one.sh`: 스모크 기본값의 원클릭 실행
+- `inference-master/...`: MLPerf 스타일 벤치 SUT/메인 로직
+- `generate_report_from_json.py`: JSON → HTML 리포트 생성기(안전한 분기처리 적용)
+
+문의/기여 환영합니다. 이 README만 보고도 토큰만 준비되었다면 스모크 → 올인원 순으로 바로 실행이 가능합니다.
 
 

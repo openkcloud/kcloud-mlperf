@@ -18,8 +18,22 @@ def generate_report_from_json(json_file):
     # Load results
     with open(json_path, 'r') as f:
         results = json.load(f)
-    
-    # Extract data with fallbacks for MLPerf format
+
+    # Normalize: handle list-style logs (e.g., mlperf_log_accuracy.json arrays)
+    if isinstance(results, list):
+        # Minimal rollup for list entries
+        samples_count = len(results)
+        results = {
+            'metadata': {'samples': samples_count},
+            'performance': {
+                # Unknown from list; set to 0 and guard downstream
+                'throughput_samples_per_second': 0,
+                'total_time_seconds': 0,
+            },
+            'accuracy': {},
+        }
+
+    # Extract data with fallbacks for MLPerf-style dicts
     metadata = results.get('metadata', {})
     performance = results.get('performance', {})
     accuracy = results.get('accuracy', {})
@@ -37,8 +51,8 @@ def generate_report_from_json(json_file):
     
     # Calculate derived metrics
     baseline_throughput = 0.75
-    speedup_factor = throughput / baseline_throughput if throughput > 0 else 0
-    time_saved = (samples / baseline_throughput) - total_time if samples > 0 and total_time > 0 else 0
+    speedup_factor = (throughput / baseline_throughput) if (throughput and baseline_throughput) else 0
+    time_saved = ((samples / baseline_throughput) - total_time) if (samples and baseline_throughput and total_time) else 0
     
     # Guard division by zero
     safe_throughput = throughput if throughput and throughput > 0 else 1e-9
