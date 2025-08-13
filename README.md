@@ -144,15 +144,27 @@ results/<RUN_ID>/<task>/
   - 스모크는 샘플 수가 적어 조기 종료 조건을 충족하지 못할 수 있습니다(정상)
   - 전체 측정이 필요할 때는 샘플 수/지속 시간/목표 QPS를 늘리세요
 
-### Docker 사용(선택 사항)
-- 로컬 환경 대신 Docker로 통합 실행하려면 이미지를 빌드하세요.
+### Docker 2-스텝 퀵스타트
+아래 두 줄만으로 전체 파이프라인을 Docker에서 실행할 수 있습니다.
+
 ```bash
+# 1) 이미지 빌드
 docker build -t mlbench -f docker/Dockerfile .
+
+# 2) 컨테이너 실행 (스모크 전체 10단계)
+docker run --gpus all --rm --env-file .env \
+  -v $(pwd)/results:/app/results -v $(pwd)/.hf_cache:/app/.cache/huggingface \
+  mlbench smoke --server-perf 1 --server-acc 1 --offline-perf 1 --offline-acc 1 --mmlu 1 --samples 5 --fast --verbose
 ```
-- 컨테이너 실행 예(작업 디렉터리 마운트, 토큰 전달 필요):
+
+- 전체 올인원 실행은 다음과 같습니다.
 ```bash
-docker run --gpus all --rm --env-file .env -v $(pwd):/workspace mlbench
+docker run --gpus all --rm --env-file .env \
+  -v $(pwd)/results:/app/results -v $(pwd)/.hf_cache:/app/.cache/huggingface \
+  mlbench all-in-one --verbose
 ```
+
+- 참고: 컨테이너 내부 엔트리포인트는 `smoke`/`all-in-one` 서브커맨드를 지원합니다.
 
 ### 디렉터리 개요
 - `scripts/smoke_all_10.sh`: 10단계 스모크(각 단계별 리포트 포함)

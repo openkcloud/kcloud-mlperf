@@ -44,3 +44,7 @@ COPY docker/mlbench.sh /usr/local/bin/mlbench
 
 RUN chmod +x /app/entrypoint.sh /app/scripts/*.sh || true && \
     chmod +x /usr/local/bin/mlbench
+
+# Default entrypoint/command
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["help"]
