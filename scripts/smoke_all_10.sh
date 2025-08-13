@@ -116,37 +116,61 @@ c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.g
 print(c[0] if c else "")
 PY
 )
-if [[ -z "$CHECKPOINT_PATH" ]]; then
-  log "Model not in cache. Downloading ${MODEL_ID} into ${HF_HOME}..."
-  if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -z "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
-    err "HuggingFace token not found (.env HUGGINGFACE_TOKEN=hf_xxx). Cannot download protected model ${MODEL_ID}."; exit 2;
-  fi
-  CHECKPOINT_PATH=$(ROOT_DIR="${ROOT_DIR}" MODEL_ID="${MODEL_ID}" HF_HOME="${HF_HOME}" HF_HUB_ENABLE_HF_TRANSFER=0 python3 - <<'PY'
-import os, sys, subprocess
+ensure_snapshot(){
+  python3 - <<'PY'
+import os, sys, glob, subprocess
+from pathlib import Path
 try:
     from huggingface_hub import snapshot_download
 except Exception:
     subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'huggingface_hub'])
     from huggingface_hub import snapshot_download
 
-repo_id = os.environ.get('MODEL_ID', 'meta-llama/Meta-Llama-3.1-8B-Instruct')
-cache_dir = os.environ.get('HF_HOME', os.path.join(os.environ.get('ROOT_DIR', '.'), '.hf_cache'))
+repo_id = os.environ.get('MODEL_ID')
+cache_dir = os.environ.get('HF_HOME')
 token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
-snapshot_download(repo_id=repo_id, cache_dir=cache_dir, token=token, local_dir=None, local_files_only=False, max_workers=4, tqdm_class=None)
-print('', end='')
+
+def latest_snap(root, repo):
+    m = repo.replace('/', '--')
+    snaps = sorted(Path(root, f"models--{m}", 'snapshots').glob('*'), key=lambda p: p.stat().st_mtime, reverse=True)
+    return str(snaps[0]) if snaps else ''
+
+snap = latest_snap(cache_dir, repo_id)
+need = True
+if snap and os.path.isdir(snap):
+    # Check for real weight shards
+    shards = glob.glob(os.path.join(snap, 'model-*.safetensors'))
+    if len(shards) >= 1 or os.path.exists(os.path.join(snap, 'pytorch_model.bin')):
+        need = False
+
+if need:
+    snapshot_download(repo_id=repo_id, cache_dir=cache_dir, token=token,
+                      local_files_only=False, resume_download=True,
+                      allow_patterns=[
+                        'model*.*', 'pytorch_model*.bin', 'config.json',
+                        'tokenizer*', 'generation_config.json'
+                      ])
+print(latest_snap(cache_dir, repo_id), end='')
+PY
+}
+
+if [[ -z "$CHECKPOINT_PATH" ]]; then
+  log "Downloading ${MODEL_ID} into ${HF_HOME}..."
+  CHECKPOINT_PATH=$(ensure_snapshot)
+else
+  # Validate that real weights exist; if not, force download
+  WEIGHT_COUNT=$(python3 - <<PY
+import os, glob
+p=os.environ['CHECKPOINT_PATH']
+print(len(glob.glob(os.path.join(p,'model-*.safetensors'))))
 PY
   )
-  # Fallback to legacy cache layout if needed
-  if [[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]]; then
-    CHECKPOINT_PATH=$(HF_HOME="${HF_HOME}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
-import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
-c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
-print(c[0] if c else "")
-PY
-    )
+  if [[ "${WEIGHT_COUNT}" -lt 1 ]]; then
+    log "Weights missing under snapshot. Fetching full weights..."
+    CHECKPOINT_PATH=$(ensure_snapshot)
   fi
-  [[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]] && { err "Model download failed or not found"; exit 2; }
 fi
+[[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]] && { err "Model snapshot not found (after download)"; exit 2; }
 
 # Dataset (prefer sample-sized file name when SMOKE_SAMPLES > 0)
 mkdir -p "${RESULTS_DIR}/data"
