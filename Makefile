@@ -1,4 +1,4 @@
-.PHONY: help build run-offline run-all performance accuracy reports test ci clean run-mlperf run-mmlu report-run clean-results
+.PHONY: help build run-offline run-all performance accuracy reports test ci clean all-in-one smoke
 
 SHELL := /bin/bash
 RUN_ID ?= $(shell date +%Y%m%d_%H%M%S)
@@ -11,10 +11,7 @@ help:
 	@echo "  performance   - Performance-only run"
 	@echo "  accuracy      - Accuracy-only run"
 	@echo "  reports       - Generate reports from latest JSON"
-	@echo "  run-mlperf    - Wrapper: scripts/run_mlperf.sh (requires RUN_ID, HF_TOKEN)"
-	@echo "  run-mmlu      - Wrapper: scripts/run_mmlu.sh (requires RUN_ID)"
-	@echo "  report-run    - Wrapper: scripts/make_report.py for a given RUN_ID"
-	@echo "  clean-results - Print which old results would be deleted (dry-run)"
+    @echo "  smoke         - Run 10-step smoke (scripts/smoke_all_10.sh)"
 	@echo "  test          - Quick local validations"
 	@echo "  ci            - Build + run-all + reports + validations"
 	@echo "  clean         - Remove reports_* directories"
@@ -38,21 +35,8 @@ accuracy:
 reports:
 	bash generate_report.sh
 
-run-mlperf:
-	@echo "RUN_ID required" && test -n "$(RUN_ID)"
-	@echo "HF_TOKEN required" && test -n "$$HF_TOKEN"
-	bash scripts/run_mlperf.sh --run-id $(RUN_ID) $(if $(MODEL),--model $(MODEL)) $(if $(DEVICE),--device $(DEVICE))
-
-run-mmlu:
-	@echo "RUN_ID required" && test -n "$(RUN_ID)"
-	bash scripts/run_mmlu.sh --run-id $(RUN_ID) $(if $(MODEL),--model $(MODEL)) $(if $(DEVICE),--device $(DEVICE))
-
-report-run:
-	@echo "RUN_ID required" && test -n "$(RUN_ID)"
-	python3 scripts/make_report.py --run-id $(RUN_ID)
-
-clean-results:
-	bash scripts/clean_results.sh --keep 1
+smoke:
+    bash scripts/smoke_all_10.sh
 
 test:
 	bash test_pipeline.sh

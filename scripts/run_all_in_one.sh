@@ -1,6 +1,185 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# All-in-one: MLPerf(Server perf→report, Server acc→report, Offline perf→report, Offline acc→report), then MMLU→report
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_DIR="${ROOT_DIR}/inference-master/language/llama3.1-8b"
+RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
+RESULTS_DIR="${ROOT_DIR}/results/${RUN_ID}"
+LOG_DIR="${RESULTS_DIR}/logs"
+MLPERF_DIR="${RESULTS_DIR}/mlperf"
+MMLU_DIR="${RESULTS_DIR}/mmlu"
+mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${ROOT_DIR}/.hf_cache"
+
+# Logging helpers
+TS() { date '+%Y-%m-%d %H:%M:%S'; }
+log(){ printf "[%s] [INFO] %s\n" "$(TS)" "$*" | tee -a "${LOG_DIR}/run_all.log"; }
+err(){ printf "[%s] [ERROR] %s\n" "$(TS)" "$*" | tee -a "${LOG_DIR}/run_all.log" >&2; }
+
+# Flags (independent toggles and verbosity)
+RUN_PERF_SERVER=1
+RUN_ACC_SERVER=1
+RUN_PERF_OFFLINE=1
+RUN_ACC_OFFLINE=1
+RUN_MMLU=1
+VERBOSE=0
+FULL_SAMPLES="${FULL_SAMPLES:-13368}"
+USER_CONF_OVERRIDE="${USER_CONF_OVERRIDE:-user.conf}"
+
+usage(){ cat <<USAGE
+Usage: $(basename "$0") [options]
+  --server-perf [0|1]     Run Server performance (default 1)
+  --server-acc  [0|1]     Run Server accuracy (default 1)
+  --offline-perf [0|1]    Run Offline performance (default 1)
+  --offline-acc  [0|1]    Run Offline accuracy (default 1)
+  --mmlu         [0|1]    Run MMLU (default 1)
+  --samples N             Total-sample-count for MLPerf runs (default 13368)
+  --user-conf PATH        LoadGen user.conf (default user.conf)
+  --verbose               Enable set -x and more progress logs
+  --help                  Show this help
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --server-perf)   RUN_PERF_SERVER="${2:-1}"; shift 2;;
+    --server-acc)    RUN_ACC_SERVER="${2:-1}"; shift 2;;
+    --offline-perf)  RUN_PERF_OFFLINE="${2:-1}"; shift 2;;
+    --offline-acc)   RUN_ACC_OFFLINE="${2:-1}"; shift 2;;
+    --mmlu)          RUN_MMLU="${2:-1}"; shift 2;;
+    --samples)       FULL_SAMPLES="${2}"; shift 2;;
+    --user-conf)     USER_CONF_OVERRIDE="${2}"; shift 2;;
+    --verbose)       VERBOSE=1; shift;;
+    --help|-h)       usage; exit 0;;
+    *) err "Unknown arg: $1"; usage; exit 2;;
+  esac
+done
+
+[[ "${VERBOSE}" == "1" ]] && set -x
+
+# Load tokens
+if [[ -f "${ROOT_DIR}/.env" ]]; then set -o allexport; . "${ROOT_DIR}/.env"; set +o allexport; fi
+if [[ -n "${HUGGINGFACE_TOKEN:-}" ]]; then export HUGGINGFACE_HUB_TOKEN="${HUGGINGFACE_TOKEN}"; fi
+if [[ -n "${HF_TOKEN:-}" ]]; then export HUGGINGFACE_HUB_TOKEN="${HF_TOKEN}"; fi
+
+MODEL_ID="${MODEL_ID:-meta-llama/Meta-Llama-3.1-8B-Instruct}"
+DTYPE="${DTYPE:-bfloat16}"
+GPU_COUNT="$(nvidia-smi --list-gpus 2>/dev/null | wc -l | awk '{print $1}')"; GPU_COUNT=${GPU_COUNT:-1}
+
+# vLLM defaults (same pipeline as smoke; larger samples by default)
+export VLLM_MAX_MODEL_LEN="${MAX_LEN_USER:-4096}"
+export VLLM_GPU_MEM_UTILIZATION="${GPU_MEM_UTIL:-0.95}"
+export VLLM_KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+export VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER:-1}"
+export HF_HOME="${HF_HOME:-${ROOT_DIR}/.hf_cache}"
+export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-${HF_HOME}}"
+
+log "RUN_ID=${RUN_ID} | Results=${RESULTS_DIR} | HF_HOME=${HF_HOME}"
+
+# Resolve model snapshot; download if missing
+CHECKPOINT_PATH=$(HF_HOME="${HF_HOME}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
+c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
+print(c[0] if c else "")
+PY
+)
+if [[ -z "$CHECKPOINT_PATH" ]]; then
+  log "Model not in cache. Downloading ${MODEL_ID} into ${HF_HOME}..."
+  if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}${HF_TOKEN:-}${HUGGINGFACE_TOKEN:-}" ]]; then
+    err "Missing HF token. Set HUGGINGFACE_TOKEN in .env"; exit 2;
+  fi
+  python3 - <<'PY'
+import os, sys, subprocess
+try:
+    from huggingface_hub import snapshot_download
+except Exception:
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'huggingface_hub'])
+    from huggingface_hub import snapshot_download
+repo_id = os.environ.get('MODEL_ID')
+cache_dir = os.environ.get('HF_HOME', './.hf_cache')
+token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
+snapshot_download(repo_id=repo_id, cache_dir=cache_dir, token=token)
+PY
+  CHECKPOINT_PATH=$(HF_HOME="${HF_HOME}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
+c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
+print(c[0] if c else "")
+PY
+)
+  [[ -z "$CHECKPOINT_PATH" ]] && { err "Model download failed or not found"; exit 2; }
+fi
+log "Model path: ${CHECKPOINT_PATH}"
+
+# Dataset
+DATASET_PATH="${RESULTS_DIR}/data/cnn_eval.json"; mkdir -p "${RESULTS_DIR}/data"
+if [[ ! -s "$DATASET_PATH" ]]; then
+  log "Generating CNN/DM eval set..."
+  (cd "$APP_DIR" && python3 download_cnndm.py --model-id "$MODEL_ID") > "$LOG_DIR/build_cnndm.log" 2>&1 || exit 2
+  mv "$APP_DIR/data/cnn_eval.json" "$DATASET_PATH"; rm -rf "$APP_DIR/data"
+fi
+
+run_ref(){
+  local scenario="$1"; local mode="$2"; local outdir="$3"; shift 3
+  mkdir -p "$outdir"
+  log "${scenario} ${mode} → $outdir"
+  (
+    cd "$APP_DIR"
+    VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN}" \
+    VLLM_GPU_MEM_UTILIZATION="${VLLM_GPU_MEM_UTILIZATION}" \
+    VLLM_KV_CACHE_DTYPE="${VLLM_KV_CACHE_DTYPE}" \
+    VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER}" \
+    python -u main.py \
+      --scenario "$scenario" \
+      --model-path "$CHECKPOINT_PATH" \
+      --batch-size 16 \
+      $([[ "$mode" == "accuracy" ]] && echo "--accuracy") \
+      --dtype "$DTYPE" \
+      --user-conf "${USER_CONF_OVERRIDE}" \
+      --total-sample-count "${FULL_SAMPLES}" \
+      --dataset-path "$DATASET_PATH" \
+      --output-log-dir "$outdir" \
+      --tensor-parallel-size "$GPU_COUNT" \
+      --vllm "$@"
+  ) |& tee -a "$outdir/run.log"
+}
+
+generate_report_for_dir(){
+  local outdir="$1"
+  local prefer_json=""
+  if [[ -f "${outdir}/mlperf_log_summary.json" ]]; then
+    prefer_json="${outdir}/mlperf_log_summary.json"
+  elif [[ -f "${outdir}/mlperf_log_accuracy.json" ]]; then
+    prefer_json="${outdir}/mlperf_log_accuracy.json"
+  else
+    prefer_json="$(ls -1t "${outdir}"/*.json 2>/dev/null | head -1)"
+  fi
+  if [[ -n "${prefer_json}" ]]; then
+    log "Generating report for ${outdir}"
+    python3 generate_report_from_json.py "${prefer_json}" |& tee -a "${outdir}/report.log" || true
+  fi
+}
+
+if [[ "${RUN_PERF_SERVER}" == "1" ]]; then out_srv_perf="${MLPERF_DIR}/server_performance"; run_ref Server performance "${out_srv_perf}"; generate_report_for_dir "${out_srv_perf}"; fi
+if [[ "${RUN_ACC_SERVER}"  == "1" ]]; then out_srv_acc="${MLPERF_DIR}/server_accuracy";   run_ref Server accuracy   "${out_srv_acc}";   generate_report_for_dir "${out_srv_acc}"; fi
+if [[ "${RUN_PERF_OFFLINE}"== "1" ]]; then out_off_perf="${MLPERF_DIR}/offline_performance"; run_ref Offline performance "${out_off_perf}"; generate_report_for_dir "${out_off_perf}"; fi
+if [[ "${RUN_ACC_OFFLINE}" == "1" ]]; then out_off_acc="${MLPERF_DIR}/offline_accuracy";   run_ref Offline accuracy   "${out_off_acc}";   generate_report_for_dir "${out_off_acc}"; fi
+
+if [[ "${RUN_MMLU}" == "1" ]]; then
+  log "MMLU run..."
+  python3 -m lm_eval --model vllm \
+    --model_args "pretrained=${CHECKPOINT_PATH},dtype=${DTYPE},tensor_parallel_size=${GPU_COUNT},gpu_memory_utilization=${GPU_MEM_UTIL:-0.95},max_model_len=2048,max_num_batched_tokens=2048,max_num_seqs=4,enforce_eager=True,trust_remote_code=True" \
+    --tasks "${MMLU_TASKS:-mmlu}" --batch_size 2 --num_fewshot 5 \
+    --output_path "${MMLU_DIR}" --log_samples |& tee -a "${MMLU_DIR}/lm_eval.log" || true
+  mmlu_json="$(ls -1t "${MMLU_DIR}"/*.json 2>/dev/null | head -1)"
+  if [[ -n "${mmlu_json}" ]]; then python3 generate_report_from_json.py "${mmlu_json}" |& tee -a "${MMLU_DIR}/report.log" || true; fi
+fi
+
+log "All-in-one complete → ${RESULTS_DIR}"
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
 ############################################################
 # run_llama31_8b_only.sh
 # - MLPerf Inference v5.1 (Server/Offline) on LLaMA-3.1-8B via vLLM

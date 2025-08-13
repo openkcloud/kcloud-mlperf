@@ -3,10 +3,9 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: mlperf|mmlu|report [--help]
-- mlperf: Run official MLPerf via mlcr
-- mmlu:   Run MMLU on Llama-3.1-8B
-- report: Aggregate results for a run (or latest)
+Usage: smoke|all-in-one|help
+- smoke:      Run 10-step smoke (scripts/smoke_all_10.sh)
+- all-in-one: Run full pipeline (scripts/run_all_in_one.sh)
 EOF
 }
 
@@ -23,26 +22,11 @@ cmd="${1:-help}"; shift || true
 
 case "$cmd" in
   help|--help|-h) usage; exit 0 ;;
-  mlperf)
-    if [[ "${1:-}" == "--dry-run" ]]; then
-      echo "[DRY-RUN] Would run mlcr with configs/mlperf.yml"
-      echo "Outputs under results/<RUN_ID>/mlperf/{raw,summary}/"
-      exit 0
-    fi
-    require_token "Hugging Face" "HUGGINGFACE_TOKEN"
-    /app/scripts/run_mlperf.sh "$@"
+  smoke)
+    /app/scripts/smoke_all_10.sh "$@"
     ;;
-  mmlu)
-    if [[ "${1:-}" == "--dry-run" ]]; then
-      echo "[DRY-RUN] Would run MMLU evaluation with configs/mmlu.yml"
-      echo "Outputs under results/<RUN_ID>/mmlu/{raw,summary}/"
-      exit 0
-    fi
-    require_token "Hugging Face" "HUGGINGFACE_TOKEN"
-    /app/scripts/run_mmlu.sh "$@"
-    ;;
-  report)
-    /usr/bin/env python3 /app/scripts/make_report.py "$@"
+  all-in-one)
+    /app/scripts/run_all_in_one.sh "$@"
     ;;
   *)
     echo "Unknown command: $cmd"; usage; exit 1 ;;

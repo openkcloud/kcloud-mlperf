@@ -95,6 +95,44 @@ def generate_report_from_json(json_file):
         title_suffix.append(metadata['mode'])
     title_suffix_str = ' • '.join(title_suffix)
 
+    # Pre-render optional blocks to avoid f-string backslash issues
+    mmlu_card = ""
+    if mmlu_acc is not None:
+        mmlu_card = (
+            '<div class="metric-card">'
+            f'<div class="metric-value">{mmlu_acc*100:.2f}%</div>'
+            '<div class="metric-label">MMLU Accuracy</div>'
+            '</div>'
+        )
+
+    perf_section = ""
+    if show_perf:
+        perf_section = (
+            '<div class="section comparison">'
+            '<h3>⚡ Performance</h3>'
+            f'<p><strong>Throughput:</strong> {throughput:.2f} samples/sec</p>'
+            f'<p><strong>Tokens/sec:</strong> {tokens_per_sec:.2f}</p>'
+            f'<p><strong>Baseline (for reference):</strong> {baseline_throughput} samples/sec</p>'
+            f'<p><strong>Estimated Gain:</strong> <span class="improvement">{(speedup_factor-1)*100:.0f}%</span></p>'
+            f'<p><strong>Time Saved:</strong> <span class="success">{time_saved:.1f} seconds</span></p>'
+            '</div>'
+        )
+
+    projection_section = ""
+    if show_perf:
+        projection_section = (
+            '<div class="section">'
+            '<h3>🔮 Full Dataset Projection</h3>'
+            f'<p>Based on this {samples}-sample benchmark:</p>'
+            '<div style="background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 10px 0;">'
+            '<p><strong>Full Dataset (13,368 samples) Estimates:</strong></p>'
+            f'<p>• <strong>Time Required:</strong> {13368/safe_throughput/60:.0f} minutes ({13368/safe_throughput:.0f} seconds)</p>'
+            f'<p>• <strong>Baseline Time:</strong> {13368/baseline_throughput/60:.0f} minutes</p>'
+            f'<p>• <strong>Time Savings:</strong> <span class="success">{(13368/baseline_throughput - 13368/safe_throughput)/60:.0f} minutes saved</span></p>'
+            '</div>'
+            '</div>'
+        )
+
     html_content = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -144,24 +182,10 @@ def generate_report_from_json(json_file):
                     <div class="metric-value">{(rouge_scores.get('rouge-1') or 0):.3f}</div>
                     <div class="metric-label">ROUGE-1</div>
                 </div>
-                {f"""
-                <div class=\"metric-card\">
-                    <div class=\"metric-value\">{mmlu_acc*100:.2f}%</div>
-                    <div class=\"metric-label\">MMLU Accuracy</div>
-                </div>
-                """ if mmlu_acc is not None else ''}
+                {mmlu_card}
             </div>
             
-            {f"""
-            <div class=\"section comparison\">
-                <h3>⚡ Performance</h3>
-                <p><strong>Throughput:</strong> {throughput:.2f} samples/sec</p>
-                <p><strong>Tokens/sec:</strong> {tokens_per_sec:.2f}</p>
-                <p><strong>Baseline (for reference):</strong> {baseline_throughput} samples/sec</p>
-                <p><strong>Estimated Gain:</strong> <span class=\"improvement\">{(speedup_factor-1)*100:.0f}%</span></p>
-                <p><strong>Time Saved:</strong> <span class=\"success\">{time_saved:.1f} seconds</span></p>
-            </div>
-            """ if show_perf else ''}
+            {perf_section}
             
             <div class="section accuracy">
                 <h3>🎯 Accuracy</h3>
@@ -169,7 +193,7 @@ def generate_report_from_json(json_file):
                     <div><strong>ROUGE-1:</strong> {(rouge_scores.get('rouge-1') or 0):.4f}</div>
                     <div><strong>ROUGE-2:</strong> {(rouge_scores.get('rouge-2') or 0):.4f}</div>
                     <div><strong>ROUGE-L:</strong> {(rouge_scores.get('rouge-l') or 0):.4f}</div>
-                    {f"<div><strong>MMLU Acc:</strong> {mmlu_acc*100:.2f}%</div>" if mmlu_acc is not None else ''}
+                    {('<div><strong>MMLU Acc:</strong> {:.2f}%</div>'.format(mmlu_acc*100)) if mmlu_acc is not None else ''}
                 </div>
             </div>
             
@@ -189,18 +213,7 @@ def generate_report_from_json(json_file):
                 </div>
             </div>
             
-            {f"""
-            <div class=\"section\">
-                <h3>🔮 Full Dataset Projection</h3>
-                <p>Based on this {samples}-sample benchmark:</p>
-                <div style=\"background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 10px 0;\">
-                    <p><strong>Full Dataset (13,368 samples) Estimates:</strong></p>
-                    <p>• <strong>Time Required:</strong> {13368/safe_throughput/60:.0f} minutes ({13368/safe_throughput:.0f} seconds)</p>
-                    <p>• <strong>Baseline Time:</strong> {13368/baseline_throughput/60:.0f} minutes</p>
-                    <p>• <strong>Time Savings:</strong> <span class=\"success\">{(13368/baseline_throughput - 13368/safe_throughput)/60:.0f} minutes saved</span></p>
-                </div>
-            </div>
-            """ if show_perf else ''}
+            {projection_section}
             
             <div style="text-align: center; margin-top: 30px; color: #6c757d; font-size: 0.9em; border-top: 1px solid #e9ecef; padding-top: 20px;">
                 <p>🤖 Auto-generated from {json_path.name} | Report created {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
