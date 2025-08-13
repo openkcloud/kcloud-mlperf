@@ -93,10 +93,14 @@ temp/
 # HF and model caches
 .hf_cache/
 .cache/
+models/
 
 # Generated results and reports
 results/
 reports_*/
+
+# MLPerf logs (can be very large)
+inference-master/**/mlperf_log_*.json
 
 # Large model artifacts (safetensors/weights)
 *.safetensors
