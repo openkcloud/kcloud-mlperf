@@ -27,18 +27,54 @@ export VLLM_GPU_MEM_UTILIZATION="${GPU_MEM_UTIL:-0.90}"
 export VLLM_KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER:-1}"
+export HF_HOME="${HF_HOME:-${ROOT_DIR}/.hf_cache}"
+export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-${HF_HOME}}"
 
-log(){ printf "[INFO] %s\n" "$*"; }
-err(){ printf "[ERROR] %s\n" "$*" >&2; }
+TS(){ date '+%Y-%m-%d %H:%M:%S'; }
+log(){ printf "[%s] [INFO] %s\n" "$(TS)" "$*"; }
+err(){ printf "[%s] [ERROR] %s\n" "$(TS)" "$*" >&2; }
 
-# Defaults
-SMOKE_SAMPLES="${SMOKE_SAMPLES:-5}"
-SMOKE_FAST="${SMOKE_FAST:-1}"
-RUN_PERF_SERVER="${RUN_PERF_SERVER:-1}"
-RUN_ACC_SERVER="${RUN_ACC_SERVER:-$([[ "${SMOKE_FAST}" == "1" ]] && echo 0 || echo 1)}"
-RUN_PERF_OFFLINE="${RUN_PERF_OFFLINE:-$([[ "${SMOKE_FAST}" == "1" ]] && echo 0 || echo 1)}"
-RUN_ACC_OFFLINE="${RUN_ACC_OFFLINE:-$([[ "${SMOKE_FAST}" == "1" ]] && echo 0 || echo 1)}"
-RUN_MMLU_SMOKE="${RUN_MMLU_SMOKE:-$([[ "${SMOKE_FAST}" == "1" ]] && echo 0 || echo 1)}"
+# CLI flags (independent toggles)
+usage(){ cat <<USAGE
+Usage: $(basename "$0") [options]
+  --server-perf [0|1]     Server 성능 실행 (기본 1)
+  --server-acc  [0|1]     Server 정확도 실행 (기본 1)
+  --offline-perf [0|1]    Offline 성능 실행 (기본 1)
+  --offline-acc  [0|1]    Offline 정확도 실행 (기본 1)
+  --mmlu         [0|1]    MMLU 실행 (기본 1)
+  --samples N             스모크 샘플 수 (기본 5)
+  --fast                  빠른 모드(보수적 메모리/배치)
+  --verbose               상세 로그(set -x)
+  --help                  도움말
+USAGE
+}
+
+CLI_RUN_PERF_SERVER=""; CLI_RUN_ACC_SERVER=""; CLI_RUN_PERF_OFFLINE=""; CLI_RUN_ACC_OFFLINE=""; CLI_RUN_MMLU=""; CLI_SAMPLES=""; CLI_FAST=""; CLI_VERBOSE="";
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --server-perf)   CLI_RUN_PERF_SERVER="${2:-1}"; shift 2;;
+    --server-acc)    CLI_RUN_ACC_SERVER="${2:-1}"; shift 2;;
+    --offline-perf)  CLI_RUN_PERF_OFFLINE="${2:-1}"; shift 2;;
+    --offline-acc)   CLI_RUN_ACC_OFFLINE="${2:-1}"; shift 2;;
+    --mmlu)          CLI_RUN_MMLU="${2:-1}"; shift 2;;
+    --samples)       CLI_SAMPLES="${2}"; shift 2;;
+    --fast)          CLI_FAST=1; shift;;
+    --verbose)       CLI_VERBOSE=1; shift;;
+    --help|-h)       usage; exit 0;;
+    *) err "Unknown arg: $1"; usage; exit 2;;
+  esac
+done
+
+# Defaults + apply CLI/env overrides
+SMOKE_SAMPLES="${CLI_SAMPLES:-${SMOKE_SAMPLES:-5}}"
+SMOKE_FAST="${CLI_FAST:-${SMOKE_FAST:-1}}"
+RUN_PERF_SERVER="${CLI_RUN_PERF_SERVER:-${RUN_PERF_SERVER:-1}}"
+RUN_ACC_SERVER="${CLI_RUN_ACC_SERVER:-${RUN_ACC_SERVER:-1}}"
+RUN_PERF_OFFLINE="${CLI_RUN_PERF_OFFLINE:-${RUN_PERF_OFFLINE:-1}}"
+RUN_ACC_OFFLINE="${CLI_RUN_ACC_OFFLINE:-${RUN_ACC_OFFLINE:-1}}"
+RUN_MMLU_SMOKE="${CLI_RUN_MMLU:-${RUN_MMLU_SMOKE:-1}}"
+VERBOSE="${CLI_VERBOSE:-${VERBOSE:-0}}"
+[[ "${VERBOSE}" == "1" ]] && set -x
 
 # Kill leftovers using GPU
 pgrep -f "python.*inference-master/language/llama3.1-8b/main.py" >/dev/null 2>&1 && { pkill -TERM -f "python.*inference-master/language/llama3.1-8b/main.py" || true; sleep 1; pkill -9 -f "python.*inference-master/language/llama3.1-8b/main.py" || true; }
@@ -56,7 +92,7 @@ if [[ -z "$CHECKPOINT_PATH" ]]; then
   if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -z "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
     err "HuggingFace token not found (.env HUGGINGFACE_TOKEN=hf_xxx). Cannot download protected model ${MODEL_ID}."; exit 2;
   fi
-  CHECKPOINT_PATH=$(ROOT_DIR="${ROOT_DIR}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+  CHECKPOINT_PATH=$(ROOT_DIR="${ROOT_DIR}" MODEL_ID="${MODEL_ID}" HF_HOME="${HF_HOME}" python3 - <<'PY'
 import os, sys, subprocess
 try:
     from huggingface_hub import snapshot_download
@@ -65,10 +101,10 @@ except Exception:
     from huggingface_hub import snapshot_download
 
 repo_id = os.environ.get('MODEL_ID', 'meta-llama/Meta-Llama-3.1-8B-Instruct')
-local_dir = os.path.join(os.environ.get('ROOT_DIR', '.'), '.hf_cache', repo_id.replace('/', '--'))
+cache_dir = os.environ.get('HF_HOME', os.path.join(os.environ.get('ROOT_DIR', '.'), '.hf_cache'))
 token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
-path = snapshot_download(repo_id=repo_id, local_dir=local_dir, local_dir_use_symlinks=False, token=token)
-print(path, end='')
+snapshot_download(repo_id=repo_id, cache_dir=cache_dir, token=token, local_dir=None)
+print('', end='')
 PY
   )
   # Fallback to legacy cache layout if needed
@@ -173,10 +209,20 @@ fi
 # 5) MMLU → report
 if [[ "${RUN_MMLU_SMOKE}" == "1" ]]; then
   log "MMLU smoke..."
+  set +e
   python3 -m lm_eval --model vllm \
     --model_args "pretrained=${CHECKPOINT_PATH},dtype=${MMLU_DTYPE:-float16},tensor_parallel_size=${GPU_COUNT},gpu_memory_utilization=0.85,max_model_len=512,max_num_batched_tokens=512,max_num_seqs=1,enforce_eager=True,trust_remote_code=True" \
     --tasks mmlu_high_school_biology --batch_size ${MMLU_BATCH:-1} --num_fewshot 0 ${MMLU_LIMIT:+--limit ${MMLU_LIMIT}} \
     --output_path "${MMLU_DIR}" --log_samples |& tee -a "${MMLU_DIR}/lm_eval.log"
+  MRC=${PIPESTATUS[0]}
+  if [[ ${MRC} -ne 0 ]]; then
+    err "MMLU failed; retrying with tighter memory: util=0.80, max_len=384"
+    python3 -m lm_eval --model vllm \
+      --model_args "pretrained=${CHECKPOINT_PATH},dtype=${MMLU_DTYPE:-float16},tensor_parallel_size=${GPU_COUNT},gpu_memory_utilization=0.80,max_model_len=384,max_num_batched_tokens=384,max_num_seqs=1,enforce_eager=True,trust_remote_code=True" \
+      --tasks mmlu_high_school_biology --batch_size ${MMLU_BATCH:-1} --num_fewshot 0 ${MMLU_LIMIT:+--limit ${MMLU_LIMIT}} \
+      --output_path "${MMLU_DIR}" --log_samples |& tee -a "${MMLU_DIR}/lm_eval.log"
+  fi
+  set -e
   mmlu_json="$(ls -1t "${MMLU_DIR}"/*.json 2>/dev/null | head -1)"
   if [[ -n "${mmlu_json}" ]]; then
     python3 generate_report_from_json.py "${mmlu_json}" |& tee -a "${MMLU_DIR}/report.log" || true
