@@ -14,7 +14,7 @@ RESULTS_DIR="${ROOT_DIR}/results/${RUN_ID}"
 LOG_DIR="${RESULTS_DIR}/logs"
 MLPERF_DIR="${RESULTS_DIR}/mlperf"
 MMLU_DIR="${RESULTS_DIR}/mmlu"
-mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${ROOT_DIR}/.hf_cache"
+mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${HF_HOME}"
 
 # Load tokens
 if [[ -f "${ROOT_DIR}/.env" ]]; then set -o allexport; . "${ROOT_DIR}/.env"; set +o allexport; fi
@@ -31,12 +31,34 @@ export VLLM_GPU_MEM_UTILIZATION="${GPU_MEM_UTIL:-0.90}"
 export VLLM_KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER:-1}"
-export HF_HOME="${HF_HOME:-${ROOT_DIR}/.hf_cache}"
+export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
 export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-${HF_HOME}}"
+export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
 
 TS(){ date '+%Y-%m-%d %H:%M:%S'; }
 log(){ printf "[%s] [INFO] %s\n" "$(TS)" "$*"; }
 err(){ printf "[%s] [ERROR] %s\n" "$(TS)" "$*" >&2; }
+
+# Ensure HF_HOME is writable even when running with --user uid:gid
+ensure_dir(){
+  local d="$1"
+  mkdir -p "$d" 2>/dev/null && [ -w "$d" ]
+}
+if ! ensure_dir "$HF_HOME"; then
+  # Try preferred mounted cache path
+  if ensure_dir "/app/.cache/huggingface"; then
+    export HF_HOME="/app/.cache/huggingface"
+    export HUGGINGFACE_HUB_CACHE="${HF_HOME}"
+  # Fallback to /tmp if all else fails
+  elif ensure_dir "/tmp/hf_cache"; then
+    export HF_HOME="/tmp/hf_cache"
+    export HUGGINGFACE_HUB_CACHE="${HF_HOME}"
+  else
+    err "Cannot create a writable HF_HOME. Check volume mounts or permissions."
+    exit 2
+  fi
+fi
+log "Using HF_HOME=${HF_HOME}"
 
 # CLI flags (independent toggles)
 usage(){ cat <<USAGE
@@ -96,7 +118,7 @@ if [[ -z "$CHECKPOINT_PATH" ]]; then
   if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -z "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
     err "HuggingFace token not found (.env HUGGINGFACE_TOKEN=hf_xxx). Cannot download protected model ${MODEL_ID}."; exit 2;
   fi
-  CHECKPOINT_PATH=$(ROOT_DIR="${ROOT_DIR}" MODEL_ID="${MODEL_ID}" HF_HOME="${HF_HOME}" python3 - <<'PY'
+  CHECKPOINT_PATH=$(ROOT_DIR="${ROOT_DIR}" MODEL_ID="${MODEL_ID}" HF_HOME="${HF_HOME}" HF_HUB_ENABLE_HF_TRANSFER=0 python3 - <<'PY'
 import os, sys, subprocess
 try:
     from huggingface_hub import snapshot_download
@@ -107,7 +129,7 @@ except Exception:
 repo_id = os.environ.get('MODEL_ID', 'meta-llama/Meta-Llama-3.1-8B-Instruct')
 cache_dir = os.environ.get('HF_HOME', os.path.join(os.environ.get('ROOT_DIR', '.'), '.hf_cache'))
 token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
-snapshot_download(repo_id=repo_id, cache_dir=cache_dir, token=token, local_dir=None)
+snapshot_download(repo_id=repo_id, cache_dir=cache_dir, token=token, local_dir=None, local_files_only=False, max_workers=4, tqdm_class=None)
 print('', end='')
 PY
   )
@@ -123,12 +145,22 @@ PY
   [[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]] && { err "Model download failed or not found"; exit 2; }
 fi
 
-# Dataset
-DATASET_PATH="${RESULTS_DIR}/data/cnn_eval.json"; mkdir -p "${RESULTS_DIR}/data"
+# Dataset (prefer sample-sized file name when SMOKE_SAMPLES > 0)
+mkdir -p "${RESULTS_DIR}/data"
+DATASET_BASENAME="cnn_eval.json"
+if [[ -n "${SMOKE_SAMPLES}" && "${SMOKE_SAMPLES}" != "0" ]]; then
+  DATASET_BASENAME="cnn_eval_${SMOKE_SAMPLES}.json"
+fi
+DATASET_PATH="${RESULTS_DIR}/data/${DATASET_BASENAME}"
 if [[ ! -s "$DATASET_PATH" ]]; then
   log "Generating CNN/DM eval set..."
-  (cd "$APP_DIR" && python3 download_cnndm.py --model-id "$MODEL_ID") > "$LOG_DIR/build_cnndm.log" 2>&1 || exit 2
-  mv "$APP_DIR/data/cnn_eval.json" "$DATASET_PATH"; rm -rf "$APP_DIR/data"
+  (cd "$APP_DIR" && DATASET_CNNDM_PATH="${RESULTS_DIR}/data" HF_HOME="${HF_HOME}" HF_DATASETS_CACHE="${HF_DATASETS_CACHE}" python3 download_cnndm.py --model-id "$CHECKPOINT_PATH" --n-samples "${SMOKE_SAMPLES}") > "$LOG_DIR/build_cnndm.log" 2>&1 || { err "Dataset generation failed (see $LOG_DIR/build_cnndm.log)"; sed -n '1,200p' "$LOG_DIR/build_cnndm.log" || true; exit 2; }
+  # Select actual file if different name was produced
+  if [[ ! -s "$DATASET_PATH" ]]; then
+    cand=$(ls -1t "${RESULTS_DIR}/data"/cnn_eval*.json 2>/dev/null | head -1 || true)
+    [[ -n "$cand" ]] && DATASET_PATH="$cand"
+  fi
+  [[ -s "$DATASET_PATH" ]] || { err "Dataset generation failed (see $LOG_DIR/build_cnndm.log)"; exit 2; }
 fi
 
 # Smoke user.conf
@@ -329,6 +361,7 @@ PY
 fi
 
 log "Smoke complete → ${RESULTS_DIR}"
+exit 0
 
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -342,7 +375,7 @@ RESULTS_DIR="${ROOT_DIR}/results/${RUN_ID}"
 LOG_DIR="${RESULTS_DIR}/logs"
 MLPERF_DIR="${RESULTS_DIR}/mlperf"
 MMLU_DIR="${RESULTS_DIR}/mmlu"
-mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${ROOT_DIR}/.hf_cache"
+mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${HF_HOME}"
 
 # Load .env if present (exports HUGGINGFACE_TOKEN / HF_TOKEN)
 if [[ -f "${ROOT_DIR}/.env" ]]; then
@@ -455,12 +488,21 @@ PY
 )
 [[ -z "$CHECKPOINT_PATH" ]] && { err "Model not in cache"; exit 2; }
 
-# Dataset
-DATASET_PATH="${RESULTS_DIR}/data/cnn_eval.json"; mkdir -p "${RESULTS_DIR}/data"
+# Dataset (prefer sample-sized file name when SMOKE_SAMPLES > 0)
+mkdir -p "${RESULTS_DIR}/data"
+DATASET_BASENAME="cnn_eval.json"
+if [[ -n "${SMOKE_SAMPLES}" && "${SMOKE_SAMPLES}" != "0" ]]; then
+  DATASET_BASENAME="cnn_eval_${SMOKE_SAMPLES}.json"
+fi
+DATASET_PATH="${RESULTS_DIR}/data/${DATASET_BASENAME}"
 if [[ ! -s "$DATASET_PATH" ]]; then
   log "Generating CNN/DM eval set..."
-  (cd "$APP_DIR" && python3 download_cnndm.py --model-id "$MODEL_ID") > "$LOG_DIR/build_cnndm.log" 2>&1 || exit 2
-  mv "$APP_DIR/data/cnn_eval.json" "$DATASET_PATH"; rm -rf "$APP_DIR/data"
+  (cd "$APP_DIR" && DATASET_CNNDM_PATH="${RESULTS_DIR}/data" python3 download_cnndm.py --model-id "$MODEL_ID" --n-samples "${SMOKE_SAMPLES}") > "$LOG_DIR/build_cnndm.log" 2>&1 || exit 2
+  if [[ ! -s "$DATASET_PATH" ]]; then
+    cand=$(ls -1t "${RESULTS_DIR}/data"/cnn_eval*.json 2>/dev/null | head -1 || true)
+    [[ -n "$cand" ]] && DATASET_PATH="$cand"
+  fi
+  [[ -s "$DATASET_PATH" ]] || { err "Dataset generation failed (see $LOG_DIR/build_cnndm.log)"; exit 2; }
 fi
 
 # Smoke sampling controls

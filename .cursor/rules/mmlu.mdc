@@ -1,7 +1,0 @@
-# Applies when working in `llm_eval/` and MMLU evaluation
-
-## Behavior
-- Keep evaluation deterministic; log seed and model.
-- Support small-sample dry runs for quick validation.
-- Output logs to `results/mmlu_results_*` with timestamps.
-
