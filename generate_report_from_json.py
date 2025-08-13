@@ -36,6 +36,10 @@ def generate_report_from_json(json_file):
                 'accuracy': {},
             }
 
+    # If this is our normalized summary.json, no further normalization needed
+    if isinstance(results, dict) and ('performance' in results or 'accuracy' in results):
+        pass
+
     # Extract data with fallbacks for MLPerf and MMLU summaries
     metadata = results.get('metadata', {})
     performance = results.get('performance', {})

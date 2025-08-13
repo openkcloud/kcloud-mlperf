@@ -1,4 +1,56 @@
 #!/usr/bin/env python3
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: generate_mmlu_report.py <mmlu_summary.json>")
+        return 2
+    p = Path(sys.argv[1])
+    if not p.exists():
+        print(f"❌ File not found: {p}")
+        return 2
+    with p.open('r') as f:
+        data = json.load(f)
+
+    acc = (
+        (data.get('accuracy') or {}).get('mmlu_acc')
+        or 0
+    )
+    meta = data.get('metadata', {})
+    samples = meta.get('samples') or meta.get('limit') or 0
+    task = meta.get('task', 'mmlu')
+
+    html = f"""<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <title>MMLU Report - {task}</title>
+  <style>body{{font-family:system-ui,Segoe UI,Arial;margin:20px;}} .card{{background:#f8f9fa;padding:16px;border-radius:10px;margin:10px 0;}}</style>
+</head>
+<body>
+  <h2>📚 MMLU Report</h2>
+  <div class=\"card\">
+    <div><strong>Task:</strong> {task}</div>
+    <div><strong>Accuracy:</strong> {acc*100:.2f}%</div>
+    <div><strong>Samples:</strong> {samples}</div>
+    <div><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+  </div>
+</body>
+</html>"""
+
+    out = p.parent / f"mmlu_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    out.write_text(html)
+    print(f"📋 MMLU HTML report generated: {out}")
+    return 0
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+
+#!/usr/bin/env python3
 """
 Generate HTML report from MMLU evaluation results
 """

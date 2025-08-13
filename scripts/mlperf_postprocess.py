@@ -21,10 +21,18 @@ def parse_run_log(run_log: Path) -> dict:
     txt = run_log.read_text(errors="ignore")
     # Extract the MLPerf Results Summary block
     # Example lines we parse safely if present
+    # Server summary line
     m = re.search(r"Completed samples per second\s*:\s*([0-9.]+)", txt)
     if m:
         try:
             data["performance"]["throughput_samples_per_second"] = float(m.group(1))
+        except Exception:
+            pass
+    # Offline summary line
+    m = re.search(r"Samples per second:\s*([0-9.]+)", txt)
+    if m and "throughput_samples_per_second" not in data.get("performance", {}):
+        try:
+            data.setdefault("performance", {})["throughput_samples_per_second"] = float(m.group(1))
         except Exception:
             pass
     m = re.search(r"Completed tokens per second:\s*([0-9.]+)", txt)
@@ -127,10 +135,32 @@ def main() -> int:
         acc = maybe_run_accuracy_eval(app_dir, outdir, dataset)
         if acc:
             summary["accuracy"].update(acc)
+        # Try to derive sample count from accuracy JSON
+        acc_json = outdir / "mlperf_log_accuracy.json"
+        if acc_json.exists():
+            try:
+                acc_data = json.loads(acc_json.read_text(errors="ignore"))
+                if isinstance(acc_data, list):
+                    samples = len(acc_data)
+                    summary.setdefault("metadata", {})["samples"] = samples
+                    summary.setdefault("performance", {})["samples_processed"] = samples
+            except Exception:
+                pass
+    else:
+        # For performance runs, reuse processed_queries as samples if available
+        pq = summary.get("metadata", {}).get("processed_queries")
+        if pq:
+            summary.setdefault("metadata", {})["samples"] = pq
+            summary.setdefault("performance", {})["samples_processed"] = pq
 
     # Best-effort total_time based on throughput and samples when possible
     thr = summary.get("performance", {}).get("throughput_samples_per_second", 0.0)
-    samples = summary.get("metadata", {}).get("processed_queries", 0)
+    samples = (
+        summary.get("metadata", {}).get("samples")
+        or summary.get("performance", {}).get("samples_processed")
+        or summary.get("metadata", {}).get("processed_queries")
+        or 0
+    )
     if thr and samples:
         summary["performance"]["total_time_seconds_estimated"] = samples / max(thr, 1e-9)
 

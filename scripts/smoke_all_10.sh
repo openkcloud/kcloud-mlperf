@@ -299,11 +299,11 @@ try:
 except Exception as e:
     print('Failed to write MMLU summary:', e)
 PY
-    # Generate report from normalized summary
-    if [[ -f "${MMLU_DIR}/summary.json" ]]; then
-      python3 generate_report_from_json.py "${MMLU_DIR}/summary.json" |& tee -a "${MMLU_DIR}/report.log" || true
+    # Generate MMLU report via dedicated generator if available, else fallback to generic
+    if [[ -f "${ROOT_DIR}/generate_mmlu_report.py" ]]; then
+      python3 "${ROOT_DIR}/generate_mmlu_report.py" "${MMLU_DIR}/summary.json" |& tee -a "${MMLU_DIR}/report.log" || true
     else
-      python3 generate_report_from_json.py "${mmlu_json}" |& tee -a "${MMLU_DIR}/report.log" || true
+      python3 generate_report_from_json.py "${MMLU_DIR}/summary.json" |& tee -a "${MMLU_DIR}/report.log" || true
     fi
   fi
   # Aggregate simple rollup for the entire run
