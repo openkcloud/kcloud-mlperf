@@ -25,14 +25,20 @@ case "$cmd" in
   smoke)
     # Ensure caches exist and are writable for arbitrary uid:gid
     export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
-    mkdir -p "$HF_HOME" /app/results 2>/dev/null || true
-    chmod -R 777 "$HF_HOME" /app/results 2>/dev/null || true
+    export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-/app/.cache/torchinductor}"
+    export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-GNU}"
+    export MKL_SERVICE_FORCE_INTEL="${MKL_SERVICE_FORCE_INTEL:-1}"
+    mkdir -p "$HF_HOME" /app/results "$TORCHINDUCTOR_CACHE_DIR" 2>/dev/null || true
+    chmod -R 777 "$HF_HOME" /app/results "$TORCHINDUCTOR_CACHE_DIR" 2>/dev/null || true
     /app/scripts/smoke_all_10.sh "$@"
     ;;
   all-in-one)
     export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
-    mkdir -p "$HF_HOME" /app/results 2>/dev/null || true
-    chmod -R 777 "$HF_HOME" /app/results 2>/dev/null || true
+    export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-/app/.cache/torchinductor}"
+    export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-GNU}"
+    export MKL_SERVICE_FORCE_INTEL="${MKL_SERVICE_FORCE_INTEL:-1}"
+    mkdir -p "$HF_HOME" /app/results "$TORCHINDUCTOR_CACHE_DIR" 2>/dev/null || true
+    chmod -R 777 "$HF_HOME" /app/results "$TORCHINDUCTOR_CACHE_DIR" 2>/dev/null || true
     /app/scripts/run_all_in_one.sh "$@"
     ;;
   *)

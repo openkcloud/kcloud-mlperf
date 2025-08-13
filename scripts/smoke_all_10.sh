@@ -34,6 +34,9 @@ export VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER:-1}"
 export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
 export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-${HF_HOME}}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
+export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-/app/.cache/torchinductor}"
+export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-GNU}"
+export MKL_SERVICE_FORCE_INTEL="${MKL_SERVICE_FORCE_INTEL:-1}"
 
 TS(){ date '+%Y-%m-%d %H:%M:%S'; }
 log(){ printf "[%s] [INFO] %s\n" "$(TS)" "$*"; }
@@ -183,18 +186,21 @@ run_ref(){
     VLLM_GPU_MEM_UTILIZATION="${VLLM_GPU_MEM_UTILIZATION}" \
     VLLM_KV_CACHE_DTYPE="${VLLM_KV_CACHE_DTYPE}" \
     VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER}" \
+    TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR}" \
+    MKL_THREADING_LAYER="${MKL_THREADING_LAYER}" \
+    MKL_SERVICE_FORCE_INTEL="${MKL_SERVICE_FORCE_INTEL}" \
     python -u main.py \
       --scenario "$scenario" \
       --model-path "$CHECKPOINT_PATH" \
       --batch-size $([[ "${SMOKE_FAST}" == "1" ]] && echo 1 || echo 16) \
       $([[ "$mode" == "accuracy" ]] && echo "--accuracy") \
       --dtype "$DTYPE" \
+      --vllm \
       --user-conf "${SMOKE_USER_CONF}" \
       --total-sample-count "${SMOKE_SAMPLES}" \
       --dataset-path "$DATASET_PATH" \
       --output-log-dir "$outdir" \
-      --tensor-parallel-size "$GPU_COUNT" \
-      --vllm
+      --tensor-parallel-size "$GPU_COUNT"
   ) |& tee -a "$outdir/run.log"
 }
 
@@ -375,7 +381,7 @@ RESULTS_DIR="${ROOT_DIR}/results/${RUN_ID}"
 LOG_DIR="${RESULTS_DIR}/logs"
 MLPERF_DIR="${RESULTS_DIR}/mlperf"
 MMLU_DIR="${RESULTS_DIR}/mmlu"
-mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${HF_HOME}"
+mkdir -p "${RESULTS_DIR}" "${LOG_DIR}" "${MLPERF_DIR}" "${MMLU_DIR}" "${HF_HOME}" "${TORCHINDUCTOR_CACHE_DIR}"
 
 # Load .env if present (exports HUGGINGFACE_TOKEN / HF_TOKEN)
 if [[ -f "${ROOT_DIR}/.env" ]]; then

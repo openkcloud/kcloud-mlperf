@@ -42,7 +42,9 @@ ENV HF_HOME=/app/.cache/huggingface \
     HF_DATASETS_CACHE=/app/.cache/huggingface/datasets \
     CM_DOWNLOAD_PATH=/root/MLC/hf_models \
     HF_HUB_ENABLE_HF_TRANSFER=0 \
-    HF_HUB_DISABLE_PROGRESS_BARS=1
+    HF_HUB_DISABLE_PROGRESS_BARS=1 \
+    LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH} \
+    LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
 WORKDIR /app
 RUN mkdir -p /app/scripts /app/configs /app/results /app/.cache
