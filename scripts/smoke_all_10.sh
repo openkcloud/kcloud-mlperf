@@ -51,7 +51,37 @@ c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.g
 print(c[0] if c else "")
 PY
 )
-[[ -z "$CHECKPOINT_PATH" ]] && { err "Model not in cache"; exit 2; }
+if [[ -z "$CHECKPOINT_PATH" ]]; then
+  log "Model not in cache. Downloading ${MODEL_ID} into ${ROOT_DIR}/.hf_cache..."
+  if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" && -z "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
+    err "HuggingFace token not found (.env HUGGINGFACE_TOKEN=hf_xxx). Cannot download protected model ${MODEL_ID}."; exit 2;
+  fi
+  CHECKPOINT_PATH=$(ROOT_DIR="${ROOT_DIR}" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+import os, sys, subprocess
+try:
+    from huggingface_hub import snapshot_download
+except Exception:
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'huggingface_hub'])
+    from huggingface_hub import snapshot_download
+
+repo_id = os.environ.get('MODEL_ID', 'meta-llama/Meta-Llama-3.1-8B-Instruct')
+local_dir = os.path.join(os.environ.get('ROOT_DIR', '.'), '.hf_cache', repo_id.replace('/', '--'))
+token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
+path = snapshot_download(repo_id=repo_id, local_dir=local_dir, local_dir_use_symlinks=False, token=token)
+print(path, end='')
+PY
+  )
+  # Fallback to legacy cache layout if needed
+  if [[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]]; then
+    CHECKPOINT_PATH=$(HF_HOME="${ROOT_DIR}/.hf_cache" MODEL_ID="${MODEL_ID}" python3 - <<'PY'
+import os,glob; r=os.environ.get("HF_HOME","."); m=os.environ["MODEL_ID"].replace('/','--')
+c=sorted(glob.glob(os.path.join(r,f"models--{m}","snapshots","*")),key=os.path.getmtime,reverse=True)
+print(c[0] if c else "")
+PY
+    )
+  fi
+  [[ -z "$CHECKPOINT_PATH" || ! -d "$CHECKPOINT_PATH" ]] && { err "Model download failed or not found"; exit 2; }
+fi
 
 # Dataset
 DATASET_PATH="${RESULTS_DIR}/data/cnn_eval.json"; mkdir -p "${RESULTS_DIR}/data"
