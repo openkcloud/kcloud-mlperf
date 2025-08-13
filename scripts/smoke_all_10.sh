@@ -195,7 +195,6 @@ run_ref(){
       --batch-size $([[ "${SMOKE_FAST}" == "1" ]] && echo 1 || echo 16) \
       $([[ "$mode" == "accuracy" ]] && echo "--accuracy") \
       --dtype "$DTYPE" \
-      --vllm \
       --user-conf "${SMOKE_USER_CONF}" \
       --total-sample-count "${SMOKE_SAMPLES}" \
       --dataset-path "$DATASET_PATH" \
