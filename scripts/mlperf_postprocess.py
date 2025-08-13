@@ -35,7 +35,10 @@ def parse_run_log(run_log: Path) -> dict:
             data.setdefault("performance", {})["throughput_samples_per_second"] = float(m.group(1))
         except Exception:
             pass
-    m = re.search(r"Completed tokens per second:\s*([0-9.]+)", txt)
+    # Tokens/sec line may appear as either of the following
+    m = re.search(r"Completed tokens per second\s*:\s*([0-9.]+)", txt)
+    if not m:
+        m = re.search(r"Tokens per second\s*:\s*([0-9.]+)", txt)
     if m:
         try:
             data["performance"]["throughput_tokens_per_second"] = float(m.group(1))
@@ -66,10 +69,17 @@ def parse_run_log(run_log: Path) -> dict:
     _ns("tpot_mean_s", r"Mean Time to Output Token \(ns\)\s*:\s*([0-9.]+)")
 
     # Processed queries (for samples estimate)
-    mm = re.search(r"Processed\s+(\d+)\s+queries", txt)
+    # Prefer explicit MLPerf fields if present
+    mm = re.search(r"performance_sample_count\s*:\s*(\d+)", txt)
+    if not mm:
+        # Fallback to processed queries line
+        mm = re.search(r"Processed\s+(\d+)\s+queries", txt)
     if mm:
         try:
-            data["metadata"]["processed_queries"] = int(mm.group(1))
+            samples = int(mm.group(1))
+            data.setdefault("metadata", {})["processed_queries"] = samples
+            data.setdefault("metadata", {})["samples"] = samples
+            data.setdefault("performance", {})["samples_processed"] = samples
         except Exception:
             pass
 

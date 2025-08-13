@@ -157,27 +157,30 @@ results/<RUN_ID>/<task>/
   - 스모크는 샘플 수가 적어 조기 종료 조건을 충족하지 못할 수 있습니다(정상)
   - 전체 측정이 필요할 때는 샘플 수/지속 시간/목표 QPS를 늘리세요
 
-### Docker 2-스텝 퀵스타트
-아래 두 줄만으로 전체 파이프라인을 Docker에서 실행할 수 있습니다.
+### Docker 권장 실행 (빌드 1회 + 런타임 마운트)
+빌드는 1회만 수행하고, 스크립트는 마운트로 교체하여 빠르게 반복 실행할 수 있습니다.
 
 ```bash
 # 1) 이미지 빌드
 docker build -t mlbench -f docker/Dockerfile .
 
-# 2) 컨테이너 실행 (스모크 전체 10단계)
+# 2) 스모크(10단계) 실행 예시 (메모리 세이프 캡 포함)
 docker run --gpus all --rm --env-file .env \
-  -v $(pwd)/results:/app/results -v $(pwd)/.hf_cache:/app/.cache/huggingface \
-  mlbench smoke --server-perf 1 --server-acc 1 --offline-perf 1 --offline-acc 1 --mmlu 1 --samples 5 --fast --verbose
+  -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+  -e MKL_THREADING_LAYER=GNU -e MKL_SERVICE_FORCE_INTEL=1 \
+  -e TORCHINDUCTOR_CACHE_DIR=/app/results/.torchinductor \
+  -e MAX_LEN_USER=1024 -e GPU_MEM_UTIL=0.90 -e KV_CACHE_DTYPE=fp8 \
+  -e SMOKE_PROMPT_TOKENS=128 -e SMOKE_MAX_NEW_TOKENS=4 \
+  -v "$(pwd)/results:/app/results" \
+  -v "$(pwd)/.hf_cache:/app/.cache/huggingface" \
+  -v "$(pwd)/scripts/smoke_all_10.sh:/app/scripts/smoke_all_10.sh:ro" \
+  -v "$(pwd)/inference-master/language/llama3.1-8b/SUT_VLLM.py:/app/inference-master/language/llama3.1-8b/SUT_VLLM.py:ro" \
+  -v "$(pwd)/inference-master/language/llama3.1-8b/download_cnndm.py:/app/inference-master/language/llama3.1-8b/download_cnndm.py:ro" \
+  --entrypoint /bin/bash mlbench -c \
+  "bash /app/scripts/smoke_all_10.sh --server-perf 1 --server-acc 1 --offline-perf 1 --offline-acc 1 --mmlu 1 --samples 5 --fast --verbose"
 ```
 
-- 전체 올인원 실행은 다음과 같습니다.
-```bash
-docker run --gpus all --rm --env-file .env \
-  -v $(pwd)/results:/app/results -v $(pwd)/.hf_cache:/app/.cache/huggingface \
-  mlbench all-in-one --verbose
-```
-
-- 참고: 컨테이너 내부 엔트리포인트는 `smoke`/`all-in-one` 서브커맨드를 지원합니다.
+엔트리포인트(`smoke`/`all-in-one`)를 직접 사용할 수도 있으나, 개발 중에는 위와 같이 스크립트를 마운트한 뒤 `--entrypoint /bin/bash`로 실행하는 편이 빠릅니다.
 
 ### 디렉터리 개요
 - `scripts/smoke_all_10.sh`: 10단계 스모크(각 단계별 리포트 포함)
