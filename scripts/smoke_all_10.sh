@@ -37,6 +37,8 @@ export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
 export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-/app/.cache/torchinductor}"
 export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-GNU}"
 export MKL_SERVICE_FORCE_INTEL="${MKL_SERVICE_FORCE_INTEL:-1}"
+export SMOKE_PROMPT_TOKENS="${SMOKE_PROMPT_TOKENS:-2048}"
+export SMOKE_MAX_NEW_TOKENS="${SMOKE_MAX_NEW_TOKENS:-64}"
 
 TS(){ date '+%Y-%m-%d %H:%M:%S'; }
 log(){ printf "[%s] [INFO] %s\n" "$(TS)" "$*"; }
@@ -159,9 +161,12 @@ if [[ -z "$CHECKPOINT_PATH" ]]; then
   CHECKPOINT_PATH=$(ensure_snapshot)
 else
   # Validate that real weights exist; if not, force download
-  WEIGHT_COUNT=$(python3 - <<PY
+  WEIGHT_COUNT=$(CHECKPOINT_PATH="${CHECKPOINT_PATH}" python3 - <<'PY'
 import os, glob
-p=os.environ['CHECKPOINT_PATH']
+p=os.environ.get('CHECKPOINT_PATH','')
+if not p:
+    print('0')
+    raise SystemExit(0)
 print(len(glob.glob(os.path.join(p,'model-*.safetensors'))))
 PY
   )
@@ -219,11 +224,13 @@ run_ref(){
       --batch-size $([[ "${SMOKE_FAST}" == "1" ]] && echo 1 || echo 16) \
       $([[ "$mode" == "accuracy" ]] && echo "--accuracy") \
       --dtype "$DTYPE" \
+      --vllm \
       --user-conf "${SMOKE_USER_CONF}" \
       --total-sample-count "${SMOKE_SAMPLES}" \
       --dataset-path "$DATASET_PATH" \
       --output-log-dir "$outdir" \
-      --tensor-parallel-size "$GPU_COUNT"
+      --tensor-parallel-size "$GPU_COUNT" \
+      --max_new_tokens "${SMOKE_MAX_NEW_TOKENS}"
   ) |& tee -a "$outdir/run.log"
 }
 
