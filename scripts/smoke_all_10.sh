@@ -165,7 +165,10 @@ run_ref(){
 generate_report_for_dir(){
   local outdir="$1"
   local prefer_json=""
-  if [[ -f "${outdir}/mlperf_log_summary.json" ]]; then
+  # Prefer our normalized summary first
+  if [[ -f "${outdir}/summary.json" ]]; then
+    prefer_json="${outdir}/summary.json"
+  elif [[ -f "${outdir}/mlperf_log_summary.json" ]]; then
     prefer_json="${outdir}/mlperf_log_summary.json"
   elif [[ -f "${outdir}/mlperf_log_accuracy.json" ]]; then
     prefer_json="${outdir}/mlperf_log_accuracy.json"
@@ -227,9 +230,81 @@ if [[ "${RUN_MMLU_SMOKE}" == "1" ]]; then
       --output_path "${MMLU_DIR}" --log_samples |& tee -a "${MMLU_DIR}/lm_eval.log"
   fi
   set -e
-  mmlu_json="$(ls -1t "${MMLU_DIR}"/*.json 2>/dev/null | head -1)"
+  # Find latest JSON produced by lm_eval (search recursively)
+  mmlu_json="$(MMLU_DIR="${MMLU_DIR}" python3 - <<'PY'
+import os, sys, glob
+base=os.environ.get('MMLU_DIR','.')
+candidates=[]
+for root,dirs,files in os.walk(base):
+    for fn in files:
+        if fn.endswith('.json'):
+            p=os.path.join(root,fn)
+            try:
+                candidates.append((os.path.getmtime(p), p))
+            except Exception:
+                pass
+if candidates:
+    candidates.sort(reverse=True)
+    print(candidates[0][1])
+else:
+    print('')
+PY
+  )"
+  # Normalize MMLU into summary.json for rollup/reporting
   if [[ -n "${mmlu_json}" ]]; then
-    python3 generate_report_from_json.py "${mmlu_json}" |& tee -a "${MMLU_DIR}/report.log" || true
+    MMLU_SUMMARY_PATH="${MMLU_DIR}/summary.json"
+    RESULTS_DIR_ENV="${RESULTS_DIR}" MMLU_DIR="${MMLU_DIR}" MMLU_JSON_PATH="${mmlu_json}" python3 - <<'PY'
+import json, os, sys
+src=os.environ.get('MMLU_JSON_PATH')
+dst=os.path.join(os.environ.get('MMLU_DIR','.'),'summary.json')
+try:
+    with open(src,'r') as f:
+        data=json.load(f)
+except Exception:
+    data={}
+out={"metadata":{},"performance":{},"accuracy":{}}
+# EleutherAI lm_eval results.json structure
+if isinstance(data, dict) and 'results' in data:
+    results=data.get('results',{})
+    # Try to aggregate first task found
+    if isinstance(results, dict) and results:
+        first_task=sorted(results.keys())[0]
+        task_res=results.get(first_task,{})
+        # common keys: 'acc', 'acc_norm', sometimes nested dict {'acc': value}
+        acc=None
+        if isinstance(task_res, dict):
+            if isinstance(task_res.get('acc'), dict):
+                acc=task_res['acc'].get('value') if isinstance(task_res['acc'].get('value', None), (int,float)) else None
+            if acc is None:
+                acc = task_res.get('acc') or task_res.get('acc_norm') or task_res.get('acc,none')
+        if acc is None:
+            acc = 0
+        out['accuracy']={'mmlu_acc': float(acc)}
+        out['metadata']['task']=first_task
+    # Add config bits
+    cfg=data.get('config',{})
+    if isinstance(cfg, dict):
+        out['metadata']['num_fewshot']=cfg.get('num_fewshot',0)
+        out['metadata']['batch_size']=cfg.get('batch_size',1)
+        out['metadata']['limit']=cfg.get('limit')
+    # Samples if available
+    # Some versions include 'versions' or 'n-samples' info per task; skip if absent
+else:
+    # Fallback: leave as empty accuracy
+    pass
+try:
+    with open(dst,'w') as f:
+        json.dump(out,f,indent=2)
+    print('Wrote', dst)
+except Exception as e:
+    print('Failed to write MMLU summary:', e)
+PY
+    # Generate report from normalized summary
+    if [[ -f "${MMLU_DIR}/summary.json" ]]; then
+      python3 generate_report_from_json.py "${MMLU_DIR}/summary.json" |& tee -a "${MMLU_DIR}/report.log" || true
+    else
+      python3 generate_report_from_json.py "${mmlu_json}" |& tee -a "${MMLU_DIR}/report.log" || true
+    fi
   fi
   # Aggregate simple rollup for the entire run
   rollup_dir="${RESULTS_DIR}/rollup"; mkdir -p "${rollup_dir}"
