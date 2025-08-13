@@ -37,6 +37,36 @@ bash scripts/smoke_all_10.sh
 bash scripts/run_all_in_one.sh
 ```
 
+### 올인원 스크립트 플래그(독립 실행/정교한 제어)
+아래 플래그로 각 단계를 독립적으로 켜고 끄거나, 샘플 수/설정을 바꿀 수 있습니다.
+
+```bash
+Usage: run_all_in_one.sh [options]
+  --server-perf [0|1]     Server 성능 실행 (기본 1)
+  --server-acc  [0|1]     Server 정확도 실행 (기본 1)
+  --offline-perf [0|1]    Offline 성능 실행 (기본 1)
+  --offline-acc  [0|1]    Offline 정확도 실행 (기본 1)
+  --mmlu         [0|1]    MMLU 실행 (기본 1)
+  --samples N             MLPerf total-sample-count (기본 13368)
+  --user-conf PATH        LoadGen user.conf (기본 user.conf)
+  --verbose               상세 로그 (set -x)
+  --help                  도움말
+```
+
+예시:
+- 서버 성능만 전체 샘플로 실행
+```bash
+bash scripts/run_all_in_one.sh --server-acc 0 --offline-perf 0 --offline-acc 0 --mmlu 0
+```
+- 5,000 샘플로 전체 4단계(서버/오프라인, 성능/정확도) 실행
+```bash
+bash scripts/run_all_in_one.sh --samples 5000
+```
+- 정확도 전용(서버/오프라인) + 상세 로그
+```bash
+bash scripts/run_all_in_one.sh --server-perf 0 --offline-perf 0 --verbose
+```
+
 ### 출력/결과 위치
 - 모든 산출물은 다음에 저장됩니다.
 ```
@@ -54,6 +84,15 @@ results/<RUN_ID>/<task>/
 - `RUN_PERF_SERVER`/`RUN_ACC_SERVER`/`RUN_PERF_OFFLINE`/`RUN_ACC_OFFLINE`/`RUN_MMLU_SMOKE`: 단계별 활성화 토글
 - 메모리 세이프 기본값(스크립트 내 지정)
   - `VLLM_MAX_MODEL_LEN=4096`, `VLLM_GPU_MEM_UTILIZATION=0.88~0.95`, `VLLM_ENFORCE_EAGER=1`
+
+### 상세 로그와 리포트
+- 실시간 로그 파일
+  - `scripts/run_all_in_one.sh`: `results/<RUN_ID>/logs/run_all.log`
+  - 각 단계 실행 로그: `results/<RUN_ID>/mlperf/<case>/run.log`, `results/<RUN_ID>/mmlu/lm_eval.log`
+- HTML 리포트
+  - 각 단계 완료 후 `benchmark_report_*.html` 자동 생성(가능한 경우)
+  - MLPerf: `results/<RUN_ID>/mlperf/<case>/benchmark_report_*.html`
+  - MMLU:   `results/<RUN_ID>/mmlu/benchmark_report_*.html`
 
 ### 토큰/캐시 관련
 - 모델 캐시가 없으면 스크립트가 자동으로 `huggingface_hub.snapshot_download`를 호출합니다.
