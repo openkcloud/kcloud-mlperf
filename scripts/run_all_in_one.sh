@@ -126,6 +126,9 @@ run_ref(){
   log "${scenario} ${mode} → $outdir"
   (
     cd "$APP_DIR"
+    # Use single worker for Offline (LLM.generate is not thread-safe); allow threads for Server
+    local _workers
+    if [[ "$scenario" == "Offline" ]]; then _workers=1; else _workers="${SERVER_WORKERS:-8}"; fi
     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN}" \
     VLLM_GPU_MEM_UTILIZATION="${VLLM_GPU_MEM_UTILIZATION}" \
     VLLM_KV_CACHE_DTYPE="${VLLM_KV_CACHE_DTYPE}" \
@@ -143,7 +146,7 @@ run_ref(){
       --dataset-path "$DATASET_PATH" \
       --output-log-dir "$outdir" \
       --tensor-parallel-size "$GPU_COUNT" \
-      --num-workers "${SERVER_WORKERS:-8}" \
+      --num-workers "${_workers}" \
       --vllm "$@"
   ) |& tee -a "$outdir/run.log"
 }

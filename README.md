@@ -198,6 +198,29 @@ docker run --gpus all --rm --env-file .env \
   "bash /app/scripts/run_all_in_one.sh --samples 13368 --verbose"
 ```
 
+#### 전체 4단계 빠른 실행(서버/오프라인 성능·정확도, 안정 프리셋)
+아래 명령은 4단계(서버/오프라인 성능·정확도)를 한 번에 실행합니다. 24GB급 GPU에서 안정적으로 동작하도록 길이/스케줄/배치 값을 보수적으로 조정했습니다.
+
+```bash
+docker run --gpus all --rm --env-file .env \
+  -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+  -e MKL_THREADING_LAYER=GNU -e MKL_SERVICE_FORCE_INTEL=1 \
+  -e TORCHINDUCTOR_CACHE_DIR=/app/results/.torchinductor \
+  -e MAX_LEN_USER=4096 -e GPU_MEM_UTIL=0.93 -e KV_CACHE_DTYPE=fp8 \
+  -e VLLM_ENFORCE_EAGER=1 \
+  -e VLLM_MAX_NUM_SEQS=40 -e VLLM_MAX_NUM_BATCHED_TOKENS=4096 \
+  -e BATCH_SIZE=128 \
+  -v "$(pwd)/results:/app/results" \
+  -v "$(pwd)/.hf_cache:/app/.cache/huggingface" \
+  -v "$(pwd)/scripts/run_all_in_one.sh:/app/scripts/run_all_in_one.sh:ro" \
+  --entrypoint /bin/bash mlbench -lc \
+'cat >/app/user.offline.safe.conf <<EOF
+*.Offline.min_duration = 12000
+*.Offline.min_query_count = 300
+EOF
+bash /app/scripts/run_all_in_one.sh --server-perf 1 --server-acc 1 --offline-perf 1 --offline-acc 1 --samples 13368 --user-conf /app/user.offline.safe.conf --verbose'
+```
+
 참고: 여러 GPU가 있는 경우, 여유 메모리가 가장 큰 GPU를 선택해 실행하면 안정성이 높습니다.
 
 ### 디렉터리 개요
