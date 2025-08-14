@@ -21,6 +21,7 @@ RUN pip3 install --upgrade pip setuptools wheel && \
       scipy \
       numexpr \
       vllm[triton] \
+      flashinfer \
       "numpy>=1.24.0,<2"
 
 # MMLU evaluation harness + HF hub CLI

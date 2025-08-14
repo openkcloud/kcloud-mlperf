@@ -135,7 +135,7 @@ run_ref(){
     python -u main.py \
       --scenario "$scenario" \
       --model-path "$CHECKPOINT_PATH" \
-      --batch-size 16 \
+      --batch-size "${BATCH_SIZE:-16}" \
       $([[ "$mode" == "accuracy" ]] && echo "--accuracy") \
       --dtype "$DTYPE" \
       --user-conf "${USER_CONF_OVERRIDE}" \
@@ -166,7 +166,7 @@ generate_report_for_dir(){
 
 if [[ "${RUN_PERF_SERVER}" == "1" ]]; then out_srv_perf="${MLPERF_DIR}/server_performance"; run_ref Server performance "${out_srv_perf}"; generate_report_for_dir "${out_srv_perf}"; fi
 if [[ "${RUN_ACC_SERVER}"  == "1" ]]; then out_srv_acc="${MLPERF_DIR}/server_accuracy";   run_ref Server accuracy   "${out_srv_acc}";   generate_report_for_dir "${out_srv_acc}"; fi
-if [[ "${RUN_PERF_OFFLINE}"== "1" ]]; then out_off_perf="${MLPERF_DIR}/offline_performance"; run_ref Offline performance "${out_off_perf}"; generate_report_for_dir "${out_off_perf}"; fi
+if [[ "${RUN_PERF_OFFLINE}" == "1" ]]; then out_off_perf="${MLPERF_DIR}/offline_performance"; run_ref Offline performance "${out_off_perf}"; generate_report_for_dir "${out_off_perf}"; fi
 if [[ "${RUN_ACC_OFFLINE}" == "1" ]]; then out_off_acc="${MLPERF_DIR}/offline_accuracy";   run_ref Offline accuracy   "${out_off_acc}";   generate_report_for_dir "${out_off_acc}"; fi
 
 if [[ "${RUN_MMLU}" == "1" ]]; then
