@@ -21,8 +21,12 @@ RUN pip3 install --upgrade pip setuptools wheel && \
       scipy \
       numexpr \
       vllm[triton] \
-      flashinfer \
       "numpy>=1.24.0,<2"
+
+# Optional: FlashInfer (better attention backend with fp8 KV). Wheels are not on PyPI; install
+# from vendor wheel index matching CUDA/PyTorch. Ignore failure and fall back to XFormers.
+ARG FLASHINFER_WHL_INDEX=https://flashinfer.ai/whl/cu121/torch2.4.html
+RUN pip3 install --no-cache-dir -f ${FLASHINFER_WHL_INDEX} flashinfer || echo "FlashInfer not available for this env; falling back to XFormers"
 
 # MMLU evaluation harness + HF hub CLI
 RUN pip3 install --no-cache-dir "lm-eval==0.4.3" "huggingface_hub>=0.23"
