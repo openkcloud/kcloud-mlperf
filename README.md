@@ -31,4 +31,4 @@ results/
     Accuracy/{mlperf_log_accuracy.json, rouge.json}
 ```
 
-See `docs/README.legacy.md` for prior version notes.
+
