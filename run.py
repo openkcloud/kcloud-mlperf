@@ -111,7 +111,7 @@ def detect_system_info() -> SystemInfo:
 def map_model_alias(alias: str) -> str:
     canon = alias.strip().lower()
     if canon in {"llama3.1-8b-instruct", "llama-3.1-8b-instruct", "llama31-8b", "llama3.1"}:
-        return "meta-llama/Meta-Llama-3.1-8B-Instruct"
+        return "meta-llama/Llama-3.1-8B-Instruct"
     # Pass-through for full HF IDs
     return alias
 
@@ -636,7 +636,7 @@ def main() -> None:
     config = {
         "args": {k: (v if not isinstance(v, Path) else str(v)) for k, v in vars(args).items()},
         "system": asdict(sysinfo),
-        "env": {k: os.environ.get(k, "") for k in ["HF_TOKEN"]},
+        "env": {k: os.environ.get(k, "") for k in ["HF_TOKEN", "HUGGINGFACE_HUB_TOKEN"]},
         "start_time": datetime.now().isoformat(),
     }
     write_json_file(run_dir / "config.json", config)
