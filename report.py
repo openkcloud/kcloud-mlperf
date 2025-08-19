@@ -64,9 +64,14 @@ def build_summary_and_report(
     tokens_per_sec_png = plots_dir / "tokens_per_sec.png"
     latency_cdf_png = plots_dir / "latency_cdf.png"
 
-    if run_outcome.get("mode") == "performance":
-        if run_outcome.get("scenario") == "offline":
-            _plot_tokens_per_sec(run_outcome.get("tokens_per_sec", 0.0), tokens_per_sec_png)
+    # Support single or combined outcomes
+    outcome_accuracy = run_outcome.get("accuracy") if "accuracy" in run_outcome else (run_outcome if run_outcome.get("mode") == "accuracy" else None)
+    outcome_performance = run_outcome.get("performance") if "performance" in run_outcome else (run_outcome if run_outcome.get("mode") == "performance" else None)
+
+    if outcome_performance:
+        scen = outcome_performance.get("scenario")
+        if scen == "offline":
+            _plot_tokens_per_sec(outcome_performance.get("tokens_per_sec", 0.0), tokens_per_sec_png)
         else:
             _plot_latency_cdf(latencies_ms, latency_cdf_png)
 
@@ -83,7 +88,10 @@ def build_summary_and_report(
             "model": args_dict.get("model"),
         },
         "system": sysinfo,
-        "run": run_outcome,
+        "run": {
+            **({"accuracy": outcome_accuracy} if outcome_accuracy else {}),
+            **({"performance": outcome_performance} if outcome_performance else {}),
+        } or run_outcome,
         "logs": {
             "summary_txt": str(summary_txt) if summary_txt.exists() else None,
             "detail_txt": str(detail_txt) if detail_txt.exists() else None,
@@ -106,9 +114,9 @@ def build_summary_and_report(
     )
     lines.append("")
     lines.append("## Accuracy")
-    if run_outcome.get("mode") == "accuracy":
-        rouge = run_outcome.get("rouge", {})
-        passed = run_outcome.get("passed")
+    if outcome_accuracy:
+        rouge = outcome_accuracy.get("rouge", {})
+        passed = outcome_accuracy.get("passed")
         lines.append(f"ROUGE-1: {rouge.get('rouge1', 0):.4f}")
         lines.append(f"ROUGE-2: {rouge.get('rouge2', 0):.4f}")
         lines.append(f"ROUGE-L: {rouge.get('rougeL', 0):.4f}")
@@ -119,23 +127,23 @@ def build_summary_and_report(
     lines.append("")
 
     lines.append("## Performance")
-    if run_outcome.get("mode") == "performance":
-        scen = run_outcome.get("scenario")
+    if outcome_performance:
+        scen = outcome_performance.get("scenario")
         if scen == "offline":
-            lines.append(f"Tokens/sec: {run_outcome.get('tokens_per_sec', 0.0):.2f}")
+            lines.append(f"Tokens/sec: {outcome_performance.get('tokens_per_sec', 0.0):.2f}")
             if (plots_dir / "tokens_per_sec.png").exists():
                 lines.append("![](plots/tokens_per_sec.png)")
         elif scen == "server":
-            lines.append(f"Target QPS: {run_outcome.get('target_qps', 0.0):.3f}")
-            lines.append(f"Achieved QPS: {run_outcome.get('achieved_qps', 0.0):.3f}")
-            lat = run_outcome.get("latency_ms", {})
+            lines.append(f"Target QPS: {outcome_performance.get('target_qps', 0.0):.3f}")
+            lines.append(f"Achieved QPS: {outcome_performance.get('achieved_qps', 0.0):.3f}")
+            lat = outcome_performance.get("latency_ms", {})
             lines.append(
                 f"Latency p50/p90/p95/p99 (ms): {lat.get('p50',0):.2f}/{lat.get('p90',0):.2f}/{lat.get('p95',0):.2f}/{lat.get('p99',0):.2f}"
             )
             if (plots_dir / "latency_cdf.png").exists():
                 lines.append("![](plots/latency_cdf.png)")
         else:
-            lat = run_outcome.get("latency_ms", {})
+            lat = outcome_performance.get("latency_ms", {})
             lines.append(
                 f"Latency p50/p90/p95/p99 (ms): {lat.get('p50',0):.2f}/{lat.get('p90',0):.2f}/{lat.get('p95',0):.2f}/{lat.get('p99',0):.2f}"
             )
@@ -161,5 +169,17 @@ def build_summary_and_report(
 
     report_md = "\n".join(lines) + "\n"
     return summary, report_md
+
+
+def update_results_index(results_root: Path) -> None:
+    # Create/refresh an index.md listing all runs with basic stats
+    entries = []
+    for p in sorted([d for d in results_root.iterdir() if d.is_dir() and d.name != "latest"], reverse=True):
+        report_file = p / "report.md"
+        summary_file = p / "summary.json"
+        ts = p.name
+        entries.append(f"- [{ts}](./{ts}/report.md)")
+    if entries:
+        (results_root / "index.md").write_text("\n".join(["# Runs", ""] + entries + [""]) )
 
 

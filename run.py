@@ -627,7 +627,7 @@ def main() -> None:
         choices=["offline", "server", "singlestream"],
         required=True,
     )
-    parser.add_argument("--mode", choices=["accuracy", "performance"], required=True)
+    parser.add_argument("--mode", choices=["accuracy", "performance", "both"], required=True)
     parser.add_argument("--precision", choices=["fp16", "bf16"], default="fp16")
     parser.add_argument("--tensor-parallel-size", default="auto")
     parser.add_argument("--max-new-tokens", type=int, default=128)
@@ -687,7 +687,28 @@ def main() -> None:
             build_and_write_report(run_dir, args, sysinfo, run_outcome)
             sys.exit(1)
         build_and_write_report(run_dir, args, sysinfo, run_outcome)
+        # Update results index to keep history browsable
+        from report import update_results_index  # type: ignore
+        update_results_index(run_dir.parent)
         print("Accuracy run completed and passed.")
+        return
+
+    if args.mode == "both":
+        # Run accuracy first (deterministic), then performance for the selected scenario
+        outcome_acc = run_accuracy(args, run_dir, sysinfo)
+        outcome_perf: Dict[str, Any]
+        if args.scenario == "offline":
+            outcome_perf = run_performance_offline(args, run_dir, sysinfo)
+        elif args.scenario == "server":
+            outcome_perf = run_performance_server(args, run_dir, sysinfo)
+        else:
+            outcome_perf = run_performance_singlestream(args, run_dir, sysinfo)
+
+        combined = {"accuracy": outcome_acc, "performance": outcome_perf}
+        build_and_write_report(run_dir, args, sysinfo, combined)
+        from report import update_results_index  # type: ignore
+        update_results_index(run_dir.parent)
+        print("Combined accuracy + performance run completed.")
         return
 
     # Performance
@@ -699,6 +720,8 @@ def main() -> None:
         run_outcome = run_performance_singlestream(args, run_dir, sysinfo)
 
     build_and_write_report(run_dir, args, sysinfo, run_outcome)
+    from report import update_results_index  # type: ignore
+    update_results_index(run_dir.parent)
     print("Performance run completed.")
 
 
