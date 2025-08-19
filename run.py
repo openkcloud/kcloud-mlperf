@@ -299,15 +299,19 @@ def generate_with_vllm(
 
 
 def compute_rouge(preds: List[str], refs: List[str]) -> Dict[str, float]:
-    rouge = evaluate.load("rouge")
-    scores = rouge.compute(predictions=preds, references=refs, use_stemmer=True)
-    # Normalize keys
-    return {
-        "rouge1": float(scores.get("rouge1", 0.0)),
-        "rouge2": float(scores.get("rouge2", 0.0)),
-        "rougeL": float(scores.get("rougeL", 0.0)),
-        "rougeLsum": float(scores.get("rougeLsum", 0.0)),
-    }
+    # Use local rouge-score to avoid downloading metric scripts
+    from rouge_score import rouge_scorer  # type: ignore
+
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
+    total = {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0, "rougeLsum": 0.0}
+    n = max(1, min(len(preds), len(refs)))
+    for pred, ref in zip(preds, refs):
+        s = scorer.score(ref, pred)
+        total["rouge1"] += getattr(s.get("rouge1"), "fmeasure", 0.0)
+        total["rouge2"] += getattr(s.get("rouge2"), "fmeasure", 0.0)
+        total["rougeL"] += getattr(s.get("rougeL"), "fmeasure", 0.0)
+        total["rougeLsum"] += getattr(s.get("rougeLsum"), "fmeasure", 0.0)
+    return {k: v / n for k, v in total.items()}
 
 
 def percentile(values: List[float], p: float) -> float:
@@ -363,14 +367,16 @@ def run_accuracy(
     prompts, refs = load_cnndm_validation(total_count)
 
     sp = build_sampling_params(args.max_new_tokens, deterministic=True)
+    max_len = getattr(args, "max_model_len", 4096)
+    gpu_util = getattr(args, "gpu_memory_utilization", 0.90)
     preds, new_token_counts = generate_with_vllm(
         map_model_alias(args.model),
         resolve_precision_dtype(args.precision),
         resolve_tensor_parallel(args.tensor_parallel_size, sysinfo),
         prompts,
         sp,
-        args.max_model_len,
-        args.gpu_memory_utilization,
+        max_len,
+        gpu_util,
     )
 
     # Save accuracy log JSON similar in spirit to MLPerf accuracy
@@ -407,6 +413,8 @@ def run_performance_offline(
     prompts, _ = load_cnndm_validation(total_count)
 
     sp = build_sampling_params(args.max_new_tokens, deterministic=False)
+    max_len = getattr(args, "max_model_len", 4096)
+    gpu_util = getattr(args, "gpu_memory_utilization", 0.90)
 
     t0 = time.perf_counter()
     preds, new_token_counts = generate_with_vllm(
@@ -415,8 +423,8 @@ def run_performance_offline(
         resolve_tensor_parallel(args.tensor_parallel_size, sysinfo),
         prompts,
         sp,
-        args.max_model_len,
-        args.gpu_memory_utilization,
+        max_len,
+        gpu_util,
     )
     t1 = time.perf_counter()
 
@@ -476,13 +484,15 @@ def run_performance_server(
     model_id = map_model_alias(args.model)
     precision_dtype = resolve_precision_dtype(args.precision)
     tensor_parallel = resolve_tensor_parallel(args.tensor_parallel_size, sysinfo)
+    max_len = getattr(args, "max_model_len", 4096)
+    gpu_util = getattr(args, "gpu_memory_utilization", 0.90)
     llm = vllm(
         model=model_id,
         tensor_parallel_size=tensor_parallel,
         dtype=precision_dtype,
         trust_remote_code=True,
-        max_model_len=args.max_model_len,
-        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=max_len,
+        gpu_memory_utilization=gpu_util,
     )
 
     start_time = time.perf_counter()
@@ -541,13 +551,15 @@ def run_performance_singlestream(
     model_id = map_model_alias(args.model)
     precision_dtype = resolve_precision_dtype(args.precision)
     tensor_parallel = resolve_tensor_parallel(args.tensor_parallel_size, sysinfo)
+    max_len = getattr(args, "max_model_len", 4096)
+    gpu_util = getattr(args, "gpu_memory_utilization", 0.90)
     llm = vllm(
         model=model_id,
         tensor_parallel_size=tensor_parallel,
         dtype=precision_dtype,
         trust_remote_code=True,
-        max_model_len=args.max_model_len,
-        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=max_len,
+        gpu_memory_utilization=gpu_util,
     )
 
     latencies_ms: List[float] = []
