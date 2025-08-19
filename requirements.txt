@@ -1,7 +1,8 @@
 # Core
 torch==2.4.0
 transformers==4.46.2
-vllm==0.6.6
+vllm==0.6.3
+outlines==0.0.41
 sentencepiece==0.2.0
 accelerate==0.34.2
 
