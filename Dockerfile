@@ -22,7 +22,8 @@ COPY report.py /app/report.py
 
 # Bring in official MLPerf Inference (LoadGen)
 COPY mlcommons_inference /app/mlcommons_inference
-RUN cd /app/mlcommons_inference/loadgen && \
+RUN pip install pybind11 && \
+    cd /app/mlcommons_inference/loadgen && \
     CXX=g++ python setup.py bdist_wheel && \
     pip install dist/*.whl
 
