@@ -270,12 +270,16 @@ def generate_with_vllm(
     tensor_parallel: int,
     prompts: List[str],
     sampling_params: Any,
+    max_model_len: int,
+    gpu_memory_utilization: float,
 ) -> Tuple[List[str], List[int]]:
     llm = vllm(
         model=model_id,
         tensor_parallel_size=tensor_parallel,
         dtype=precision_dtype,
         trust_remote_code=True,
+        max_model_len=max_model_len,
+        gpu_memory_utilization=gpu_memory_utilization,
     )
     outputs = llm.generate(prompts, sampling_params)
     texts: List[str] = []
@@ -365,6 +369,8 @@ def run_accuracy(
         resolve_tensor_parallel(args.tensor_parallel_size, sysinfo),
         prompts,
         sp,
+        args.max_model_len,
+        args.gpu_memory_utilization,
     )
 
     # Save accuracy log JSON similar in spirit to MLPerf accuracy
@@ -409,6 +415,8 @@ def run_performance_offline(
         resolve_tensor_parallel(args.tensor_parallel_size, sysinfo),
         prompts,
         sp,
+        args.max_model_len,
+        args.gpu_memory_utilization,
     )
     t1 = time.perf_counter()
 
@@ -468,7 +476,14 @@ def run_performance_server(
     model_id = map_model_alias(args.model)
     precision_dtype = resolve_precision_dtype(args.precision)
     tensor_parallel = resolve_tensor_parallel(args.tensor_parallel_size, sysinfo)
-    llm = vllm(model=model_id, tensor_parallel_size=tensor_parallel, dtype=precision_dtype, trust_remote_code=True)
+    llm = vllm(
+        model=model_id,
+        tensor_parallel_size=tensor_parallel,
+        dtype=precision_dtype,
+        trust_remote_code=True,
+        max_model_len=args.max_model_len,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+    )
 
     start_time = time.perf_counter()
     next_issue_time = start_time
@@ -526,7 +541,14 @@ def run_performance_singlestream(
     model_id = map_model_alias(args.model)
     precision_dtype = resolve_precision_dtype(args.precision)
     tensor_parallel = resolve_tensor_parallel(args.tensor_parallel_size, sysinfo)
-    llm = vllm(model=model_id, tensor_parallel_size=tensor_parallel, dtype=precision_dtype, trust_remote_code=True)
+    llm = vllm(
+        model=model_id,
+        tensor_parallel_size=tensor_parallel,
+        dtype=precision_dtype,
+        trust_remote_code=True,
+        max_model_len=args.max_model_len,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+    )
 
     latencies_ms: List[float] = []
     tokens_emitted = 0
@@ -603,6 +625,8 @@ def main() -> None:
     parser.add_argument("--results-dir", default="./results")
     parser.add_argument("--keep-all", type=int, choices=[0, 1], default=0)
     parser.add_argument("--high-accuracy", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--max-model-len", dest="max_model_len", type=int, default=8192)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
 
     args = parser.parse_args()
 
