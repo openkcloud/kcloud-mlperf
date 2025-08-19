@@ -15,6 +15,13 @@ def _lazy_imports():
     globals()["vllm"] = LLM
 
 
+def map_model_alias(alias: str) -> str:
+    canon = alias.strip().lower()
+    if canon in {"llama3.1-8b-instruct", "llama-3.1-8b-instruct", "llama31-8b", "llama3.1"}:
+        return "meta-llama/Llama-3.1-8B-Instruct"
+    return alias
+
+
 DOMAINS = {
     "abstract_algebra": "STEM",
     "anatomy": "STEM",
@@ -139,9 +146,7 @@ def main() -> None:
     run_dir = results_root / datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    model_id = (
-        "meta-llama/Meta-Llama-3.1-8B-Instruct" if args.model.lower().startswith("llama") else args.model
-    )
+    model_id = map_model_alias(args.model)
     batch_size = os.cpu_count() or 8
     if isinstance(args.batch_size, str) and args.batch_size == "auto":
         bs = max(4, batch_size // 2)
