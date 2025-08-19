@@ -20,7 +20,5 @@ COPY mmlu.py /app/mmlu.py
 COPY util_logs.py /app/util_logs.py
 COPY report.py /app/report.py
 
-ENV HF_TOKEN=""
-
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "run.py", "--help"]
