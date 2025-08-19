@@ -1,24 +1,17 @@
-FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
+FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git git-lfs tini build-essential cmake wget unzip && \
+    git git-lfs tini build-essential cmake wget unzip python3-dev && \
     rm -rf /var/lib/apt/lists/* && \
     git lfs install
 
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip && pip install -r /app/requirements.txt && \
-    python -m pip install --no-deps outlines==0.0.46 || true && \
-    python - <<'PY'
-try:
-    import pyairports  # noqa: F401
-except Exception:
-    open('/usr/local/lib/python3.11/site-packages/pyairports.py','w').write('')
-PY
+RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 
 # Copy minimal sources
 COPY README.md /app/README.md
