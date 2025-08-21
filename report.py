@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -76,9 +80,21 @@ def build_summary_and_report(
             _plot_latency_cdf(latencies_ms, latency_cdf_png)
 
     # Build summary.json
+    def _now_iso():
+        tz_name = os.environ.get("TZ")
+        if tz_name and ZoneInfo is not None:
+            try:
+                return datetime.now(ZoneInfo(tz_name)).isoformat()
+            except Exception:
+                pass
+        try:
+            return datetime.now().astimezone().isoformat()
+        except Exception:
+            return datetime.now(timezone.utc).isoformat()
+
     summary: Dict[str, Any] = {
         "meta": {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": _now_iso(),
             "mlperf_version": args_dict.get("version"),
             "division": "Closed",
             "category": args_dict.get("category"),
@@ -122,6 +138,12 @@ def build_summary_and_report(
         lines.append(f"ROUGE-L: {rouge.get('rougeL', 0):.4f}")
         lines.append(f"ROUGE-Lsum: {rouge.get('rougeLsum', 0):.4f}")
         lines.append(f"Gate passed: {passed}")
+        # Display run generation stats if present
+        rlen = outcome_accuracy.get("run_gen_len")
+        rnum = outcome_accuracy.get("run_gen_num")
+        if rlen is not None and rnum is not None:
+            lines.append(f"Generated tokens (sum): {rlen}")
+            lines.append(f"Generated samples: {rnum}")
     else:
         lines.append("(Not an accuracy run)")
     lines.append("")
