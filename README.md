@@ -2,6 +2,8 @@
 
 Minimal, universal, easy-to-run benchmark suite for MLPerf Inference v5.1 using vLLM.
 
+> Important: You must have access to the reference model `meta-llama/Llama-3.1-8B-Instruct` on Hugging Face (accept the model license). Set `HF_TOKEN` and `HUGGINGFACE_HUB_TOKEN` to your token to enable downloads. See the model page: [Hugging Face: Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct).
+
 ## Table of contents
 - Quickstart (Docker)
 - Files
@@ -18,6 +20,10 @@ Minimal, universal, easy-to-run benchmark suite for MLPerf Inference v5.1 using 
 ## Quickstart (Docker)
 
 ```bash
+# Get the code
+git clone https://github.com/jshim0978/MLPerf_local_test.git
+cd MLPerf_local_test
+
 git submodule update --init --recursive --depth 1
 docker build -t mlperf-llama31:clean .
 
@@ -154,6 +160,10 @@ results/
 
 ## Local (no Docker)
 ```bash
+git clone https://github.com/jshim0978/MLPerf_local_test.git
+cd MLPerf_local_test
+git submodule update --init --recursive --depth 1
+
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export HF_TOKEN=...; export HUGGINGFACE_HUB_TOKEN=$HF_TOKEN
