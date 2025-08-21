@@ -1,9 +1,0 @@
-[project]
-name = "mlperf-local-test"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "superclaude>=3.0.0.2",
-]
