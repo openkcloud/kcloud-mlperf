@@ -167,7 +167,21 @@ git submodule update --init --recursive --depth 1
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export HF_TOKEN=...; export HUGGINGFACE_HUB_TOKEN=$HF_TOKEN
-python run.py --category datacenter --scenario offline --mode accuracy --max-model-len 4096 --precision bf16
+
+# Datacenter Offline (20 samples; accuracy + performance)
+python run.py --model meta-llama/Llama-3.1-8B-Instruct \
+  --category datacenter --scenario offline --mode both \
+  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
+  --precision bf16 --total-sample-count 20 --keep-all 1
+
+# Datacenter Server (20 samples; auto QPS from last Offline)
+python run.py --model meta-llama/Llama-3.1-8B-Instruct \
+  --category datacenter --scenario server --mode both --server-target-qps auto \
+  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
+  --precision bf16 --total-sample-count 20 --keep-all 1
+
+# MMLU (100 samples, detailed)
+python mmlu.py --total-limit 100 --max-model-len 4096 --gpu-memory-utilization 0.92 --precision bf16 --details 1
 ```
 
 ## Expected metrics (targets)
