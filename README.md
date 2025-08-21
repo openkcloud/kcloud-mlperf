@@ -45,6 +45,34 @@ docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-l
 docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
   python run.py --category datacenter --scenario offline --mode both \
   --tensor-parallel-size auto --max-model-len 4096 --precision bf16
+
+# Clean re-clone (distribution) smoke test
+cd ~
+rm -rf MLPerf_local_test
+git clone https://github.com/jshim0978/MLPerf_local_test.git
+cd MLPerf_local_test
+printf "HF_TOKEN=%s\n" "<YOUR_HF_TOKEN>" > .env
+printf "HUGGINGFACE_HUB_TOKEN=%s\n" "<YOUR_HF_TOKEN>" >> .env
+docker build -t mlperf-llama31:clean .
+set -e
+
+# Datacenter Offline (20 samples)
+docker run --gpus all --rm --env-file .env -v "$PWD/results:/app/results" mlperf-llama31:clean \
+  python run.py --model meta-llama/Llama-3.1-8B-Instruct \
+  --category datacenter --scenario offline --mode both \
+  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
+  --precision bf16 --total-sample-count 20 --keep-all 1
+
+# Datacenter Server (20 samples; auto QPS from last Offline)
+docker run --gpus all --rm --env-file .env -v "$PWD/results:/app/results" mlperf-llama31:clean \
+  python run.py --model meta-llama/Llama-3.1-8B-Instruct \
+  --category datacenter --scenario server --mode both --server-target-qps auto \
+  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
+  --precision bf16 --total-sample-count 20 --keep-all 1
+
+# MMLU (100 samples, detailed)
+docker run --gpus all --rm --env-file .env -v "$PWD/results:/app/results" mlperf-llama31:clean \
+  python mmlu.py --total-limit 100 --max-model-len 4096 --gpu-memory-utilization 0.92 --precision bf16 --details 1
 ```
 
 ## Files
