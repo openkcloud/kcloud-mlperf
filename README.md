@@ -153,6 +153,7 @@ results/
 - **max-model-len**: how long inputs + outputs can be (context window). Lower this if you hit GPU memory limits (e.g., 4096).
 - **gpu-memory-utilization**: how much of VRAM vLLM should use for its caches. If you see out‑of‑memory, reduce this; if underutilized, increase slightly.
 - **server-target-qps**: desired load for `server`. `auto` = 0.8× the last measured Offline throughput.
+ - **server-target-qps**: desired load for `server`. `auto` = 0.8 × (last Offline tokens/sec ÷ avg output tokens/request). This avoids the common tokens/sec → QPS unit mix-up.
 - **total-sample-count**: how many items to run. Use small numbers (e.g., 20–200) to smoke test; full runs use 13368 (datacenter) or 5000 (edge).
 - **keep-all**: if 1, keeps every run with its own timestamped folder and updates `results/index.md` for history.
 - **dataset**: we use CNN/DailyMail (`cnndm`) validation split.

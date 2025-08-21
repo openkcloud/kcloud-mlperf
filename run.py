@@ -263,14 +263,30 @@ def write_meta(results_dir: Path, meta: Dict[str, Any]) -> None:
     write_json_file(results_dir / "meta.json", meta)
 
 
-def auto_server_qps(results_dir: Path, measured_offline_tps: Optional[float]) -> float:
-    # Prefer provided measured value; otherwise consult meta.json
-    if measured_offline_tps and measured_offline_tps > 0:
-        return max(0.1, 0.8 * measured_offline_tps)
+def auto_server_qps(
+    results_dir: Path,
+    safety: float = 0.8,
+    fallback_max_new_tokens: int = 128,
+) -> float:
+    """Derive a realistic Server target QPS from Offline throughput.
+
+    QPS ~= safety_factor * (offline_tokens_per_sec / avg_output_tokens_per_request)
+
+    - Uses the last Offline run's tokens/sec and average emitted tokens/request
+      recorded in meta.json. Falls back to max_new_tokens when avg is unknown.
+    - safety defaults to 0.8.
+    """
     meta = read_meta(results_dir)
-    last = meta.get("last_offline_tokens_per_sec")
-    if isinstance(last, (int, float)) and last > 0:
-        return max(0.1, 0.8 * float(last))
+    tps = meta.get("last_offline_tokens_per_sec")
+    avg_tokens = meta.get("last_offline_avg_new_tokens_per_req")
+    if isinstance(tps, (int, float)) and tps > 0:
+        denom: float
+        if isinstance(avg_tokens, (int, float)) and avg_tokens > 0:
+            denom = float(avg_tokens)
+        else:
+            denom = float(max(1, int(fallback_max_new_tokens)))
+        qps = safety * (float(tps) / denom)
+        return max(0.05, qps)
     return 0.5
 
 
@@ -522,9 +538,12 @@ def run_performance_offline(
 
     tokens_per_sec = (total_new_tokens / duration_s) if duration_s > 0 else 0.0
 
-    # Update meta.json for server auto target
+    # Update meta.json for server auto target, including avg tokens/request
     meta = read_meta(run_dir.parent)
     meta["last_offline_tokens_per_sec"] = tokens_per_sec
+    meta["last_offline_avg_new_tokens_per_req"] = (
+        (total_new_tokens / max(1, len(new_token_counts))) if new_token_counts else 0
+    )
     write_meta(run_dir.parent, meta)
 
     return {
@@ -551,7 +570,8 @@ def run_performance_server(
     # Determine target QPS
     target_qps: float
     if isinstance(args.server_target_qps, str) and args.server_target_qps == "auto":
-        target_qps = auto_server_qps(run_dir.parent, measured_offline_tps=None)
+        # Derive QPS from last Offline tokens/sec and avg tokens/request
+        target_qps = auto_server_qps(run_dir.parent)
     else:
         try:
             target_qps = max(0.1, float(args.server_target_qps))
