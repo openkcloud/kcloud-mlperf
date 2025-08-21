@@ -18,6 +18,7 @@ Minimal, universal, easy-to-run benchmark suite for MLPerf Inference v5.1 using 
 ## Quickstart (Docker)
 
 ```bash
+git submodule update --init --recursive --depth 1
 docker build -t mlperf-llama31:clean .
 
 # Accuracy (Datacenter/Offline)
@@ -51,6 +52,7 @@ cd ~
 rm -rf MLPerf_local_test
 git clone https://github.com/jshim0978/MLPerf_local_test.git
 cd MLPerf_local_test
+git submodule update --init --recursive --depth 1
 printf "HF_TOKEN=%s\n" "<YOUR_HF_TOKEN>" > .env
 printf "HUGGINGFACE_HUB_TOKEN=%s\n" "<YOUR_HF_TOKEN>" >> .env
 docker build -t mlperf-llama31:clean .
@@ -195,6 +197,7 @@ Reference model: `meta-llama/Llama-3.1-8B-Instruct` (access required).
 
 ## 빠른 시작 (Docker)
 ```bash
+git submodule update --init --recursive --depth 1
 docker build -t mlperf-llama31:clean .
 docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
   python run.py --model meta-llama/Llama-3.1-8B-Instruct \
