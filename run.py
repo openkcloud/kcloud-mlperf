@@ -467,11 +467,12 @@ def run_accuracy(
     baseline = BASELINES.get(str(args.dataset).lower(), {})
     gate_multiplier = 0.999 if int(args.high_accuracy) == 1 else 0.99
     threshold_rlsum = None
-    if baseline:
-        threshold_rlsum = gate_multiplier * (float(baseline["rougeLsum"]) / 100.0)
-    # If baseline known, gate vs 99% (or 99.9%) of baseline; else fall back to absolute 0.99 which will always fail
-    rlsum = float(rouge_scores.get("rougeLsum", 0.0))
-    passed = (rlsum >= threshold_rlsum) if threshold_rlsum is not None else False
+    passed = True
+    if int(getattr(args, "disable_accuracy_gate", 0)) != 1:
+        if baseline:
+            threshold_rlsum = gate_multiplier * (float(baseline["rougeLsum"]) / 100.0)
+        rlsum = float(rouge_scores.get("rougeLsum", 0.0))
+        passed = (rlsum >= threshold_rlsum) if threshold_rlsum is not None else False
 
     run_gen_len = int(sum(new_token_counts))
     run_gen_num = len(preds)
@@ -799,6 +800,7 @@ def main() -> None:
     parser.add_argument("--results-dir", default="./results")
     parser.add_argument("--keep-all", type=int, choices=[0, 1], default=0)
     parser.add_argument("--high-accuracy", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--disable-accuracy-gate", type=int, choices=[0, 1], default=0)
     parser.add_argument("--no-exit-on-accuracy-fail", type=int, choices=[0, 1], default=0)
     parser.add_argument("--max-model-len", dest="max_model_len", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
