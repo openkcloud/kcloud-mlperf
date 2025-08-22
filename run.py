@@ -224,40 +224,15 @@ def load_cnndm_validation(total_count: int, model_id_for_chat: Optional[str] = N
     # Build prompts compatible with instruction-tuned summarization
     prompts: List[str] = []
     refs: List[str] = []
-    tokenizer = None
-    if model_id_for_chat:
-        try:
-            from transformers import AutoTokenizer  # type: ignore
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_id_for_chat, use_fast=True, trust_remote_code=True
-            )
-        except Exception:
-            tokenizer = None
+    # Use the official MLPerf llama3.1-8b instruction string
+    instruction = (
+        "Summarize the following news article in 128 tokens. Please output the summary only, without any other text.\n\n"
+        "Article:\n{article}\n\nSummary:"
+    )
     for item in ds:
         article = item["article"].strip()
         highlight = item["highlights"].strip()
-        if tokenizer is not None:
-            # Use the model's chat template when available for best alignment
-            messages = [
-                {"role": "user", "content": (
-                    "Summarize the following news article in one concise paragraph.\n\n"
-                    f"Article:\n{article}\n\nSummary:"
-                )}
-            ]
-            try:
-                prompt = tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-            except Exception:
-                prompt = (
-                    "Summarize the following news article in one concise paragraph.\n\n"
-                    f"Article:\n{article}\n\nSummary:"
-                )
-        else:
-            prompt = (
-                "Summarize the following news article in one concise paragraph.\n\n"
-                f"Article:\n{article}\n\nSummary:"
-            )
+        prompt = instruction.format(article=article)
         prompts.append(prompt)
         refs.append(highlight)
         if len(prompts) >= total_count:
