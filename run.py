@@ -432,7 +432,8 @@ def run_accuracy(
     total_count = choose_total_count(args.category, args.total_sample_count)
     prompts, refs = load_cnndm_validation(total_count, map_model_alias(args.model))
 
-    sp = build_sampling_params(args.max_new_tokens, deterministic=True)
+    # Enforce deterministic decode strictly (temperature=0, top_p=1, top_k=1)
+    sp = SamplingParams(max_tokens=args.max_new_tokens, temperature=0.0, top_p=1.0, top_k=1, seed=42)
     max_len = getattr(args, "max_model_len", 4096)
     gpu_util = getattr(args, "gpu_memory_utilization", 0.90)
     preds, new_token_counts = generate_with_vllm(
@@ -798,6 +799,7 @@ def main() -> None:
     parser.add_argument("--results-dir", default="./results")
     parser.add_argument("--keep-all", type=int, choices=[0, 1], default=0)
     parser.add_argument("--high-accuracy", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--no-exit-on-accuracy-fail", type=int, choices=[0, 1], default=0)
     parser.add_argument("--max-model-len", dest="max_model_len", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     parser.add_argument("--extra-metrics", type=int, choices=[0, 1], default=0)
@@ -847,7 +849,8 @@ def main() -> None:
             print("Accuracy gate failed (ROUGE-Lsum). See Accuracy/rouge.json for details.")
             # Still write report for visibility
             build_and_write_report(run_dir, args, sysinfo, run_outcome)
-            sys.exit(1)
+            if int(getattr(args, "no_exit_on_accuracy_fail", 0)) != 1:
+                sys.exit(1)
         build_and_write_report(run_dir, args, sysinfo, run_outcome)
         # Update results index to keep history browsable
         from report import update_results_index  # type: ignore
