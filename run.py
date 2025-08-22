@@ -218,19 +218,46 @@ def resolve_precision_dtype(precision: str) -> str:
     return "auto"
 
 
-def load_cnndm_validation(total_count: int) -> Tuple[List[str], List[str]]:
+def load_cnndm_validation(total_count: int, model_id_for_chat: Optional[str] = None) -> Tuple[List[str], List[str]]:
     # Returns (prompts, references)
     ds = datasets("cnn_dailymail", "3.0.0", split="validation")
     # Build prompts compatible with instruction-tuned summarization
     prompts: List[str] = []
     refs: List[str] = []
+    tokenizer = None
+    if model_id_for_chat:
+        try:
+            from transformers import AutoTokenizer  # type: ignore
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_id_for_chat, use_fast=True, trust_remote_code=True
+            )
+        except Exception:
+            tokenizer = None
     for item in ds:
         article = item["article"].strip()
         highlight = item["highlights"].strip()
-        prompt = (
-            "Summarize the following news article in one concise paragraph.\n\n"
-            f"Article:\n{article}\n\nSummary:"
-        )
+        if tokenizer is not None:
+            # Use the model's chat template when available for best alignment
+            messages = [
+                {"role": "user", "content": (
+                    "Summarize the following news article in one concise paragraph.\n\n"
+                    f"Article:\n{article}\n\nSummary:"
+                )}
+            ]
+            try:
+                prompt = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            except Exception:
+                prompt = (
+                    "Summarize the following news article in one concise paragraph.\n\n"
+                    f"Article:\n{article}\n\nSummary:"
+                )
+        else:
+            prompt = (
+                "Summarize the following news article in one concise paragraph.\n\n"
+                f"Article:\n{article}\n\nSummary:"
+            )
         prompts.append(prompt)
         refs.append(highlight)
         if len(prompts) >= total_count:
@@ -428,7 +455,7 @@ def run_accuracy(
     ensure_dir(accuracy_dir)
 
     total_count = choose_total_count(args.category, args.total_sample_count)
-    prompts, refs = load_cnndm_validation(total_count)
+    prompts, refs = load_cnndm_validation(total_count, map_model_alias(args.model))
 
     sp = build_sampling_params(args.max_new_tokens, deterministic=True)
     max_len = getattr(args, "max_model_len", 4096)
@@ -504,7 +531,7 @@ def run_performance_offline(
     ensure_dir(perf_dir)
 
     total_count = choose_total_count(args.category, args.total_sample_count)
-    prompts, _ = load_cnndm_validation(total_count)
+    prompts, _ = load_cnndm_validation(total_count, map_model_alias(args.model))
 
     sp = build_sampling_params(args.max_new_tokens, deterministic=False)
     max_len = getattr(args, "max_model_len", 4096)
@@ -565,7 +592,7 @@ def run_performance_server(
     ensure_dir(perf_dir)
 
     total_count = choose_total_count(args.category, args.total_sample_count)
-    prompts, _ = load_cnndm_validation(total_count)
+    prompts, _ = load_cnndm_validation(total_count, map_model_alias(args.model))
 
     # Determine target QPS
     target_qps: float
@@ -700,7 +727,7 @@ def run_performance_singlestream(
     ensure_dir(perf_dir)
 
     total_count = choose_total_count(args.category, args.total_sample_count)
-    prompts, _ = load_cnndm_validation(total_count)
+    prompts, _ = load_cnndm_validation(total_count, map_model_alias(args.model))
 
     sp = build_sampling_params(args.max_new_tokens, deterministic=False)
 
