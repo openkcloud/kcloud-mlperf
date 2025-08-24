@@ -340,13 +340,45 @@ def generate_with_vllm(
 
 
 def compute_rouge(preds: List[str], refs: List[str]) -> Dict[str, float]:
-    # Use local rouge-score to avoid downloading metric scripts
+    """Compute ROUGE matching MLPerf ref evaluation steps.
+
+    - Strip whitespace
+    - Sentence tokenize and join with newlines before ROUGE-Lsum
+    - Use Porter stemmer
+    - Average per-sample F1 scores (no aggregator)
+    """
+    import re
     from rouge_score import rouge_scorer  # type: ignore
+
+    def _sent_tokenize(text: str) -> List[str]:
+        try:
+            # Prefer NLTK if available, like the ref
+            import nltk  # type: ignore
+            try:
+                # Use existing punkt if present; avoid downloads in containers
+                nltk.data.find("tokenizers/punkt")  # type: ignore
+            except Exception:
+                pass
+            from nltk.tokenize import sent_tokenize  # type: ignore
+            return sent_tokenize(text)
+        except Exception:
+            # Fallback: simple regex split on sentence enders
+            return re.split(r"(?<=[.!?])\s+", text)
+
+    preds_pp: List[str] = []
+    refs_pp: List[str] = []
+    for p, r in zip(preds, refs):
+        p = (p or "").strip()
+        r = (r or "").strip()
+        p_s = "\n".join(_sent_tokenize(p))
+        r_s = "\n".join(_sent_tokenize(r))
+        preds_pp.append(p_s)
+        refs_pp.append(r_s)
 
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
     total = {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0, "rougeLsum": 0.0}
-    n = max(1, min(len(preds), len(refs)))
-    for pred, ref in zip(preds, refs):
+    n = max(1, min(len(preds_pp), len(refs_pp)))
+    for pred, ref in zip(preds_pp, refs_pp):
         s = scorer.score(ref, pred)
         total["rouge1"] += getattr(s.get("rouge1"), "fmeasure", 0.0)
         total["rouge2"] += getattr(s.get("rouge2"), "fmeasure", 0.0)
