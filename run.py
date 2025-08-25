@@ -506,15 +506,31 @@ def run_accuracy(
         rlsum = float(rouge_scores.get("rougeLsum", 0.0))
         passed = (rlsum >= threshold_rlsum) if threshold_rlsum is not None else False
 
-    run_gen_len = int(sum(new_token_counts))
+    run_gen_tokens = int(sum(new_token_counts))
     run_gen_num = len(preds)
+    # Compute character length after the same preprocessing used for ROUGE
+    import re as _re
+    def _sent_tokenize_text(_t: str) -> List[str]:
+        try:
+            import nltk  # type: ignore
+            try:
+                nltk.data.find("tokenizers/punkt")  # type: ignore
+            except Exception:
+                pass
+            from nltk.tokenize import sent_tokenize  # type: ignore
+            return sent_tokenize(_t)
+        except Exception:
+            return _re.split(r"(?<=[.!?])\s+", _t)
+    preds_pp = ["\n".join(_sent_tokenize_text((p or "").strip())) for p in preds]
+    run_gen_chars = int(sum(len(p) for p in preds_pp))
 
     write_json_file(accuracy_dir / "rouge.json", {
         **rouge_scores,
         "baseline": baseline,
         "gate_multiplier": gate_multiplier,
         "threshold_rougeLsum": threshold_rlsum,
-        "run_gen_len": run_gen_len,
+        "run_gen_tokens": run_gen_tokens,
+        "run_gen_chars": run_gen_chars,
         "run_gen_num": run_gen_num,
     })
 
@@ -525,8 +541,9 @@ def run_accuracy(
         "passed": passed,
         "baseline": baseline,
         "threshold_rougeLsum": threshold_rlsum,
-        "new_tokens_sum": run_gen_len,
-        "run_gen_len": run_gen_len,
+        "new_tokens_sum": run_gen_tokens,
+        "run_gen_tokens": run_gen_tokens,
+        "run_gen_chars": run_gen_chars,
         "run_gen_num": run_gen_num,
     }
 
