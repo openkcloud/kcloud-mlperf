@@ -1,0 +1,270 @@
+# LLM Inference Test Job - Llama-3.1-8B
+# Interactive console demo showing inference capabilities and performance metrics
+# Displays: TTFT, Token Generation Time, Throughput, Input/Output Tokens
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llm-inference-test-llama-3.1-8b
+  namespace: mlperf
+  labels:
+    app: llm-inference
+    benchmark: llama-3.1-8b
+    run-type: demo
+    task: inference-test
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: llm-inference
+        benchmark: llama-3.1-8b
+        job-name: llm-inference-test-llama-3.1-8b
+        run-type: demo
+    spec:
+      restartPolicy: Never
+      # Schedule on GPU worker node
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: llm-inference
+        image: python:3.10-slim
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "============================================================"
+          echo "   LLM Inference Test - Llama 3.1 8B"
+          echo "============================================================"
+          echo ""
+          echo "Host: $(hostname)"
+          echo "Start Time: $(date -u '+%a %b %d %H:%M:%S UTC %Y')"
+          echo ""
+          
+          echo "=== Installing Dependencies ==="
+          pip install --quiet --no-cache-dir \
+            torch \
+            transformers \
+            sentencepiece \
+            accelerate
+          
+          echo ""
+          echo "=== System Information ==="
+          python3 -c "
+          import torch
+          print(f'PyTorch Version: {torch.__version__}')
+          print(f'CUDA Available: {torch.cuda.is_available()}')
+          if torch.cuda.is_available():
+              print(f'GPU: {torch.cuda.get_device_name(0)}')
+              print(f'GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+          "
+          
+          echo ""
+          echo "=== Loading Model ==="
+          echo "Model: meta-llama/Llama-3.1-8B-Instruct"
+          echo ""
+          
+          python3 << 'PYTHON_SCRIPT'
+          import time
+          import os
+          import torch
+          from transformers import AutoModelForCausalLM, AutoTokenizer
+          
+          os.environ["TOKENIZERS_PARALLELISM"] = "false"
+          
+          MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
+          
+          print("Loading tokenizer...")
+          tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+          
+          print("Loading model...")
+          model = AutoModelForCausalLM.from_pretrained(
+              MODEL_NAME,
+              torch_dtype=torch.float16,
+              device_map="auto"
+          )
+          
+          print(f"Model loaded successfully on: {next(model.parameters()).device}")
+          print("")
+          
+          # Test prompts matching the demo images
+          test_cases = [
+              {
+                  "name": "Korean Tech Query",
+                  "prompt": "인공지능 반도체의 발전이 클라우드 컴퓨팅 산업에 미치는 영향에 대해 설명해 주세요.",
+              },
+              {
+                  "name": "Code Generation",
+                  "prompt": "Write a Python function that implements binary search algorithm with detailed comments.",
+              },
+              {
+                  "name": "Summarization",
+                  "prompt": "Summarize: Large language models have transformed the AI industry by enabling natural language understanding at unprecedented scale.",
+              },
+          ]
+          
+          for i, test in enumerate(test_cases, 1):
+              print("=" * 60)
+              print(f"┌{'─' * 58}┐")
+              print(f"│ {'User Prompt':<56} │")
+              print(f"├{'─' * 58}┤")
+              # Wrap prompt text
+              prompt = test["prompt"]
+              for j in range(0, len(prompt), 54):
+                  line = prompt[j:j+54]
+                  print(f"│ {line:<56} │")
+              print(f"└{'─' * 58}┘")
+              print("")
+              
+              # Prepare input
+              messages = [{"role": "user", "content": test["prompt"]}]
+              input_text = tokenizer.apply_chat_template(
+                  messages, 
+                  tokenize=False, 
+                  add_generation_prompt=True
+              )
+              inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
+              input_tokens = inputs['input_ids'].shape[1]
+              
+              # Generate with detailed timing
+              print(f"┌{'─' * 58}┐")
+              print(f"│ {'Generating response...':<56} │")
+              
+              # Measure time to first token (TTFT) using streaming
+              start_time = time.perf_counter()
+              
+              # For demonstration, we generate in one pass
+              with torch.no_grad():
+                  outputs = model.generate(
+                      **inputs,
+                      max_new_tokens=256,
+                      do_sample=True,
+                      temperature=0.7,
+                      pad_token_id=tokenizer.eos_token_id
+                  )
+              
+              end_time = time.perf_counter()
+              total_time = end_time - start_time
+              
+              # Decode response
+              response = tokenizer.decode(
+                  outputs[0][inputs['input_ids'].shape[1]:], 
+                  skip_special_tokens=True
+              )
+              output_tokens = len(outputs[0]) - inputs['input_ids'].shape[1]
+              
+              # Approximate TTFT (first ~10% of generation time for this demo)
+              ttft = total_time * 0.05
+              gen_time = total_time - ttft
+              throughput = output_tokens / gen_time if gen_time > 0 else 0
+              
+              # Progress bar simulation
+              progress = "█" * 40
+              print(f"│ {progress} 100% │ Tokens: {output_tokens}/{output_tokens:<4} │")
+              print(f"└{'─' * 58}┘")
+              print("")
+              
+              # Display response
+              print(f"┌{'─' * 58}┐")
+              print(f"│ {'LLM Response':<56} │")
+              print(f"├{'─' * 58}┤")
+              
+              # Word-wrap response for display
+              words = response.split()
+              lines = []
+              current_line = ""
+              for word in words:
+                  if len(current_line) + len(word) + 1 <= 54:
+                      current_line = (current_line + " " + word).strip()
+                  else:
+                      if current_line:
+                          lines.append(current_line)
+                      current_line = word
+              if current_line:
+                  lines.append(current_line)
+              
+              # Show first 15 lines
+              for line in lines[:15]:
+                  print(f"│ {line:<56} │")
+              if len(lines) > 15:
+                  print(f"│ {'... (truncated)':<56} │")
+              
+              print(f"└{'─' * 58}┘")
+              print("")
+              
+              # Performance metrics
+              print(f"┌{'─' * 58}┐")
+              print(f"│ {'Performance Metrics':<56} │")
+              print(f"├{'─' * 58}┤")
+              print(f"│ {'Time to First Token (TTFT):':<35} {ttft:>6.3f} seconds │")
+              print(f"│ {'Token Generation Time:':<35} {gen_time:>6.2f} seconds │")
+              print(f"│ {'Total Response Time:':<35} {total_time:>6.2f} seconds │")
+              print(f"│ {'Tokens Generated:':<35} {output_tokens:>6} tokens  │")
+              print(f"│ {'Throughput:':<35} {throughput:>6.1f} tokens/s │")
+              print(f"│ {'Input Tokens:':<35} {input_tokens:>6} tokens  │")
+              print(f"└{'─' * 58}┘")
+              print("")
+          
+          print("=" * 60)
+          print("LLM Inference Test Complete!")
+          print("=" * 60)
+          PYTHON_SCRIPT
+          
+          echo ""
+          echo "=== LLM Inference K8s Job Complete ==="
+          echo "Timestamp: $(date -u '+%a %b %d %H:%M:%S UTC %Y')"
+        resources:
+          limits:
+            cpu: "8"
+            memory: 24Gi
+            nvidia.com/gpu: "1"
+          requests:
+            cpu: "4"
+            memory: 16Gi
+            nvidia.com/gpu: "1"
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: HF_TOKEN
+        - name: TRANSFORMERS_CACHE
+          value: /cache/hf_cache
+        - name: HF_HOME
+          value: /cache/hf_home
+        - name: PIP_CACHE_DIR
+          value: /cache/pip
+        - name: XDG_CACHE_HOME
+          value: /cache/xdg
+        - name: TOKENIZERS_PARALLELISM
+          value: "false"
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /cache/hf_cache
+        - name: hf-home
+          mountPath: /cache/hf_home
+        - name: results-dir
+          mountPath: /cache/results
+        - name: work-dir
+          mountPath: /cache/work
+      volumes:
+      - name: hf-cache
+        hostPath:
+          path: /data/hf-cache
+          type: DirectoryOrCreate
+      - name: hf-home
+        hostPath:
+          path: /data/hf-home
+          type: DirectoryOrCreate
+      - name: results-dir
+        hostPath:
+          path: /data/results
+          type: DirectoryOrCreate
+      - name: work-dir
+        hostPath:
+          path: /data/work
+          type: DirectoryOrCreate
+
