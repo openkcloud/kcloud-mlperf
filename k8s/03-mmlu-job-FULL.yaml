@@ -1,0 +1,150 @@
+﻿# MMLU-Pro Llama-3.1-8B Benchmark Job
+# Official TIGER-AI-Lab MMLU-Pro benchmark (enhanced MMLU with 10 choices)
+# Reference: https://github.com/TIGER-AI-Lab/MMLU-Pro
+# Dataset: TIGER-Lab/MMLU-Pro (HuggingFace)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mmlu-pro-llama-3.1-8b
+  namespace: mlperf
+  labels:
+    app: mmlu-pro
+    benchmark: llama-3.1-8b
+    run-type: full
+    task: evaluation
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: mmlu-pro
+        benchmark: llama-3.1-8b
+        job-name: mmlu-pro-llama-3.1-8b
+        run-type: full
+    spec:
+      restartPolicy: Never
+      # Schedule on GPU worker node
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: mmlu-pro-runner
+        image: python:3.10-slim
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "============================================================"
+          echo "   MMLU-Pro - Llama-3.1-8B Benchmark"
+          echo "============================================================"
+          echo ""
+          echo "Host: $(hostname)"
+          echo "Start Time: $(date -u '+%a %b %d %H:%M:%S UTC %Y')"
+          echo ""
+          
+          echo "=== Installing Dependencies ==="
+          apt-get update -qq && apt-get install -y -qq git > /dev/null 2>&1
+          pip install --quiet --no-cache-dir \
+            torch \
+            transformers \
+            vllm \
+            datasets \
+            tqdm \
+            sentencepiece \
+            accelerate \
+            pyyaml \
+            matplotlib
+          
+          echo ""
+          echo "=== System Information ==="
+          python3 -c "
+          import torch
+          print(f'PyTorch Version: {torch.__version__}')
+          print(f'CUDA Available: {torch.cuda.is_available()}')
+          if torch.cuda.is_available():
+              print(f'GPU: {torch.cuda.get_device_name(0)}')
+              print(f'GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+          "
+          
+          echo ""
+          echo "=== Cloning Benchmark Repository ==="
+          git clone --depth 1 https://github.com/openkcloud/kcloud-mlperf.git /app/kcloud-mlperf
+          cd /app/kcloud-mlperf
+          
+          # Initialize MMLU-Pro submodule
+          git submodule update --init --depth 1 mmlu_pro || true
+          
+          echo ""
+          echo "=== Running MMLU-Pro Benchmark ==="
+          echo "Model: meta-llama/Llama-3.1-8B-Instruct"
+          echo "Dataset: MMLU-Pro (TIGER-Lab/MMLU-Pro)"
+          echo "Mode: Chain-of-Thought (5-shot)"
+          echo ""
+          
+          python mmlu_pro_benchmark.py \
+            --model meta-llama/Llama-3.1-8B-Instruct \
+            --precision bf16 \
+            --max-model-len 4096 \
+            --gpu-memory-utilization 0.9 \
+            --results-dir /cache/results/mmlu-pro \
+            --num-few-shot 5 \
+            --acceptance-threshold 0.65 \
+            --details 1
+          
+          echo ""
+          echo "=== MMLU-Pro K8s Job Complete ==="
+          echo "Timestamp: $(date -u '+%a %b %d %H:%M:%S UTC %Y')"
+        resources:
+          limits:
+            cpu: "8"
+            memory: 24Gi
+            nvidia.com/gpu: "1"
+          requests:
+            cpu: "4"
+            memory: 16Gi
+            nvidia.com/gpu: "1"
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: HF_TOKEN
+        - name: TRANSFORMERS_CACHE
+          value: /cache/hf_cache
+        - name: HF_HOME
+          value: /cache/hf_home
+        - name: PIP_CACHE_DIR
+          value: /cache/pip
+        - name: XDG_CACHE_HOME
+          value: /cache/xdg
+        - name: TOKENIZERS_PARALLELISM
+          value: "false"
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /cache/hf_cache
+        - name: hf-home
+          mountPath: /cache/hf_home
+        - name: results-dir
+          mountPath: /cache/results
+        - name: work-dir
+          mountPath: /cache/work
+      volumes:
+      - name: hf-cache
+        hostPath:
+          path: /data/hf-cache
+          type: DirectoryOrCreate
+      - name: hf-home
+        hostPath:
+          path: /data/hf-home
+          type: DirectoryOrCreate
+      - name: results-dir
+        hostPath:
+          path: /data/results
+          type: DirectoryOrCreate
+      - name: work-dir
+        hostPath:
+          path: /data/work
+          type: DirectoryOrCreate
