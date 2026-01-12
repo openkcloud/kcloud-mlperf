@@ -1,0 +1,10 @@
+# One worker per line. Allow comments with '#'.
+# Format options:
+#   user@host
+#   host              # defaults to user 'kcloud'
+#
+# Example:
+# kcloud@129.254.202.129
+# 129.254.202.130
+
+kcloud@129.254.202.129 -p 122

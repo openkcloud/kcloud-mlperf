@@ -1,346 +1,241 @@
-# MLPerf LLaMA-3.1-8B Runner (Clean Slate)
+## kcloud-mlperf — Kubernetes LLM Benchmark Suite (Llama 3.1 8B)
 
-Minimal, universal, easy-to-run benchmark suite for MLPerf Inference v5.1 using vLLM.
+이 저장소는 Kubernetes 위에서 **Llama 3.1 8B(Instruct)** 모델로 아래 3가지 워크로드를 돌려 “클러스터가 제대로 붙었는지 / GPU가 잡히는지 / 모델이 정상 동작하는지”를 빠르게 확인할 수 있게 만든 스크립트 모음입니다.
 
-> Important: You must have access to the reference model `meta-llama/Llama-3.1-8B-Instruct` on Hugging Face (accept the model license). Set `HF_TOKEN` and `HUGGINGFACE_HUB_TOKEN` to your token to enable downloads. See the model page: [Hugging Face: Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct).
+- **MLPerf 스타일 요약 벤치**: CNN/DailyMail test split 요약 → ROUGE-L 계산
+- **MMLU-Pro**: TIGER-Lab/MMLU-Pro 평가 → 정확도 계산
+- **LLM Inference sanity**: 단일 프롬프트 생성 테스트
 
-## Table of contents
-- Quickstart (Docker)
-- Files
-- Results layout
-- Behavior
-- CLI flags + Flags explained (non‑experts)
-- Local (no Docker)
-- Expected metrics (targets)
-- Metrics parity with official MLPerf
-- Official MLPerf bench for Llama‑3.1‑8B (overview)
-- Sample results (what you will see)
-- 한국어 안내 (동일 내용의 한국어 정리)
-
-## Quickstart (Docker)
-
-```bash
-# Get the code
-git clone https://github.com/jshim0978/MLPerf_local_test.git
-cd MLPerf_local_test
-
-git submodule update --init --recursive --depth 1
-docker build -t mlperf-llama31:clean .
-
-# Accuracy (Datacenter/Offline)
-docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
-  python run.py --model meta-llama/Llama-3.1-8B-Instruct \
-  --category datacenter --scenario offline --mode accuracy \
-  --tensor-parallel-size auto --max-model-len 4096 --precision bf16
-
-# Performance (Datacenter/Offline)
-docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
-  python run.py --category datacenter --scenario offline --mode performance \
-  --tensor-parallel-size auto --max-model-len 4096 --precision bf16
-
-# Server performance (auto QPS from last Offline)
-docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
-  python run.py --category datacenter --scenario server --mode performance \
-  --server-target-qps auto --tensor-parallel-size auto --max-model-len 4096 --precision bf16
-
-# Edge SingleStream performance
-docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
-  python run.py --category edge --scenario singlestream --mode performance \
-  --tensor-parallel-size auto --max-model-len 4096 --precision bf16 --total-sample-count 512
-
-# Combined accuracy + performance for selected scenario
-docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
-  python run.py --category datacenter --scenario offline --mode both \
-  --tensor-parallel-size auto --max-model-len 4096 --precision bf16
-
-# Clean re-clone (distribution) smoke test
-cd ~
-rm -rf MLPerf_local_test
-git clone https://github.com/jshim0978/MLPerf_local_test.git
-cd MLPerf_local_test
-git submodule update --init --recursive --depth 1
-printf "HF_TOKEN=%s\n" "<YOUR_HF_TOKEN>" > .env
-printf "HUGGINGFACE_HUB_TOKEN=%s\n" "<YOUR_HF_TOKEN>" >> .env
-docker build -t mlperf-llama31:clean .
-set -e
-
-# Datacenter Offline (20 samples)
-docker run --gpus all --rm --env-file .env -v "$PWD/results:/app/results" mlperf-llama31:clean \
-  python run.py --model meta-llama/Llama-3.1-8B-Instruct \
-  --category datacenter --scenario offline --mode both \
-  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
-  --precision bf16 --total-sample-count 20 --keep-all 1
-
-# Datacenter Server (20 samples; auto QPS from last Offline)
-docker run --gpus all --rm --env-file .env -v "$PWD/results:/app/results" mlperf-llama31:clean \
-  python run.py --model meta-llama/Llama-3.1-8B-Instruct \
-  --category datacenter --scenario server --mode both --server-target-qps auto \
-  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
-  --precision bf16 --total-sample-count 20 --keep-all 1
-
-# MMLU (100 samples, detailed)
-docker run --gpus all --rm --env-file .env -v "$PWD/results:/app/results" mlperf-llama31:clean \
-  python mmlu.py --total-limit 100 --max-model-len 4096 --gpu-memory-utilization 0.92 --precision bf16 --details 1
-```
-
-## Files
-- `run.py`: single CLI for accuracy/performance across scenarios
-- `mmlu.py`: MMLU inference-only evaluator
-- `util_logs.py`: parse LoadGen logs to structured JSON
-- `report.py`: summary.json + report.md + basic matplotlib plots
-- `requirements.txt`, `Dockerfile`
-
-## Results Layout
-```
-results/
-  latest -> 2025MMDD-hhmmss
-  index.md               # list of historical runs
-  2025MMDD-hhmmss/
-    config.json
-    summary.json
-    report.md
-    plots/
-    Performance/{mlperf_log_summary.txt, mlperf_log_detail.txt}
-    Accuracy/{mlperf_log_accuracy.json, rouge.json}
-```
-
-## Behavior
-- `--mode accuracy`: runs deterministic generation, computes ROUGE, writes `Accuracy/*`, renders report.
-- `--mode performance`: runs selected scenario, writes `Performance/*`, renders report.
-- `--mode both`: runs accuracy first then performance and renders a combined report.
-- Historical index: `results/index.md` is updated after each run; `results/latest` points to the newest.
-
-## CLI flags
-- `--version`: MLPerf version string (default 5.1)
-- `--model`: HF repo or alias (default `llama3.1-8b-instruct` → `meta-llama/Llama-3.1-8B-Instruct`)
-- `--backend`: only `vllm` supported
-- `--category`: `datacenter` or `edge`
-- `--scenario`: `offline`, `server`, `singlestream`
-- `--mode`: `accuracy`, `performance`, `both`
-- `--precision`: `fp16` or `bf16`
-- `--tensor-parallel-size`: integer or `auto` (GPU count)
-- `--max-new-tokens`: generation length (default 128)
-- `--total-sample-count`: integer or `auto` (13368 datacenter / 5000 edge)
-- `--server-target-qps`: float or `auto` (0.8× last Offline)
-- `--dataset`: `cnndm`
-- `--results-dir`: output root (default `./results`)
-- `--keep-all`: keep historical runs (1) or keep latest only (0)
-- `--high-accuracy`: tighten ROUGE gate to 99.9%
-- `--max-model-len`: effective context window passed to vLLM (helps avoid KV cache OOM)
-- `--gpu-memory-utilization`: fraction [0..1] for vLLM KV cache sizing
-- `--extra-metrics`: reserved flag for non-official extra metrics (default 0)
-
-### MMLU flags
-- `--total-limit`: subset size
-- `--max-model-len`, `--gpu-memory-utilization`, `--precision`: same semantics as runner
-- `--details`: 1 to emit `samples.csv`, subject breakdown, and plots
-
-## Flags explained (non-experts)
-- **category**: where you plan to run it. Datacenter allows `server` (QPS/latency). Edge allows `singlestream` (single‑user latency). Also changes default sample counts.
-- **scenario**: what we measure.
-  - `offline`: raw throughput (tokens/sec) with batching, latency not emphasized.
-  - `server`: under a target request rate (QPS); reports latency percentiles.
-  - `singlestream`: one request at a time; reports latency percentiles.
-- **mode**:
-  - `accuracy`: checks ROUGE and gates pass/fail.
-  - `performance`: measures speed only.
-  - `both`: runs accuracy then performance in one go.
-- **precision**: numeric format.
-  - `bf16`: good default on newer NVIDIA GPUs; stable and fast.
-  - `fp16`: older alternative; similar quality.
-- **tensor-parallel-size**: split one model across multiple GPUs. `auto` = use all visible GPUs.
-- **max-new-tokens**: how long each answer can be. 128 is plenty for summaries.
-- **max-model-len**: how long inputs + outputs can be (context window). Lower this if you hit GPU memory limits (e.g., 4096).
-- **gpu-memory-utilization**: how much of VRAM vLLM should use for its caches. If you see out‑of‑memory, reduce this; if underutilized, increase slightly.
-- **server-target-qps**: desired load for `server`. `auto` = 0.8× the last measured Offline throughput.
- - **server-target-qps**: desired load for `server`. `auto` = 0.8 × (last Offline tokens/sec ÷ avg output tokens/request). This avoids the common tokens/sec → QPS unit mix-up.
-- **total-sample-count**: how many items to run. Use small numbers (e.g., 20–200) to smoke test; full runs use 13368 (datacenter) or 5000 (edge).
-- **keep-all**: if 1, keeps every run with its own timestamped folder and updates `results/index.md` for history.
-- **dataset**: we use CNN/DailyMail (`cnndm`) validation split.
-- Environment: set `HF_TOKEN` and `HUGGINGFACE_HUB_TOKEN=$HF_TOKEN` to download gated models automatically.
-
-## Local (no Docker)
-```bash
-git clone https://github.com/jshim0978/MLPerf_local_test.git
-cd MLPerf_local_test
-git submodule update --init --recursive --depth 1
-
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-export HF_TOKEN=...; export HUGGINGFACE_HUB_TOKEN=$HF_TOKEN
-
-# Datacenter Offline (20 samples; accuracy + performance)
-python run.py --model meta-llama/Llama-3.1-8B-Instruct \
-  --category datacenter --scenario offline --mode both \
-  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
-  --precision bf16 --total-sample-count 20 --keep-all 1
-
-# Datacenter Server (20 samples; auto QPS from last Offline)
-python run.py --model meta-llama/Llama-3.1-8B-Instruct \
-  --category datacenter --scenario server --mode both --server-target-qps auto \
-  --tensor-parallel-size auto --max-model-len 4096 --gpu-memory-utilization 0.92 \
-  --precision bf16 --total-sample-count 20 --keep-all 1
-
-# MMLU (100 samples, detailed)
-python mmlu.py --total-limit 100 --max-model-len 4096 --gpu-memory-utilization 0.92 --precision bf16 --details 1
-```
-
-## Expected metrics (targets)
-- Accuracy gate: ROUGE-Lsum >= 0.99 (>= 0.999 if `--high-accuracy 1`).
-- Datacenter Offline: Tokens/sec reported in `summary.json` under `run.performance.tokens_per_sec`.
-- Datacenter Server: Target vs Achieved QPS and latency percentiles in report; official MLPerf also considers TTFT/TPOT constraints for Server.
-- Edge SingleStream: Latency p50/p90/p95/p99 in report; CDF plot in `plots/`.
-
-Reference model: `meta-llama/Llama-3.1-8B-Instruct` (access required).
-
-
-## Metrics parity with official MLPerf
-- This runner adheres to the core MLPerf semantics per scenario (Offline tokens/sec; Server/SingleStream latency distributions).
-- In the official benchmark, Server scenario additionally evaluates TTFT (time‑to‑first‑token) and TPOT (time‑per‑output‑token). Our default logs focus on the core fields; TTFT/TPOT are part of the official MLPerf Server checks and can be surfaced via a stricter MLPerf output mode (planned) or by using the vendored official repo.
-
-## Official MLPerf bench for Llama‑3.1‑8B (overview)
-- **Task**: CNN/DailyMail abstractive summarization (validation split). Accuracy is computed with ROUGE and must meet the gate before performance is considered valid.
-- **Model**: Llama‑3.1‑8B‑Instruct. The reference harness provides a vLLM SUT and defaults to vLLM for this model [link](https://github.com/mlcommons/inference/tree/master/language/llama3.1-8b).
-- **Scenarios and sample counts**:
-  - Datacenter: Offline and Server, 13,368 samples
-  - Edge: Offline and SingleStream, 5,000 samples
-- **Accuracy run**: deterministic decode (temperature=0, top_p=1, top_k=1, e.g., max new tokens 128). Gate is defined relative to a baseline (≥99%, tighter in high‑accuracy).
-- **Performance metrics**:
-  - Offline: tokens/sec (result_tokens_per_second)
-  - Server: achieved QPS under target load and latency percentiles. MLPerf also checks TTFT/TPOT at p99 and fails runs that exceed limits (per submission checker).
-  - SingleStream: end‑to‑end latency distribution (p50/p90/p95/p99)
-- **LoadGen** controls query issuance and timing; logs include mlperf_log_summary.txt and mlperf_log_detail.txt used by the submission checker.
-- **Closed‑division constraints**: same model/dataset/preprocessing; accuracy must pass; only then is performance valid.
-
+> 실사용 팁: 항상 `--smoke`로 먼저 10샘플 스모크를 통과시키고, 그 다음 풀 데이터로 올리는 게 제일 안전합니다.
 
 ---
 
-# 한국어 안내 (고가독성)
+## 핵심 스크립트(이 README 기준)
 
-## 개요
-이 저장소는 MLPerf Inference v5.1 LLM(LLAMA‑3.1‑8B‑Instruct) 벤치마크를 vLLM 백엔드로 최소 구성으로 재현할 수 있게 해줍니다. 정확도(ROUGE) 검증을 먼저 통과해야 성능 결과가 유효합니다.
+- **End-to-end (추천)**: `scripts/bootstrap_cluster_and_bench.sh`
+  - 마스터(kubeadm) 셋업 → 워커 셋업/조인 → GPU 플러그인/RuntimeClass → 벤치 실행까지 한 번에 진행
+  - 워커 목록은 `config/workers.txt` 한 파일로 관리
+- **벤치만 실행(클러스터 이미 있음)**: `scripts/run_benchmarks.sh`
+  - MLPerf / MMLU / Inference를 선택 실행
+  - 결과/로그를 `results/<RUN_ID>/`에 저장
 
-## 빠른 시작 (Docker)
-```bash
-git submodule update --init --recursive --depth 1
-docker build -t mlperf-llama31:clean .
-docker run --gpus all --rm --env-file .env -v $PWD/results:/app/results mlperf-llama31:clean \
-  python run.py --model meta-llama/Llama-3.1-8B-Instruct \
-  --category datacenter --scenario offline --mode accuracy \
-  --tensor-parallel-size auto --max-model-len 4096 --precision bf16
-```
-
-## 결과 구조
-```
-results/
-  latest -> 가장 최근 실행 디렉터리
-  index.md            # 과거 실행 이력
-  YYYYMMDD-hhmmss-카테고리-시나리오/
-    config.json
-    summary.json
-    report.md
-    plots/
-    Performance/{mlperf_log_summary.txt, mlperf_log_detail.txt}
-    Accuracy/{mlperf_log_accuracy.json, rouge.json}
-```
-
-## 동작 모드
-- `accuracy`: 결정론적 생성(temperature=0, top_p=1, top_k=1)으로 정답(ROUGE)을 산출하고 보고서를 생성합니다.
-- `performance`: 선택한 시나리오(Offline/Server/SingleStream)로 성능을 측정하고 보고서를 생성합니다.
-- `both`: 정확도 → 성능 순으로 연속 실행하고, 결합 보고서를 생성합니다.
-
-## 주요 플래그 설명
-- `--tensor-parallel-size auto`: GPU 개수에 맞춰 자동 병렬화
-- `--max-model-len`: vLLM 컨텍스트 창. GPU 메모리가 작은 경우 2048~4096 권장
-- `--gpu-memory-utilization`: KV 캐시 메모리 비율(예: 0.9~0.95)
-- `--total-sample-count`: 샘플 수(스모크 테스트는 20~200, 공식 검증은 13368/5000)
-- `--keep-all 1`: 과거 결과(디렉터리)를 보존하고 `results/index.md` 갱신
-
-## 기대 지표(타깃)
-- 정확도 게이트: ROUGE‑Lsum ≥ 0.99 (고정밀 `--high-accuracy 1` 시 0.999)
-- Datacenter/Offline: tokens/sec
-- Datacenter/Server: 목표/달성 QPS, 지연(percentile)
-- 공식 MLPerf에서는 Server 시나리오에서 TTFT/TPOT(첫 토큰/출력 토큰 시간)도 검증 항목에 포함됩니다.
-- Edge/SingleStream: 지연(percentile)
-
-## MMLU
-```bash
-python mmlu.py --total-limit 100 --max-model-len 4096 --gpu-memory-utilization 0.92 --precision bf16 --details 1
-```
-결과 폴더에는 전체/도메인/과목별 정확도 JSON, per‑sample CSV, 기본 플롯이 생성됩니다.
-
-## Sample results (what you will see)
-
-### summary.json (excerpt)
-```
-{
-  "meta": { "category": "datacenter", "scenario": "offline", "model": "meta-llama/Llama-3.1-8B-Instruct" },
-  "system": { "gpu_count": 1, "torch_version": "2.5.1", "vllm_version": "0.6.6" },
-  "run": {
-    "accuracy": {
-      "total_samples": 20,
-      "rouge": { "rouge1": 0.40, "rouge2": 0.16, "rougeL": 0.24, "rougeLsum": 0.36 },
-      "passed": false,
-      "run_gen_len": 2540,
-      "run_gen_num": 20
-    },
-    "performance": {
-      "scenario": "offline",
-      "duration_s": 8.23,
-      "total_new_tokens": 9876,
-      "tokens_per_sec": 1200.48
-    }
-  },
-  "logs": {
-    "summary_txt": ".../Performance/mlperf_log_summary.txt",
-    "detail_txt": ".../Performance/mlperf_log_detail.txt",
-    "accuracy_json": ".../Accuracy/mlperf_log_accuracy.json",
-    "rouge_json": ".../Accuracy/rouge.json"
-  },
-  "plots": {
-    "tokens_per_sec": ".../plots/tokens_per_sec.png",
-    "latency_cdf": null
-  }
-}
-```
-
-### Performance/mlperf_log_summary.txt (offline)
-```
-scenario=offline
-duration_ms=8230
-total_new_tokens=9876
-tokens_per_sec=1200.48
-num_samples=20
-```
-
-### Accuracy/rouge.json (excerpt)
-```
-{
-  "rouge1": 0.4079,
-  "rouge2": 0.1550,
-  "rougeL": 0.2450,
-  "rougeLsum": 0.3580,
-  "baseline": { "rouge1": 38.7792, "rouge2": 15.9075, "rougeL": 24.4957, "rougeLsum": 35.793, "gen_len": 8167644, "gen_num": 13368 },
-  "gate_multiplier": 0.99,
-  "threshold_rougeLsum": 0.3540,
-  "run_gen_len": 2540,
-  "run_gen_num": 20
-}
-```
-
-### MMLU outputs
-- `overall.json`: `{ "overall_accuracy": 0.694 }`
-- `by_domain.json`: `{ "STEM": 0.70, "Humanities": 0.68, ... }`
-- `by_subject.json`: per‑subject accuracy (e.g., `abstract_algebra`, `anatomy`, ...)
-- `samples.csv`: per‑sample row with subject/domain/answer/pred/latency/tokens
-- `plots/score_by_subject.png`: 막대 그래프(과목별 정확도)
+보조 스크립트:
+- `scripts/setup_master_node.sh`: 마스터 노드 설치/초기화 (kubeadm, flannel 등)
+- `scripts/setup_worker_node.sh`: 워커 노드 설치 (containerd, NVIDIA toolkit, kubelet 등)
 
 ---
 
-## 결과 예시 (한국어)
-- summary.json: 실행 메타/시스템/정확도/성능 요약과 로그·플롯 경로가 담겨 있습니다.
-- Performance/mlperf_log_summary.txt: 시나리오별 핵심 수치(Offline=토큰/초, Server/SingleStream=지연 백분위수 등). 공식 MLPerf Server는 TTFT/TPOT도 확인합니다.
-- Accuracy/rouge.json: ROUGE 점수와 기준값(베이스라인), 게이트 임계치, 이번 실행의 생성 토큰/샘플 수(run_gen_len/run_gen_num).
-- MMLU: 전체/도메인/과목별 정확도, per‑sample CSV, 과목별 정확도 그래프.
+## 요구 사항
 
+### 공통
+- OS: Ubuntu 22.04 권장
+- Kubernetes: kubeadm 기반(v1.28 계열)
+- 외부 네트워크: 기본 스크립트는 **파드 안에서** `pip install`, HuggingFace 모델 다운로드, dataset 다운로드를 수행합니다.
+  - 사내망/방화벽 환경이면 `pypi.org`, `huggingface.co`, `cdn-lfs.huggingface.co` 접근이 가능해야 합니다.
+
+### GPU 워커 노드
+- NVIDIA GPU (예: A30 24GB)
+- NVIDIA 드라이버 설치(이미 설치되어 있으면 스킵됨)
+
+---
+
+## HuggingFace 토큰 준비
+
+1) 토큰 발급: `https://huggingface.co/settings/tokens` (read 권한)  
+2) 모델 접근 승인: `meta-llama/Llama-3.1-8B-Instruct` 페이지에서 라이선스 수락  
+3) 실행 시 환경변수로 주입:
+
+```bash
+export HF_TOKEN="hf_..."
+```
+
+스크립트는 `mlperf` 네임스페이스에 `hf-token` 시크릿을 만들거나(또는 placeholder면) 갱신합니다.
+
+---
+
+## 워커 노드 목록 파일(`config/workers.txt`)
+
+워커를 늘리거나 줄일 때는 이 파일만 수정하면 됩니다.
+
+형식:
+- 한 줄에 **1 워커**
+- `#`로 주석 가능
+- `user@host` 또는 `host`(user 기본값 `kcloud`)
+- SSH 옵션을 뒤에 그대로 붙일 수 있음(포트 포함)
+
+예시:
+
+```text
+# user@host
+kcloud@129.254.202.129 -p 122
+
+# host only (defaults to user 'kcloud')
+# 129.254.202.130
+```
+
+---
+
+## 1) 전부 다 한 번에 (bare-metal → smoke)
+
+마스터 노드에서 실행합니다.
+
+```bash
+cd /home/jungwooshim/kcloud-mlperf
+HF_TOKEN=hf_... ./scripts/bootstrap_cluster_and_bench.sh --smoke
+```
+
+### 동작 요약
+- 마스터: kubeadm init + CNI 설치(기본 flannel) + join command 생성
+- 워커: setup → (필요 시) reset/clean → join
+- GPU: NVIDIA device plugin 배포 + `RuntimeClass nvidia` 생성
+- 벤치: `run_benchmarks.sh --smoke` 실행
+
+### “다시 돌릴 때” 주의
+기본값으로 `MASTER_CLEAN=1`, `WORKER_CLEAN=1`이 동작해 **기존 kubeadm 상태/CNI 흔적을 지우고** 다시 만듭니다(데모/재현 목적).
+
+- 클린업 끄기:
+
+```bash
+MASTER_CLEAN=0 WORKER_CLEAN=0 HF_TOKEN=hf_... ./scripts/bootstrap_cluster_and_bench.sh --smoke
+```
+
+---
+
+## 2) 전부 다 한 번에 (full data)
+
+```bash
+cd /home/jungwooshim/kcloud-mlperf
+HF_TOKEN=hf_... ./scripts/bootstrap_cluster_and_bench.sh
+```
+
+> 풀 데이터는 수 시간 걸립니다(환경에 따라 8~10h). 스모크 통과 후 진행을 권장합니다.
+
+---
+
+## 3) 클러스터는 이미 있고, 벤치만 실행
+
+```bash
+cd /home/jungwooshim/kcloud-mlperf
+HF_TOKEN=hf_... ./scripts/run_benchmarks.sh --smoke
+```
+
+### 개별 잡만 실행
+- MLPerf만:
+
+```bash
+HF_TOKEN=hf_... ./scripts/run_benchmarks.sh --smoke --mlperf
+```
+
+- MMLU만:
+
+```bash
+HF_TOKEN=hf_... ./scripts/run_benchmarks.sh --smoke --mmlu
+```
+
+- Inference만:
+
+```bash
+HF_TOKEN=hf_... ./scripts/run_benchmarks.sh --smoke --inference
+```
+
+> `--smoke`를 빼면 full dataset 모드로 동작합니다.
+
+---
+
+## 4) 마스터/워커만 따로 셋업하고 싶을 때
+
+### 마스터 셋업(로컬)
+
+```bash
+cd /home/jungwooshim/kcloud-mlperf
+AUTO_YES=1 MASTER_CLEAN=1 ./scripts/setup_master_node.sh
+```
+
+### 워커 셋업(원격)
+
+```bash
+scp -P 122 ./scripts/setup_worker_node.sh kcloud@129.254.202.129:/tmp/
+ssh -p 122 kcloud@129.254.202.129 "AUTO_YES=1 /tmp/setup_worker_node.sh"
+```
+
+그리고 마스터에서 join command 생성 후 워커에서 실행:
+
+```bash
+kubeadm token create --print-join-command
+# 출력된 join 커맨드를 워커에서 sudo로 실행
+```
+
+---
+
+## 결과/로그 저장 위치
+
+`run_benchmarks.sh`는 실행마다 타임스탬프 디렉터리를 만들고, 잡별 로그/매니페스트/진단을 남깁니다.
+
+예:
+
+```text
+results/20260112-152403/
+  summary.txt
+  mlperf-bench.log
+  mlperf-bench-manifest.yaml
+  mlperf-bench-diagnostics.log          # 실패 시에만 의미 있음
+  mmlu-bench.log
+  mmlu-bench-manifest.yaml
+  inference-bench.log
+  inference-bench-manifest.yaml
+```
+
+---
+
+## 트러블슈팅(자주 나오는 것들)
+
+### 1) Pod가 Pending에서 안 내려옴 (Insufficient GPU)
+
+```bash
+kubectl describe pod -n mlperf <pod>
+kubectl describe node kcloud | grep -n "nvidia.com/gpu" -C2
+kubectl logs -n kube-system -l name=nvidia-device-plugin-ds --tail=200
+```
+
+`nvidia-device-plugin` 로그에 `could not load NVML library`가 뜨면,
+워커에서 아래를 한 번만 실행하면 대부분 해결됩니다:
+
+```bash
+ssh -p 122 kcloud@129.254.202.129 \
+  "sudo nvidia-ctk runtime configure --runtime=containerd --set-as-default && \
+   sudo systemctl restart containerd && \
+   sudo systemctl restart kubelet"
+kubectl delete pod -n kube-system -l name=nvidia-device-plugin-ds
+```
+
+### 2) pip install이 “Temporary failure in name resolution”로 실패
+
+대부분 **kube-dns(CoreDNS) 엔드포인트가 비어있거나**, CNI가 꼬여서 kube-system 파드가 못 뜬 경우입니다.
+
+```bash
+kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
+kubectl get endpoints -n kube-system kube-dns -o wide
+```
+
+### 3) CoreDNS가 ContainerCreating에 오래 걸림 / flannel cni0 IP 충돌
+
+증상 예:
+- `failed to set bridge addr: "cni0" already has an IP address different from 10.244.0.1/24`
+
+이건 이전 CNI 흔적이 남아있는 경우가 많고, 지금 스크립트는 재실행 시 자동으로 정리하도록 되어 있습니다.
+그래도 재발하면 아래로 확인/정리:
+
+```bash
+ip addr show cni0
+sudo ip link delete cni0 2>/dev/null || true
+sudo rm -rf /var/lib/cni/*
+sudo systemctl restart containerd kubelet
+```
+
+---
+
+## 참고(레거시 문서)
+
+- `K8S_SETUP.md`, `MULTINODE_SETUP.md`는 작성 시점이 달라 일부 내용이 현재 스크립트와 다를 수 있습니다.
+- 최신 흐름은 이 README와 `scripts/bootstrap_cluster_and_bench.sh`, `scripts/run_benchmarks.sh`를 기준으로 보세요.
 
