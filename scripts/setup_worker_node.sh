@@ -8,6 +8,9 @@
 
 set -e
 
+export DEBIAN_FRONTEND=noninteractive
+APT_FLAGS="-y -o DPkg::Options::=--force-confold"
+
 echo "============================================================================"
 echo "       Kubernetes GPU Worker Node Setup (A30)"
 echo "============================================================================"
@@ -39,7 +42,7 @@ EOF
     
     # Install containerd
     sudo apt-get update
-    sudo apt-get install -y containerd
+    sudo apt-get install $APT_FLAGS containerd
     
     # Configure containerd
     sudo mkdir -p /etc/containerd
@@ -66,7 +69,7 @@ install_nvidia_driver() {
     
     echo "Installing NVIDIA driver..."
     sudo apt-get update
-    sudo apt-get install -y linux-headers-$(uname -r)
+    sudo apt-get install $APT_FLAGS linux-headers-$(uname -r)
     
     # Add NVIDIA repository
     distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
@@ -85,6 +88,7 @@ install_nvidia_container_toolkit() {
     echo "[3/6] Installing NVIDIA Container Toolkit..."
     
     distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+    sudo rm -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null || true
     
     curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
@@ -92,10 +96,13 @@ install_nvidia_container_toolkit() {
         sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
     
     sudo apt-get update
-    sudo apt-get install -y nvidia-container-toolkit
+    sudo apt-get install $APT_FLAGS nvidia-container-toolkit
     
     # Configure containerd to use NVIDIA runtime
-    sudo nvidia-ctk runtime configure --runtime=containerd
+    # NOTE: The NVIDIA device-plugin itself needs NVML access; setting NVIDIA as the
+    # default runtime avoids "could not load NVML library: libnvidia-ml.so.1" and
+    # ensures the node advertises nvidia.com/gpu.
+    sudo nvidia-ctk runtime configure --runtime=containerd --set-as-default
     sudo systemctl restart containerd
     
     echo "NVIDIA Container Toolkit installed"
@@ -113,15 +120,16 @@ install_kubernetes() {
     
     # Add Kubernetes apt repository
     sudo apt-get update
-    sudo apt-get install -y apt-transport-https ca-certificates curl gpg
+    sudo apt-get install $APT_FLAGS apt-transport-https ca-certificates curl gpg
     
     sudo mkdir -p /etc/apt/keyrings
+    sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg 2>/dev/null || true
     
     echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
     
     sudo apt-get update
-    sudo apt-get install -y kubelet kubeadm kubectl
+    sudo apt-get install $APT_FLAGS kubelet kubeadm kubectl
     sudo apt-mark hold kubelet kubeadm kubectl
     
     echo "Kubernetes components installed"
@@ -173,10 +181,14 @@ main() {
     echo "This will set up this machine as a Kubernetes GPU worker node."
     echo "Worker IP: ${WORKER_IP}"
     echo ""
-    read -p "Continue? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+    if [ -z "${AUTO_YES:-}" ]; then
+        read -p "Continue? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "AUTO_YES enabled, continuing without prompt."
     fi
     
     install_containerd

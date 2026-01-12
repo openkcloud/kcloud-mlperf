@@ -8,6 +8,10 @@
 
 set -e
 
+export DEBIAN_FRONTEND=noninteractive
+APT_FLAGS="-y -o DPkg::Options::=--force-confold"
+MASTER_CLEAN="${MASTER_CLEAN:-1}" # 1=reset existing kubeadm state before init
+
 echo "============================================================================"
 echo "       Kubernetes Master Node Setup"
 echo "============================================================================"
@@ -43,7 +47,7 @@ EOF
     
     # Install containerd
     sudo apt-get update
-    sudo apt-get install -y containerd
+    sudo apt-get install $APT_FLAGS containerd
     
     # Configure containerd
     sudo mkdir -p /etc/containerd
@@ -68,14 +72,15 @@ install_kubernetes() {
     
     # Add Kubernetes apt repository
     sudo apt-get update
-    sudo apt-get install -y apt-transport-https ca-certificates curl gpg
+    sudo apt-get install $APT_FLAGS apt-transport-https ca-certificates curl gpg
     
+    sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     
     echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
     
     sudo apt-get update
-    sudo apt-get install -y kubelet kubeadm kubectl
+    sudo apt-get install $APT_FLAGS kubelet kubeadm kubectl
     sudo apt-mark hold kubelet kubeadm kubectl
     
     echo "Kubernetes components installed"
@@ -87,6 +92,19 @@ install_kubernetes() {
 init_cluster() {
     echo "[3/5] Initializing Kubernetes cluster..."
     
+    if [ "$MASTER_CLEAN" = "1" ]; then
+        echo "[3/5] Cleaning previous Kubernetes state (kubeadm reset)..."
+        sudo kubeadm reset -f || true
+        sudo systemctl stop kubelet || true
+        # Clean up leftover CNI state (prevents cni0 IP conflicts like 10.42.0.1 vs 10.244.0.1)
+        sudo ip link set cni0 down 2>/dev/null || true
+        sudo ip link delete cni0 2>/dev/null || true
+        sudo ip link delete flannel.1 2>/dev/null || true
+        sudo rm -rf /var/run/flannel /run/flannel || true
+        sudo rm -rf /etc/kubernetes /var/lib/etcd /var/lib/kubelet /var/run/kubernetes /etc/cni/net.d /var/lib/cni || true
+        sudo systemctl restart containerd || true
+    fi
+
     # Initialize the cluster
     sudo kubeadm init \
         --apiserver-advertise-address=${MASTER_IP} \
@@ -96,7 +114,7 @@ init_cluster() {
     
     # Set up kubeconfig for current user
     mkdir -p $HOME/.kube
-    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
     sudo chown $(id -u):$(id -g) $HOME/.kube/config
     
     echo "Cluster initialized"
@@ -146,10 +164,14 @@ main() {
     echo "This will set up this machine as a Kubernetes master node."
     echo "Master IP: ${MASTER_IP}"
     echo ""
-    read -p "Continue? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+    if [ -z "${AUTO_YES:-}" ]; then
+        read -p "Continue? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "AUTO_YES enabled, continuing without prompt."
     fi
     
     install_containerd
