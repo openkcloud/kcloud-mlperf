@@ -43,7 +43,7 @@ spec:
           
           # Install dependencies
           echo "[1/5] Installing dependencies..."
-          pip install -q pybind11 datasets evaluate rouge-score nltk
+          pip install -q pybind11 datasets evaluate rouge-score nltk simplejson
           python3 -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
           
           # Install LoadGen from MLCommons
@@ -51,26 +51,35 @@ spec:
           cd /mlcommons/loadgen
           pip install -e . -q
           
+          # Patch SUT_VLLM.py to limit max_model_len for GPU memory
+          echo "[2b/5] Patching SUT for GPU memory constraints..."
+          cd /mlcommons/language/llama3.1-8b
+          # Add max_model_len at the end of LLM() call
+          sed -i 's/tensor_parallel_size=self.tensor_parallel_size,$/tensor_parallel_size=self.tensor_parallel_size, max_model_len=4096, gpu_memory_utilization=0.9,/' SUT_VLLM.py
+          
           # Prepare dataset
           echo "[3/5] Preparing dataset..."
           cd /mlcommons/language/llama3.1-8b
           mkdir -p dataset
           
-          # Download dataset using the official script
+          # Download dataset if not cached
           if [ ! -f dataset/cnn_eval.json ]; then
-            echo "Downloading CNN/DailyMail dataset via rclone..."
-            pip install -q rclone-python
-            python3 download_cnndm.py --output-dir dataset || {
-              # Fallback: download directly
-              echo "Using direct download fallback..."
-              pip install -q rclone
-              rclone config create mlc-inference s3 \
-                provider=Cloudflare \
-                access_key_id=f65ba5eef400db161ea49967de89f47b \
-                secret_access_key=fbea333914c292b854f14d3fe232bad6c5407bf0ab1bebf78833c2b359bdfd2b \
-                endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
-              rclone copy mlc-inference:mlcommons-inference-wg-public/llama3.1_8b/datasets/cnn_eval.json dataset/ -P
+            echo "Downloading CNN/DailyMail dataset..."
+            # Install rclone binary
+            curl -sL https://rclone.org/install.sh | bash >/dev/null 2>&1 || {
+              apt-get update -qq && apt-get install -qq -y rclone >/dev/null 2>&1
             }
+            # Create rclone config file directly
+            mkdir -p /root/.config/rclone
+            cat > /root/.config/rclone/rclone.conf << 'EOF'
+          [mlc-inference]
+          type = s3
+          provider = Cloudflare
+          access_key_id = f65ba5eef400db161ea49967de89f47b
+          secret_access_key = fbea333914c292b854f14d3fe232bad6c5407bf0ab1bebf78833c2b359bdfd2b
+          endpoint = https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
+          EOF
+            rclone copy mlc-inference:mlcommons-inference-wg-public/llama3.1_8b/datasets/cnn_eval.json dataset/ -P
           else
             echo "Dataset already cached"
           fi
@@ -91,7 +100,7 @@ spec:
           echo ""
           
           # Run official MLPerf benchmark
-          python -u main.py \
+          python3 -u main.py \
             --scenario Offline \
             --model-path meta-llama/Llama-3.1-8B-Instruct \
             --batch-size 16 \
@@ -108,7 +117,7 @@ spec:
           echo "[5/5] Running Official Accuracy Evaluation..."
           
           if [ -f /output/mlperf_log_accuracy.json ]; then
-            python evaluation.py \
+            python3 evaluation.py \
               --mlperf-accuracy-file /output/mlperf_log_accuracy.json \
               --dataset-file dataset/cnn_eval.json \
               --dtype int32
