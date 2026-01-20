@@ -1,0 +1,58 @@
+# LLM Inference Throughput Benchmark
+# vLLM backend performance test
+# Python script: benchmarks/inference_throughput.py
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: inference-bench
+  namespace: mlperf
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      runtimeClassName: nvidia
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+      - name: bench
+        image: vllm/vllm-openai:v0.6.6
+        command: ["bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "========================================"
+          echo " LLM Inference Test - Llama 3.1 8B"
+          echo " (vLLM backend)"
+          echo "========================================"
+          python3 -u /benchmarks/inference_throughput.py
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: "48Gi"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: "24Gi"
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: HF_TOKEN
+        - name: HF_HOME
+          value: /cache
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: benchmarks
+          mountPath: /benchmarks
+      volumes:
+      - name: cache
+        hostPath:
+          path: /data/hf-cache
+          type: DirectoryOrCreate
+      - name: benchmarks
+        configMap:
+          name: benchmark-scripts
