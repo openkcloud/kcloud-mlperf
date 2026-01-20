@@ -115,12 +115,14 @@ setup_benchmark_configmaps() {
     
     kubectl delete configmap benchmark-scripts -n $NAMESPACE --ignore-not-found=true >/dev/null 2>&1
     
+    # MLPerf uses official MLCommons repo (cloned via initContainer)
+    # Only MMLU and Inference need ConfigMaps
     kubectl create configmap benchmark-scripts -n $NAMESPACE \
-        --from-file=mlperf_summarization.py="$BENCHMARKS_DIR/mlperf_summarization.py" \
         --from-file=mmlu_pro_cot.py="$BENCHMARKS_DIR/mmlu_pro_cot.py" \
         --from-file=inference_throughput.py="$BENCHMARKS_DIR/inference_throughput.py"
     
     echo "✓ Benchmark scripts ConfigMap created"
+    echo "  Note: MLPerf uses official MLCommons LoadGen (auto-cloned)"
 }
 
 # Load YAML template and substitute variables
@@ -339,18 +341,24 @@ extract_metrics() {
     
     case "$job_name" in
         mlperf-bench)
-            # Extract ROUGE scores and throughput
-            local rouge1=$(grep "ROUGE-1:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
-            local rouge2=$(grep "ROUGE-2:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
-            local rougel=$(grep "ROUGE-L:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
-            local throughput=$(grep "Throughput:" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+ samples/s' | head -1)
-            local samples=$(grep "Samples:" "$log_file" 2>/dev/null | tail -1 | grep -oE 'Samples: [0-9]+' | awk '{print $2}')
+            # Extract ROUGE scores from official evaluation.py output
+            local rouge1=$(grep "'rouge1':" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
+            local rouge2=$(grep "'rouge2':" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
+            local rougel=$(grep "'rougeL':" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
+            # Fallback: try non-dict format
+            [ -z "$rouge1" ] && rouge1=$(grep "ROUGE-1:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+            [ -z "$rougel" ] && rougel=$(grep "ROUGE-L:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+            # Extract LoadGen metrics
+            local samples_per_sec=$(grep "Samples per second" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
+            local result=$(grep "Result is" "$log_file" 2>/dev/null | tail -1 | awk '{print $NF}')
+            local total_samples=$(grep "total_sample_count" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)
             {
                 echo "ROUGE_1=$rouge1"
                 echo "ROUGE_2=$rouge2"
                 echo "ROUGE_L=$rougel"
-                echo "THROUGHPUT=\"$throughput\""
-                echo "SAMPLES=$samples"
+                echo "SAMPLES_PER_SEC=$samples_per_sec"
+                echo "LOADGEN_RESULT=\"$result\""
+                echo "TOTAL_SAMPLES=$total_samples"
             } > "$metrics_file"
             ;;
         mmlu-bench)
@@ -392,7 +400,7 @@ if [ "$RUN_MLPERF" = true ]; then
         BENCHMARK_STATUS["mlperf"]="PASS"
         if [ -f "$RESULTS_DIR/mlperf-bench-metrics.txt" ]; then
             source "$RESULTS_DIR/mlperf-bench-metrics.txt" 2>/dev/null || true
-            BENCHMARK_METRICS["mlperf"]="ROUGE-L: ${ROUGE_L:-N/A} | ${THROUGHPUT:-N/A}"
+            BENCHMARK_METRICS["mlperf"]="ROUGE-L: ${ROUGE_L:-N/A} | ${SAMPLES_PER_SEC:-N/A} samples/s | LoadGen: ${LOADGEN_RESULT:-N/A}"
         fi
     else
         BENCHMARK_STATUS["mlperf"]="FAIL"
