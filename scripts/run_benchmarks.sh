@@ -7,6 +7,8 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 K8S_DIR="$PROJECT_DIR/k8s"
+JOBS_DIR="$K8S_DIR/jobs"
+BENCHMARKS_DIR="$PROJECT_DIR/benchmarks"
 NAMESPACE="mlperf"
 
 # Defaults
@@ -45,6 +47,10 @@ if [ "$SMOKE_TEST" = true ]; then
     SAMPLE_SPLIT="[:10]"
 else
     echo "Mode: FULL DATASET (8-10 hours)"
+    echo "  - MLPerf: ~11k samples (CNN/DailyMail test set)"
+    echo "  - MMLU-Pro: ~12k questions"
+    echo "  - Progress updates: every 1% or 60 seconds"
+    echo "  - Heartbeat status: every 2 minutes during job execution"
     SAMPLE_SPLIT=""
 fi
 echo "Date: $(date)"
@@ -60,14 +66,13 @@ mkdir -p "$RESULTS_DIR"
 } > "$SUMMARY_FILE"
 
 status() {
-    # Timestamped status line for better live visibility
     echo "[$(date '+%H:%M:%S')] $*"
 }
 
 check_runtime_and_gpu() {
     status "[1a] Validating GPU runtime..."
     if ! kubectl get runtimeclass nvidia >/dev/null 2>&1; then
-        echo "ERROR: RuntimeClass 'nvidia' not found. Install NVIDIA runtime or remove runtimeClassName from the job spec."
+        echo "ERROR: RuntimeClass 'nvidia' not found."
         exit 1
     fi
 
@@ -105,6 +110,28 @@ ensure_hf_secret() {
     fi
 }
 
+setup_benchmark_configmaps() {
+    status "[2a] Setting up benchmark script ConfigMaps..."
+    
+    kubectl delete configmap benchmark-scripts -n $NAMESPACE --ignore-not-found=true >/dev/null 2>&1
+    
+    kubectl create configmap benchmark-scripts -n $NAMESPACE \
+        --from-file=mlperf_summarization.py="$BENCHMARKS_DIR/mlperf_summarization.py" \
+        --from-file=mmlu_pro_cot.py="$BENCHMARKS_DIR/mmlu_pro_cot.py" \
+        --from-file=inference_throughput.py="$BENCHMARKS_DIR/inference_throughput.py"
+    
+    echo "✓ Benchmark scripts ConfigMap created"
+}
+
+# Load YAML template and substitute variables
+load_job_yaml() {
+    local yaml_file=$1
+    local yaml_content
+    yaml_content=$(cat "$yaml_file")
+    # Substitute ${SAMPLE_SPLIT} with actual value
+    echo "${yaml_content//\$\{SAMPLE_SPLIT\}/$SAMPLE_SPLIT}"
+}
+
 # Check cluster
 status "[1/4] Checking Cluster..."
 kubectl cluster-info > /dev/null || { echo "ERROR: Cannot connect to cluster"; exit 1; }
@@ -117,7 +144,8 @@ check_runtime_and_gpu
 status "[2/4] Setting up namespace..."
 kubectl apply -f "$K8S_DIR/00-namespace.yaml" 2>/dev/null || true
 ensure_hf_secret
-echo "✓ Namespace and hf-token secret ready"
+setup_benchmark_configmaps
+echo "✓ Namespace, secrets, and ConfigMaps ready"
 echo ""
 
 # Function to run job and wait for completion
@@ -147,19 +175,19 @@ run_job() {
     # Wait for pod to start
     echo "Waiting for pod to start..."
     local pod=""
-    local status=""
+    local pod_status=""
     for i in $(seq 1 120); do
         pod=$(kubectl get pods -n $NAMESPACE -l job-name=$job_name -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
         if [ -n "$pod" ]; then
-            status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
-            if [ "$status" = "Running" ]; then
+            pod_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
+            if [ "$pod_status" = "Running" ]; then
                 echo "Pod $pod is Running on $(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.spec.nodeName}')"
                 break
-            elif [ "$status" = "Succeeded" ] || [ "$status" = "Failed" ]; then
-                echo "Pod $pod finished with status: $status"
+            elif [ "$pod_status" = "Succeeded" ] || [ "$pod_status" = "Failed" ]; then
+                echo "Pod $pod finished with status: $pod_status"
                 break
             else
-                status "Pod $pod state: $status (waiting...)"
+                status "Pod $pod state: $pod_status (waiting...)"
 
                 # Fail fast if scheduler already marked it unschedulable
                 pod_scheduled_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="PodScheduled")].status}' 2>/dev/null || true)
@@ -195,8 +223,7 @@ run_job() {
         return 1
     fi
 
-    # If we exited the loop with a pod but it's still Pending, treat as failure
-    if [ "$status" = "Pending" ]; then
+    if [ "$pod_status" = "Pending" ]; then
         echo "ERROR: Pod $pod is still Pending after waiting"
         kubectl describe pod $pod -n $NAMESPACE || true
         kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 20 || true
@@ -209,19 +236,41 @@ run_job() {
         return 1
     fi
     
-    # Stream logs until pod completes
+    # Stream logs
     echo ""
-    echo "--- Streaming logs ---"
-    status "Streaming logs -> $log_file"
-    kubectl logs -f $pod -n $NAMESPACE 2>&1 | tee -a "$log_file" &
+    echo "--- Streaming logs (real-time) ---"
+    status "Log file: $log_file"
+    
+    if command -v stdbuf >/dev/null 2>&1; then
+        stdbuf -oL kubectl logs -f $pod -n $NAMESPACE 2>&1 | stdbuf -oL tee -a "$log_file" &
+    else
+        kubectl logs -f $pod -n $NAMESPACE 2>&1 | tee -a "$log_file" &
+    fi
     local logs_pid=$!
     
-    # Wait for job to complete (poll every 30 seconds)
+    # Wait for job to complete
     echo ""
+    local poll_count=0
+    local start_time=$(date +%s)
     while true; do
-        sleep 30
+        sleep 10
+        poll_count=$((poll_count + 1))
         
-        # Check job status
+        if [ $((poll_count % 3)) -eq 0 ]; then
+            local now=$(date +%s)
+            local elapsed_min=$(( (now - start_time) / 60 ))
+            local pod_status_now=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            
+            local recent_progress=$(kubectl logs $pod -n $NAMESPACE --tail=10 2>/dev/null | grep -E '^\s*\[|samples/s|q/s|ETA:|%' | tail -3)
+            if [ -n "$recent_progress" ]; then
+                echo ""
+                status "[Progress Update] Elapsed: ${elapsed_min}m | Pod: $pod_status_now"
+                echo "$recent_progress"
+            else
+                status "[Heartbeat] Job: $job_name | Pod: $pod_status_now | Elapsed: ${elapsed_min}m"
+            fi
+        fi
+        
         succeeded=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.succeeded}' 2>/dev/null)
         failed=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.failed}' 2>/dev/null)
         
@@ -238,39 +287,30 @@ run_job() {
             echo ""
             echo "✗ $description: FAIL"
             kubectl describe pod $pod -n $NAMESPACE || true
-            kubectl logs $pod -n $NAMESPACE --previous || true
-            kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 20 || true
             {
                 echo "[$(date '+%F %T')] $description failed"
                 kubectl describe pod $pod -n $NAMESPACE
-                kubectl logs $pod -n $NAMESPACE --previous
-                kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 20
             } > "$diag_file" 2>&1 || true
             echo "FAIL $description" >> "$SUMMARY_FILE"
             return 1
         fi
         
-        # Check if pod still exists and is running
-        pod_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
-        if [ "$pod_status" = "Succeeded" ]; then
+        local current_pod_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
+        if [ "$current_pod_status" = "Succeeded" ]; then
             kill $logs_pid 2>/dev/null || true
             wait $logs_pid 2>/dev/null || true
             echo ""
             echo "✓ $description: PASS"
             return 0
-        elif [ "$pod_status" = "Failed" ]; then
+        elif [ "$current_pod_status" = "Failed" ]; then
             kill $logs_pid 2>/dev/null || true
             wait $logs_pid 2>/dev/null || true
             echo ""
             echo "✗ $description: FAIL"
             kubectl describe pod $pod -n $NAMESPACE || true
-            kubectl logs $pod -n $NAMESPACE --previous || true
-            kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 20 || true
             {
                 echo "[$(date '+%F %T')] $description failed"
                 kubectl describe pod $pod -n $NAMESPACE
-                kubectl logs $pod -n $NAMESPACE --previous
-                kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 20
             } > "$diag_file" 2>&1 || true
             echo "FAIL $description" >> "$SUMMARY_FILE"
             return 1
@@ -284,97 +324,9 @@ declare -a RESULTS
 echo "[3/4] Running Benchmarks..."
 echo ""
 
-# MLPerf
+# MLPerf - load from YAML file
 if [ "$RUN_MLPERF" = true ]; then
-    MLPERF_YAML=$(cat <<EOF
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: mlperf-bench
-  namespace: mlperf
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      runtimeClassName: nvidia
-      nodeSelector:
-        nvidia.com/gpu.present: "true"
-      containers:
-      - name: bench
-        image: python:3.10-slim
-        command: ["bash", "-c"]
-        args:
-        - |
-          set -e
-          echo "========================================"
-          echo " MLPerf Inference - Llama 3.1 8B"
-          echo "========================================"
-          pip install -q torch transformers datasets evaluate rouge-score nltk sentencepiece accelerate
-          python3 -u << 'PY'
-          import time, sys, torch
-          from datasets import load_dataset
-          from transformers import AutoModelForCausalLM, AutoTokenizer
-          import evaluate
-
-          print("Loading dataset...", flush=True)
-          dataset = load_dataset("cnn_dailymail", "3.0.0", split="test${SAMPLE_SPLIT}")
-          total = len(dataset)
-          print(f"Samples: {total}", flush=True)
-
-          print("Loading model (this can take 1-3 minutes)...", flush=True)
-          tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
-          model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B-Instruct", torch_dtype=torch.float16, device_map="auto")
-          print(f"GPU: {torch.cuda.get_device_name(0)}", flush=True)
-
-          preds, refs = [], []
-          t0 = time.time()
-          print("Starting inference...", flush=True)
-          progress_every = max(1, total // 20)  # ~5% increments, at least every sample for small sets
-          for i, s in enumerate(dataset):
-              prompt = f"Summarize:\n{s['article'][:1500]}\n\nSummary:"
-              inputs = tokenizer.apply_chat_template([{"role":"user","content":prompt}], tokenize=False, add_generation_prompt=True)
-              inp = tokenizer(inputs, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
-              with torch.no_grad():
-                  out = model.generate(**inp, max_new_tokens=150, do_sample=False, pad_token_id=tokenizer.eos_token_id)
-              preds.append(tokenizer.decode(out[0][inp['input_ids'].shape[1]:], skip_special_tokens=True))
-              refs.append(s["highlights"])
-
-              if (i + 1) % progress_every == 0 or (i + 1) == total:
-                  elapsed = time.time() - t0
-                  rate = (i+1) / elapsed
-                  eta = (len(dataset) - (i+1)) / rate / 60
-                  print(f"  [{i+1}/{total}] {rate:.2f} samples/s, ETA: {eta:.0f}m", flush=True)
-
-          elapsed = time.time() - t0
-          print(f"\nCompleted {total} samples in {elapsed/60:.1f} minutes", flush=True)
-
-          print("Computing ROUGE scores...", flush=True)
-          rouge = evaluate.load("rouge")
-          r = rouge.compute(predictions=preds, references=refs)
-          print(f"\n{'='*50}", flush=True)
-          print(f"ROUGE-L: {r['rougeL']:.4f}", flush=True)
-          print(f"Time: {elapsed/60:.1f}m | {len(dataset)/elapsed:.2f} samples/s", flush=True)
-          print(f"Status: {'PASS' if r['rougeL'] >= 0.15 else 'FAIL'}", flush=True)
-          print(f"{'='*50}", flush=True)
-          PY
-        resources:
-          limits: { nvidia.com/gpu: "1", memory: "48Gi" }
-          requests: { nvidia.com/gpu: "1", memory: "24Gi" }
-        env:
-        - name: HF_TOKEN
-          valueFrom: { secretKeyRef: { name: hf-token, key: HF_TOKEN } }
-        - name: HF_HOME
-          value: /cache
-        - name: PYTHONUNBUFFERED
-          value: "1"
-        volumeMounts:
-        - { name: cache, mountPath: /cache }
-      volumes:
-      - name: cache
-        hostPath: { path: /data/hf-cache, type: DirectoryOrCreate }
-EOF
-)
+    MLPERF_YAML=$(load_job_yaml "$JOBS_DIR/mlperf-job.yaml")
     if run_job "mlperf-bench" "MLPerf Inference" "$MLPERF_YAML"; then
         RESULTS+=("MLPerf: PASS ✓")
     else
@@ -383,96 +335,9 @@ EOF
     echo ""
 fi
 
-# MMLU
+# MMLU-Pro - load from YAML file
 if [ "$RUN_MMLU" = true ]; then
-    MMLU_YAML=$(cat <<EOF
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: mmlu-bench
-  namespace: mlperf
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      runtimeClassName: nvidia
-      nodeSelector:
-        nvidia.com/gpu.present: "true"
-      containers:
-      - name: bench
-        image: python:3.10-slim
-        command: ["bash", "-c"]
-        args:
-        - |
-          set -e
-          echo "========================================"
-          echo " MMLU-Pro - Llama 3.1 8B"
-          echo "========================================"
-          pip install -q torch transformers datasets sentencepiece accelerate
-          python3 -u << 'PY'
-          import time, re, torch
-          from datasets import load_dataset
-          from transformers import AutoModelForCausalLM, AutoTokenizer
-
-          print("Loading dataset...", flush=True)
-          dataset = load_dataset("TIGER-Lab/MMLU-Pro", split="test${SAMPLE_SPLIT}")
-          total = len(dataset)
-          print(f"Questions: {total}", flush=True)
-
-          print("Loading model (this can take 1-3 minutes)...", flush=True)
-          tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
-          model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B-Instruct", torch_dtype=torch.float16, device_map="auto")
-          print(f"GPU: {torch.cuda.get_device_name(0)}", flush=True)
-
-          correct = 0
-          t0 = time.time()
-          print("Starting evaluation...", flush=True)
-          progress_every = max(1, total // 20)  # ~5% increments
-          for i, s in enumerate(dataset):
-              opts = "\n".join([f"{chr(65+j)}. {o}" for j, o in enumerate(s["options"])])
-              prompt = f"Answer with ONLY the letter.\n\nQ: {s['question']}\n\n{opts}\n\nAnswer:"
-              inputs = tokenizer.apply_chat_template([{"role":"user","content":prompt}], tokenize=False, add_generation_prompt=True)
-              inp = tokenizer(inputs, return_tensors="pt", truncation=True, max_length=2048).to(model.device)
-              with torch.no_grad():
-                  out = model.generate(**inp, max_new_tokens=10, do_sample=False, pad_token_id=tokenizer.eos_token_id)
-              resp = tokenizer.decode(out[0][inp['input_ids'].shape[1]:], skip_special_tokens=True).upper()
-              m = re.search(r'[A-J]', resp)
-              if m and m.group(0) == s["answer"]: correct += 1
-
-              if (i + 1) % progress_every == 0 or (i + 1) == total:
-                  elapsed = time.time() - t0
-                  rate = (i+1) / elapsed
-                  eta = (len(dataset) - (i+1)) / rate / 60
-                  acc = correct / (i+1)
-                  print(f"  [{i+1}/{len(dataset)}] Acc: {acc:.1%}, {rate:.1f} q/s, ETA: {eta:.0f}m", flush=True)
-
-          elapsed = time.time() - t0
-          acc = correct / len(dataset)
-          print(f"\nCompleted {len(dataset)} questions in {elapsed/60:.1f} minutes", flush=True)
-          print(f"\n{'='*50}", flush=True)
-          print(f"Accuracy: {acc:.2%} ({correct}/{len(dataset)})", flush=True)
-          print(f"Time: {elapsed/60:.1f}m", flush=True)
-          print(f"Status: {'PASS' if acc >= 0.35 else 'FAIL'}", flush=True)
-          print(f"{'='*50}", flush=True)
-          PY
-        resources:
-          limits: { nvidia.com/gpu: "1", memory: "48Gi" }
-          requests: { nvidia.com/gpu: "1", memory: "24Gi" }
-        env:
-        - name: HF_TOKEN
-          valueFrom: { secretKeyRef: { name: hf-token, key: HF_TOKEN } }
-        - name: HF_HOME
-          value: /cache
-        - name: PYTHONUNBUFFERED
-          value: "1"
-        volumeMounts:
-        - { name: cache, mountPath: /cache }
-      volumes:
-      - name: cache
-        hostPath: { path: /data/hf-cache, type: DirectoryOrCreate }
-EOF
-)
+    MMLU_YAML=$(load_job_yaml "$JOBS_DIR/mmlu-job.yaml")
     if run_job "mmlu-bench" "MMLU-Pro Benchmark" "$MMLU_YAML"; then
         RESULTS+=("MMLU-Pro: PASS ✓")
     else
@@ -481,79 +346,9 @@ EOF
     echo ""
 fi
 
-# Inference
+# Inference - load from YAML file
 if [ "$RUN_INFERENCE" = true ]; then
-    INF_YAML=$(cat <<EOF
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: inference-bench
-  namespace: mlperf
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      runtimeClassName: nvidia
-      nodeSelector:
-        nvidia.com/gpu.present: "true"
-      containers:
-      - name: bench
-        image: python:3.10-slim
-        command: ["bash", "-c"]
-        args:
-        - |
-          set -e
-          echo "========================================"
-          echo " LLM Inference Test - Llama 3.1 8B"
-          echo "========================================"
-          pip install -q torch transformers sentencepiece accelerate
-          python3 -u << 'PY'
-          import time, torch
-          from transformers import AutoModelForCausalLM, AutoTokenizer
-
-          print("Loading model...", flush=True)
-          tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
-          model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B-Instruct", torch_dtype=torch.float16, device_map="auto")
-          print(f"GPU: {torch.cuda.get_device_name(0)}", flush=True)
-
-          prompt = "How to make spaghetti from scratch?"
-          print(f"\nPrompt: {prompt}\n", flush=True)
-
-          inputs = tokenizer.apply_chat_template([{"role":"user","content":prompt}], tokenize=False, add_generation_prompt=True)
-          inp = tokenizer(inputs, return_tensors="pt").to(model.device)
-
-          t0 = time.time()
-          with torch.no_grad():
-              out = model.generate(**inp, max_new_tokens=512, do_sample=True, temperature=0.7, pad_token_id=tokenizer.eos_token_id)
-          elapsed = time.time() - t0
-
-          resp = tokenizer.decode(out[0][inp['input_ids'].shape[1]:], skip_special_tokens=True)
-          tokens = len(out[0]) - inp['input_ids'].shape[1]
-
-          print(f"Response:\n{resp}\n", flush=True)
-          print(f"{'='*50}", flush=True)
-          print(f"Tokens: {tokens} | Time: {elapsed:.2f}s | {tokens/elapsed:.1f} tok/s", flush=True)
-          print(f"Status: PASS", flush=True)
-          print(f"{'='*50}", flush=True)
-          PY
-        resources:
-          limits: { nvidia.com/gpu: "1", memory: "48Gi" }
-          requests: { nvidia.com/gpu: "1", memory: "24Gi" }
-        env:
-        - name: HF_TOKEN
-          valueFrom: { secretKeyRef: { name: hf-token, key: HF_TOKEN } }
-        - name: HF_HOME
-          value: /cache
-        - name: PYTHONUNBUFFERED
-          value: "1"
-        volumeMounts:
-        - { name: cache, mountPath: /cache }
-      volumes:
-      - name: cache
-        hostPath: { path: /data/hf-cache, type: DirectoryOrCreate }
-EOF
-)
+    INF_YAML=$(load_job_yaml "$JOBS_DIR/inference-job.yaml")
     if run_job "inference-bench" "LLM Inference Test" "$INF_YAML"; then
         RESULTS+=("Inference: PASS ✓")
     else
