@@ -342,23 +342,19 @@ extract_metrics() {
     case "$job_name" in
         mlperf-bench)
             # Extract ROUGE scores from official evaluation.py output
-            local rouge1=$(grep "'rouge1':" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
-            local rouge2=$(grep "'rouge2':" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
-            local rougel=$(grep "'rougeL':" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
-            # Fallback: try non-dict format
-            [ -z "$rouge1" ] && rouge1=$(grep "ROUGE-1:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+            # Format: {'rouge1': '27.7066', 'rouge2': '10.8145', 'rougeL': '18.7711', ...}
+            local results_line=$(grep "rouge1" "$log_file" 2>/dev/null | tail -1)
+            local rouge1=$(echo "$results_line" | grep -oP "'rouge1': '\K[0-9.]+")
+            local rouge2=$(echo "$results_line" | grep -oP "'rouge2': '\K[0-9.]+")
+            local rougel=$(echo "$results_line" | grep -oP "'rougeL': '\K[0-9.]+")
+            local gen_num=$(echo "$results_line" | grep -oP "'gen_num': \K[0-9]+")
+            # Fallback: try alternate format
             [ -z "$rougel" ] && rougel=$(grep "ROUGE-L:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
-            # Extract LoadGen metrics
-            local samples_per_sec=$(grep "Samples per second" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+' | head -1)
-            local result=$(grep "Result is" "$log_file" 2>/dev/null | tail -1 | awk '{print $NF}')
-            local total_samples=$(grep "total_sample_count" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)
             {
                 echo "ROUGE_1=$rouge1"
                 echo "ROUGE_2=$rouge2"
                 echo "ROUGE_L=$rougel"
-                echo "SAMPLES_PER_SEC=$samples_per_sec"
-                echo "LOADGEN_RESULT=\"$result\""
-                echo "TOTAL_SAMPLES=$total_samples"
+                echo "TOTAL_SAMPLES=$gen_num"
             } > "$metrics_file"
             ;;
         mmlu-bench)
@@ -400,7 +396,7 @@ if [ "$RUN_MLPERF" = true ]; then
         BENCHMARK_STATUS["mlperf"]="PASS"
         if [ -f "$RESULTS_DIR/mlperf-bench-metrics.txt" ]; then
             source "$RESULTS_DIR/mlperf-bench-metrics.txt" 2>/dev/null || true
-            BENCHMARK_METRICS["mlperf"]="ROUGE-L: ${ROUGE_L:-N/A} | ${SAMPLES_PER_SEC:-N/A} samples/s | LoadGen: ${LOADGEN_RESULT:-N/A}"
+            BENCHMARK_METRICS["mlperf"]="ROUGE-1: ${ROUGE_1:-N/A} | ROUGE-2: ${ROUGE_2:-N/A} | ROUGE-L: ${ROUGE_L:-N/A} | Samples: ${TOTAL_SAMPLES:-N/A}"
         fi
     else
         BENCHMARK_STATUS["mlperf"]="FAIL"
