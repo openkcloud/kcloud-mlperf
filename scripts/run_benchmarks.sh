@@ -2,6 +2,19 @@
 # ============================================================================
 # run_benchmarks.sh - K-Cloud LLM Benchmark Suite
 # ============================================================================
+# Portable benchmark suite for bare-metal Kubernetes clusters with GPU support.
+#
+# Usage:
+#   ./scripts/run_benchmarks.sh [options]
+#
+# Options:
+#   --smoke        Quick test with 10 samples (~15 min)
+#   --mlperf       Run only MLPerf benchmark
+#   --mmlu         Run only MMLU-Pro benchmark
+#   --inference    Run only LLM Inference benchmark
+#   --skip-checks  Skip pre-flight checks
+#   --fix          Auto-fix issues during pre-flight
+# ============================================================================
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,13 +22,23 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 K8S_DIR="$PROJECT_DIR/k8s"
 JOBS_DIR="$K8S_DIR/jobs"
 BENCHMARKS_DIR="$PROJECT_DIR/benchmarks"
-NAMESPACE="mlperf"
+
+# Load configuration
+CONFIG_FILE="$PROJECT_DIR/config/cluster.env"
+if [ -f "$PROJECT_DIR/config/cluster.env.local" ]; then
+    CONFIG_FILE="$PROJECT_DIR/config/cluster.env.local"
+fi
+[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+
+NAMESPACE="${BENCHMARK_NAMESPACE:-mlperf}"
 
 # Defaults
 SMOKE_TEST=false
 RUN_MLPERF=true
 RUN_MMLU=true
 RUN_INFERENCE=true
+SKIP_PREFLIGHT=false
+AUTO_FIX=false
 HF_TOKEN="${HF_TOKEN:-}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 RESULTS_DIR="$PROJECT_DIR/results/$RUN_ID"
@@ -27,15 +50,127 @@ for arg in "$@"; do
         --mlperf) RUN_MMLU=false; RUN_INFERENCE=false ;;
         --mmlu) RUN_MLPERF=false; RUN_INFERENCE=false ;;
         --inference) RUN_MLPERF=false; RUN_MMLU=false ;;
+        --skip-checks) SKIP_PREFLIGHT=true ;;
+        --fix) AUTO_FIX=true ;;
         --help|-h)
-            echo "Usage: $0 [--smoke] [--mlperf|--mmlu|--inference]"
-            echo "  --smoke      Quick test with 10 samples (~15 min)"
-            echo "  --mlperf     Run only MLPerf"
-            echo "  --mmlu       Run only MMLU-Pro"
-            echo "  --inference  Run only LLM Inference"
+            echo "Usage: $0 [--smoke] [--mlperf|--mmlu|--inference] [--skip-checks] [--fix]"
+            echo "  --smoke        Quick test with 10 samples (~15 min)"
+            echo "  --mlperf       Run only MLPerf"
+            echo "  --mmlu         Run only MMLU-Pro"
+            echo "  --inference    Run only LLM Inference"
+            echo "  --skip-checks  Skip pre-flight checks"
+            echo "  --fix          Auto-fix issues during pre-flight"
             exit 0 ;;
     esac
 done
+
+# ============================================================================
+# Pre-flight Checks with Auto-Recovery
+# ============================================================================
+run_preflight() {
+    if [ "$SKIP_PREFLIGHT" = true ]; then
+        echo "[Preflight] Skipped (--skip-checks)"
+        return 0
+    fi
+    
+    echo "[Preflight] Running cluster checks..."
+    
+    # Quick connectivity check
+    if ! kubectl cluster-info &>/dev/null 2>&1; then
+        echo "[Preflight] Cannot connect to cluster. Attempting auto-recovery..."
+        
+        # Check if master IP changed
+        CURRENT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        KUBECONFIG_IP=$(grep "server:" ~/.kube/config 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        
+        if [ -n "$CURRENT_IP" ] && [ -n "$KUBECONFIG_IP" ] && [ "$CURRENT_IP" != "$KUBECONFIG_IP" ]; then
+            echo "[Preflight] Master IP changed: $KUBECONFIG_IP -> $CURRENT_IP"
+            
+            if [ "$AUTO_FIX" = true ]; then
+                echo "[Preflight] Updating configuration..."
+                
+                # Update kubeconfig
+                sed -i "s/$KUBECONFIG_IP/$CURRENT_IP/g" ~/.kube/config
+                
+                # Update Kubernetes manifests if on master
+                if [ -d /etc/kubernetes/manifests ]; then
+                    sudo sed -i "s/$KUBECONFIG_IP/$CURRENT_IP/g" /etc/kubernetes/manifests/*.yaml 2>/dev/null || true
+                    sudo sed -i "s/$KUBECONFIG_IP/$CURRENT_IP/g" /etc/kubernetes/*.conf 2>/dev/null || true
+                    
+                    # Regenerate certificates
+                    if [ -f /etc/kubernetes/kubeadm-config.yaml ]; then
+                        sudo kubeadm certs renew apiserver --config /etc/kubernetes/kubeadm-config.yaml 2>/dev/null || true
+                    fi
+                    
+                    sudo systemctl restart kubelet
+                    echo "[Preflight] Waiting for API server to restart..."
+                    sleep 15
+                fi
+            else
+                echo "[Preflight] Run with --fix to auto-recover"
+                echo "  Or manually update ~/.kube/config with the new IP"
+                exit 1
+            fi
+        fi
+        
+        # Retry connection
+        if ! kubectl cluster-info &>/dev/null 2>&1; then
+            echo "[Preflight] ERROR: Cannot connect to Kubernetes cluster"
+            echo ""
+            echo "Troubleshooting steps:"
+            echo "  1. Check if kubelet is running: sudo systemctl status kubelet"
+            echo "  2. Check API server: sudo crictl ps | grep kube-apiserver"
+            echo "  3. Run preflight.sh for detailed diagnostics: ./scripts/preflight.sh --fix"
+            exit 1
+        fi
+        
+        echo "[Preflight] Cluster connectivity restored!"
+    fi
+    
+    echo "[Preflight] ✓ Cluster is reachable"
+    
+    # Quick GPU check
+    GPU_NODES=$(kubectl get nodes -l nvidia.com/gpu.present=true --no-headers 2>/dev/null | wc -l)
+    if [ "$GPU_NODES" -eq 0 ]; then
+        echo "[Preflight] WARNING: No GPU nodes labeled"
+        
+        if [ "$AUTO_FIX" = true ]; then
+            # Try to auto-label nodes with GPUs
+            for node in $(kubectl get nodes --no-headers | awk '{print $1}'); do
+                GPU_COUNT=$(kubectl get node $node -o jsonpath='{.status.capacity.nvidia\.com/gpu}' 2>/dev/null)
+                if [ -n "$GPU_COUNT" ] && [ "$GPU_COUNT" -gt 0 ]; then
+                    echo "[Preflight] Labeling $node with nvidia.com/gpu.present=true"
+                    kubectl label node $node nvidia.com/gpu.present=true --overwrite
+                fi
+            done
+        fi
+    else
+        echo "[Preflight] ✓ $GPU_NODES GPU node(s) available"
+    fi
+    
+    # Quick RuntimeClass check
+    if ! kubectl get runtimeclass nvidia &>/dev/null 2>&1; then
+        echo "[Preflight] WARNING: NVIDIA RuntimeClass not found"
+        
+        if [ "$AUTO_FIX" = true ]; then
+            echo "[Preflight] Creating NVIDIA RuntimeClass..."
+            cat <<EOF | kubectl apply -f -
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+EOF
+        fi
+    else
+        echo "[Preflight] ✓ NVIDIA RuntimeClass present"
+    fi
+    
+    echo ""
+}
+
+# Run pre-flight checks first
+run_preflight
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
