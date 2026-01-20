@@ -1,5 +1,5 @@
 # MLPerf Inference - CNN/DailyMail Summarization
-# Official MLCommons evaluation with vLLM backend
+# Official MLCommons-style evaluation with vLLM backend
 # Python script: benchmarks/mlperf_summarization.py
 apiVersion: batch/v1
 kind: Job
@@ -21,10 +21,10 @@ spec:
         args:
         - |
           set -e
-          echo "========================================"
+          echo "════════════════════════════════════════════════════════════════════"
           echo " MLPerf Inference - Llama 3.1 8B"
-          echo " (Official MLCommons evaluation with vLLM)"
-          echo "========================================"
+          echo " (MLCommons-style evaluation with vLLM backend)"
+          echo "════════════════════════════════════════════════════════════════════"
           pip install -q datasets evaluate rouge-score nltk
           python3 -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
           python3 -u /benchmarks/mlperf_summarization.py

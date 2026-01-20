@@ -156,6 +156,7 @@ run_job() {
     local log_file="$RESULTS_DIR/${job_name}.log"
     local diag_file="$RESULTS_DIR/${job_name}-diagnostics.log"
     local manifest_file="$RESULTS_DIR/${job_name}-manifest.yaml"
+    local metrics_file="$RESULTS_DIR/${job_name}-metrics.txt"
     
     echo "════════════════════════════════════════════════════════════════════"
     echo "  $description"
@@ -163,20 +164,28 @@ run_job() {
     echo "$yaml_content" > "$manifest_file"
     status "Saved manifest -> $manifest_file"
     
-    # Delete existing job
-    status "Deleting any existing job $job_name..."
+    # Delete existing job AND any orphaned pods from previous runs
+    status "Cleaning up any existing job and pods..."
     kubectl delete job $job_name -n $NAMESPACE --ignore-not-found=true 2>/dev/null
+    kubectl delete pods -n $NAMESPACE -l job-name=$job_name --ignore-not-found=true 2>/dev/null
     sleep 3
+    
+    # Verify cleanup - ensure no pods exist before creating new job
+    local remaining_pods=$(kubectl get pods -n $NAMESPACE -l job-name=$job_name --no-headers 2>/dev/null | wc -l)
+    if [ "$remaining_pods" -gt 0 ]; then
+        status "Waiting for old pods to terminate..."
+        kubectl wait --for=delete pods -n $NAMESPACE -l job-name=$job_name --timeout=60s 2>/dev/null || true
+    fi
     
     # Apply job
     status "Creating job $job_name..."
     echo "$yaml_content" | kubectl apply -f -
     
-    # Wait for pod to start
+    # Wait for pod to start (max 20 attempts = ~100 seconds)
     echo "Waiting for pod to start..."
     local pod=""
     local pod_status=""
-    for i in $(seq 1 120); do
+    for i in $(seq 1 20); do
         pod=$(kubectl get pods -n $NAMESPACE -l job-name=$job_name -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
         if [ -n "$pod" ]; then
             pod_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
@@ -206,7 +215,7 @@ run_job() {
                 fi
             fi
         fi
-        status "Waiting for pod... attempt $i/120"
+        status "Waiting for pod... attempt $i/20"
         sleep 5
     done
     
@@ -278,6 +287,8 @@ run_job() {
             kill $logs_pid 2>/dev/null || true
             wait $logs_pid 2>/dev/null || true
             echo ""
+            # Extract metrics from log file
+            extract_metrics "$job_name" "$log_file" "$metrics_file"
             echo "✓ $description: PASS"
             echo "PASS $description" >> "$SUMMARY_FILE"
             return 0
@@ -300,6 +311,8 @@ run_job() {
             kill $logs_pid 2>/dev/null || true
             wait $logs_pid 2>/dev/null || true
             echo ""
+            # Extract metrics from log file
+            extract_metrics "$job_name" "$log_file" "$metrics_file"
             echo "✓ $description: PASS"
             return 0
         elif [ "$current_pod_status" = "Failed" ]; then
@@ -318,8 +331,56 @@ run_job() {
     done
 }
 
-# Results array
-declare -a RESULTS
+# Extract metrics from benchmark logs
+extract_metrics() {
+    local job_name=$1
+    local log_file=$2
+    local metrics_file=$3
+    
+    case "$job_name" in
+        mlperf-bench)
+            # Extract ROUGE scores and throughput
+            local rouge1=$(grep "ROUGE-1:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+            local rouge2=$(grep "ROUGE-2:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+            local rougel=$(grep "ROUGE-L:" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+            local throughput=$(grep "Throughput:" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+ samples/s' | head -1)
+            local samples=$(grep "Samples:" "$log_file" 2>/dev/null | tail -1 | grep -oE 'Samples: [0-9]+' | awk '{print $2}')
+            {
+                echo "ROUGE_1=$rouge1"
+                echo "ROUGE_2=$rouge2"
+                echo "ROUGE_L=$rougel"
+                echo "THROUGHPUT=\"$throughput\""
+                echo "SAMPLES=$samples"
+            } > "$metrics_file"
+            ;;
+        mmlu-bench)
+            # Extract accuracy
+            local accuracy=$(grep "Overall Accuracy:" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+%' | head -1)
+            local correct=$(grep "Overall Accuracy:" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9]+/[0-9]+' | head -1)
+            local throughput=$(grep "Throughput:" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+ q/s' | head -1)
+            {
+                echo "ACCURACY=$accuracy"
+                echo "CORRECT=\"($correct)\""
+                echo "THROUGHPUT=\"$throughput\""
+            } > "$metrics_file"
+            ;;
+        inference-bench)
+            # Extract inference throughput
+            local single_throughput=$(grep "tok/s" "$log_file" 2>/dev/null | grep "Tokens:" | tail -1 | grep -oE '[0-9.]+ tok/s' | head -1)
+            local batch_throughput=$(grep "Throughput:" "$log_file" 2>/dev/null | tail -1 | grep -oE '[0-9.]+ tok/s' | head -1)
+            local gpu=$(grep "GPU:" "$log_file" 2>/dev/null | tail -1 | sed 's/.*GPU: *//')
+            {
+                echo "SINGLE_THROUGHPUT=\"$single_throughput\""
+                echo "BATCH_THROUGHPUT=\"$batch_throughput\""
+                echo "GPU=\"$gpu\""
+            } > "$metrics_file"
+            ;;
+    esac
+}
+
+# Results tracking
+declare -A BENCHMARK_STATUS
+declare -A BENCHMARK_METRICS
 
 echo "[3/4] Running Benchmarks..."
 echo ""
@@ -328,9 +389,14 @@ echo ""
 if [ "$RUN_MLPERF" = true ]; then
     MLPERF_YAML=$(load_job_yaml "$JOBS_DIR/mlperf-job.yaml")
     if run_job "mlperf-bench" "MLPerf Inference" "$MLPERF_YAML"; then
-        RESULTS+=("MLPerf: PASS ✓")
+        BENCHMARK_STATUS["mlperf"]="PASS"
+        if [ -f "$RESULTS_DIR/mlperf-bench-metrics.txt" ]; then
+            source "$RESULTS_DIR/mlperf-bench-metrics.txt" 2>/dev/null || true
+            BENCHMARK_METRICS["mlperf"]="ROUGE-L: ${ROUGE_L:-N/A} | ${THROUGHPUT:-N/A}"
+        fi
     else
-        RESULTS+=("MLPerf: FAIL ✗")
+        BENCHMARK_STATUS["mlperf"]="FAIL"
+        BENCHMARK_METRICS["mlperf"]="(benchmark failed)"
     fi
     echo ""
 fi
@@ -339,9 +405,14 @@ fi
 if [ "$RUN_MMLU" = true ]; then
     MMLU_YAML=$(load_job_yaml "$JOBS_DIR/mmlu-job.yaml")
     if run_job "mmlu-bench" "MMLU-Pro Benchmark" "$MMLU_YAML"; then
-        RESULTS+=("MMLU-Pro: PASS ✓")
+        BENCHMARK_STATUS["mmlu"]="PASS"
+        if [ -f "$RESULTS_DIR/mmlu-bench-metrics.txt" ]; then
+            source "$RESULTS_DIR/mmlu-bench-metrics.txt" 2>/dev/null || true
+            BENCHMARK_METRICS["mmlu"]="Accuracy: ${ACCURACY:-N/A} ${CORRECT:-} | ${THROUGHPUT:-N/A}"
+        fi
     else
-        RESULTS+=("MMLU-Pro: FAIL ✗")
+        BENCHMARK_STATUS["mmlu"]="FAIL"
+        BENCHMARK_METRICS["mmlu"]="(benchmark failed)"
     fi
     echo ""
 fi
@@ -350,22 +421,56 @@ fi
 if [ "$RUN_INFERENCE" = true ]; then
     INF_YAML=$(load_job_yaml "$JOBS_DIR/inference-job.yaml")
     if run_job "inference-bench" "LLM Inference Test" "$INF_YAML"; then
-        RESULTS+=("Inference: PASS ✓")
+        BENCHMARK_STATUS["inference"]="PASS"
+        if [ -f "$RESULTS_DIR/inference-bench-metrics.txt" ]; then
+            source "$RESULTS_DIR/inference-bench-metrics.txt" 2>/dev/null || true
+            BENCHMARK_METRICS["inference"]="Batch: ${BATCH_THROUGHPUT:-N/A} | Single: ${SINGLE_THROUGHPUT:-N/A}"
+        fi
     else
-        RESULTS+=("Inference: FAIL ✗")
+        BENCHMARK_STATUS["inference"]="FAIL"
+        BENCHMARK_METRICS["inference"]="(benchmark failed)"
     fi
     echo ""
 fi
 
-# Summary
-echo "[4/4] Final Summary"
-echo "╔══════════════════════════════════════════════════════════════════╗"
-echo "║                    BENCHMARK RESULTS                             ║"
-echo "╠══════════════════════════════════════════════════════════════════╣"
-for r in "${RESULTS[@]}"; do
-    printf "║  %-64s ║\n" "$r"
-done
-echo "╠══════════════════════════════════════════════════════════════════╣"
-printf "║  %-64s ║\n" "Completed: $(date '+%Y-%m-%d %H:%M:%S')"
-printf "║  %-64s ║\n" "Mode: $([ "$SMOKE_TEST" = true ] && echo 'Smoke Test' || echo 'Full Dataset')"
-echo "╚══════════════════════════════════════════════════════════════════╝"
+# Print detailed summary
+print_summary() {
+    echo ""
+    echo "[4/4] Final Summary"
+    echo "╔══════════════════════════════════════════════════════════════════════════╗"
+    echo "║                         BENCHMARK RESULTS                                ║"
+    echo "╠══════════════════════════════════════════════════════════════════════════╣"
+    
+    if [ "$RUN_MLPERF" = true ]; then
+        local status="${BENCHMARK_STATUS["mlperf"]:-N/A}"
+        local metrics="${BENCHMARK_METRICS["mlperf"]:-N/A}"
+        local icon="✓"; [ "$status" = "FAIL" ] && icon="✗"
+        printf "║  %-74s ║\n" "MLPerf Inference: $status $icon"
+        printf "║    %-72s ║\n" "$metrics"
+    fi
+    
+    if [ "$RUN_MMLU" = true ]; then
+        local status="${BENCHMARK_STATUS["mmlu"]:-N/A}"
+        local metrics="${BENCHMARK_METRICS["mmlu"]:-N/A}"
+        local icon="✓"; [ "$status" = "FAIL" ] && icon="✗"
+        printf "║  %-74s ║\n" "MMLU-Pro: $status $icon"
+        printf "║    %-72s ║\n" "$metrics"
+    fi
+    
+    if [ "$RUN_INFERENCE" = true ]; then
+        local status="${BENCHMARK_STATUS["inference"]:-N/A}"
+        local metrics="${BENCHMARK_METRICS["inference"]:-N/A}"
+        local icon="✓"; [ "$status" = "FAIL" ] && icon="✗"
+        printf "║  %-74s ║\n" "LLM Inference: $status $icon"
+        printf "║    %-72s ║\n" "$metrics"
+    fi
+    
+    echo "╠══════════════════════════════════════════════════════════════════════════╣"
+    printf "║  %-74s ║\n" "Run ID: $RUN_ID"
+    printf "║  %-74s ║\n" "Completed: $(date '+%Y-%m-%d %H:%M:%S')"
+    printf "║  %-74s ║\n" "Mode: $([ "$SMOKE_TEST" = true ] && echo 'Smoke Test (10 samples)' || echo 'Full Dataset')"
+    printf "║  %-74s ║\n" "Results: $RESULTS_DIR"
+    echo "╚══════════════════════════════════════════════════════════════════════════╝"
+}
+
+print_summary

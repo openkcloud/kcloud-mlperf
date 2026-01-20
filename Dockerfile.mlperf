@@ -1,0 +1,59 @@
+# Official MLPerf Inference Benchmark Docker Image
+# Uses MLCommons inference repository with LoadGen
+FROM nvcr.io/nvidia/pytorch:24.07-py3
+
+SHELL ["/bin/bash", "-c"]
+
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+ENV TZ=UTC
+ENV DEBIAN_FRONTEND=noninteractive
+ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential autoconf libtool git ccache curl wget pkg-config \
+        sudo ca-certificates automake libssl-dev bc python3-dev python3-pip \
+        google-perftools gdb libglib2.0-dev clang libre2-dev libboost-dev \
+        libnuma-dev numactl sysstat less \
+    && apt-get -y autoremove \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Copy MLCommons inference repository
+COPY mlcommons_inference /workspace/mlcommons_inference
+
+# Install LoadGen
+RUN cd /workspace/mlcommons_inference/loadgen \
+    && pip install pybind11 \
+    && pip install -e .
+
+# Install benchmark requirements
+RUN cd /workspace/mlcommons_inference/language/llama3.1-8b \
+    && pip install -r requirements.txt
+
+# Install additional dependencies
+RUN pip install --no-cache-dir \
+    vllm>=0.6.0 \
+    datasets \
+    evaluate \
+    rouge-score \
+    nltk \
+    transformers \
+    accelerate
+
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
+
+# Copy benchmark wrapper scripts
+COPY benchmarks /workspace/benchmarks
+
+# Set working directory for benchmarks
+WORKDIR /workspace/mlcommons_inference/language/llama3.1-8b
+
+# Default command shows help
+CMD ["python", "main.py", "--help"]
