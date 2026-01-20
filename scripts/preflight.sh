@@ -191,11 +191,11 @@ check_device_plugin() {
     fi
     
     # Check if GPUs are allocatable
-    TOTAL_GPUS=$(kubectl get nodes -o jsonpath='{.items[*].status.allocatable.nvidia\.com/gpu}' 2>/dev/null | tr ' ' '+' | bc 2>/dev/null || echo 0)
-    if [ "$TOTAL_GPUS" -gt 0 ]; then
+    TOTAL_GPUS=$(kubectl get nodes -o jsonpath='{.items[*].status.allocatable.nvidia\.com/gpu}' 2>/dev/null | tr -s ' ' '\n' | grep -v '^$' | paste -sd+ | bc 2>/dev/null || echo "0")
+    if [ -n "$TOTAL_GPUS" ] && [ "$TOTAL_GPUS" != "0" ]; then
         pass "$TOTAL_GPUS GPU(s) allocatable"
     else
-        warn "No GPUs allocatable in cluster"
+        warn "No GPUs allocatable in cluster (device plugin may still be starting)"
     fi
 }
 
