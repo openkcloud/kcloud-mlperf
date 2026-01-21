@@ -68,7 +68,8 @@ fi
 
 # Try to extract MASTER_IP from join command if config is missing
 if [ -z "$MASTER_IP" ] && [ -f "$PROJECT_ROOT/config/join-command.sh" ]; then
-    EXTRACTED_IP=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$PROJECT_ROOT/config/join-command.sh" | head -1)
+    # Extract the IP from the kubeadm join command (the IP after the colon in the join address)
+    EXTRACTED_IP=$(grep -oE 'kubeadm join [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$PROJECT_ROOT/config/join-command.sh" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     if [ -n "$EXTRACTED_IP" ]; then
         MASTER_IP="$EXTRACTED_IP"
         log "Extracted MASTER_IP=$MASTER_IP from join command"
@@ -433,26 +434,38 @@ join_cluster() {
         # Method 1: Try ssh-copy-id
         if command -v ssh-copy-id &>/dev/null; then
             log "Trying ssh-copy-id..."
-            if ssh-copy-id -o StrictHostKeyChecking=no \
-               "${MASTER_USER}@${MASTER_IP}" 2>&1 | tee /tmp/ssh-copy-id.log | grep -v "WARNING:"; then
-                # Verify it worked
+            # ssh-copy-id will prompt for password, but we can capture the result
+            SSH_COPY_OUTPUT=$(ssh-copy-id -o StrictHostKeyChecking=no \
+               "${MASTER_USER}@${MASTER_IP}" 2>&1)
+            SSH_COPY_EXIT=$?
+            
+            # Check if it succeeded (exit code 0 or contains "Number of key(s) added")
+            if [ $SSH_COPY_EXIT -eq 0 ] || echo "$SSH_COPY_OUTPUT" | grep -q "Number of key(s) added"; then
+                # Wait a moment and verify it worked
+                sleep 2
                 if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via ssh-copy-id"
                     return 0
+                else
+                    log "ssh-copy-id reported success but passwordless SSH not working yet"
+                    log "This may require manual intervention"
                 fi
+            else
+                log "ssh-copy-id failed or was cancelled"
             fi
         fi
         
-        # Method 2: Manual method
+        # Method 2: Manual method (only if ssh-copy-id didn't work)
         log "Trying manual SSH key copy method..."
         if [ -f "$SSH_PUB_KEY" ]; then
             PUB_KEY_CONTENT=$(cat "$SSH_PUB_KEY")
+            # This will also prompt for password, but we try it
             if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                "${MASTER_USER}@${MASTER_IP}" \
                "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
                 # Verify it worked
-                sleep 1
+                sleep 2
                 if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via manual method"
