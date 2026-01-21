@@ -502,7 +502,7 @@ join_cluster() {
         # Method 2: Manual method (only if ssh-copy-id didn't work and passwordless SSH still doesn't work)
         # Check again if passwordless SSH works (maybe it just needed a moment)
         sleep 2
-        if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+        if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
             success "Passwordless SSH is now working"
             return 0
