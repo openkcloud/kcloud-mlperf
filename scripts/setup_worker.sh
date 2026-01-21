@@ -365,24 +365,90 @@ join_cluster() {
     
     JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
     
+    # Setup SSH keys for automated access to master
+    setup_ssh_keys() {
+        if [ -z "$MASTER_IP" ] || [ -z "$MASTER_USER" ]; then
+            return 1
+        fi
+        
+        SSH_KEY="$HOME/.ssh/id_ed25519"
+        SSH_PUB_KEY="$HOME/.ssh/id_ed25519.pub"
+        
+        # Generate SSH key if it doesn't exist
+        if [ ! -f "$SSH_KEY" ]; then
+            log "Generating SSH key for automated master access..."
+            ssh-keygen -t ed25519 -C "kcloud-worker-$(hostname)" -f "$SSH_KEY" -N "" -q
+            success "SSH key generated"
+        fi
+        
+        # Check if public key is already on master
+        if ssh -o BatchMode=yes -o ConnectTimeout=5 \
+           -o StrictHostKeyChecking=no \
+           "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+            return 0  # SSH already works
+        fi
+        
+        # Try to copy public key to master
+        log "Setting up passwordless SSH to master (you may be prompted for password once)..."
+        if command -v ssh-copy-id &>/dev/null; then
+            if ssh-copy-id -o StrictHostKeyChecking=no \
+               -f "${MASTER_USER}@${MASTER_IP}" 2>&1 | grep -v "WARNING:"; then
+                success "SSH key copied to master"
+                return 0
+            fi
+        else
+            # Manual method if ssh-copy-id not available
+            log "ssh-copy-id not available, trying manual method..."
+            if [ -f "$SSH_PUB_KEY" ]; then
+                cat "$SSH_PUB_KEY" | ssh -o StrictHostKeyChecking=no \
+                    "${MASTER_USER}@${MASTER_IP}" \
+                    "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>/dev/null
+                if [ $? -eq 0 ]; then
+                    success "SSH key copied to master"
+                    return 0
+                fi
+            fi
+        fi
+        
+        return 1
+    }
+    
     # Try to fetch join command from master if not present
     if [ ! -f "$JOIN_CMD_FILE" ] && [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
         log "Join command file not found locally, attempting to fetch from master..."
+        
+        # Setup SSH keys if needed
+        if ! ssh -o BatchMode=yes -o ConnectTimeout=5 \
+           -o StrictHostKeyChecking=no \
+           "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+            setup_ssh_keys
+        fi
+        
         if command -v scp &>/dev/null; then
             mkdir -p "$PROJECT_ROOT/config"
             log "Fetching from ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh"
-            if scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            if scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                "${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh" \
-               "$JOIN_CMD_FILE" 2>&1; then
+               "$JOIN_CMD_FILE" 2>/dev/null; then
                 chmod +x "$JOIN_CMD_FILE"
                 success "Fetched join command from master"
             else
-                warn "Could not fetch join command from master (${MASTER_USER}@${MASTER_IP})"
-                warn "Make sure SSH key is set up or passwordless SSH is configured"
-                warn "You can manually copy it: scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh $JOIN_CMD_FILE"
+                # Try alternative: get join command directly via SSH
+                log "File fetch failed, trying to get join command directly from master..."
+                JOIN_CMD=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                          "${MASTER_USER}@${MASTER_IP}" \
+                          "cd ${PROJECT_ROOT} && kubeadm token create --print-join-command 2>/dev/null" 2>/dev/null)
+                
+                if [ -n "$JOIN_CMD" ] && echo "$JOIN_CMD" | grep -q "kubeadm join"; then
+                    echo "$JOIN_CMD" > "$JOIN_CMD_FILE"
+                    chmod +x "$JOIN_CMD_FILE"
+                    success "Got join command directly from master"
+                else
+                    error "Could not fetch join command from master. Please ensure SSH access is configured."
+                fi
             fi
         else
-            warn "scp not available. Install openssh-client or manually copy join-command.sh"
+            error "scp not available. Install openssh-client."
         fi
     fi
     
@@ -394,44 +460,13 @@ join_cluster() {
         echo ""
         warn "No join command file found."
         
-        # Try to get join command from master via SSH if possible
-        if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ] && command -v ssh &>/dev/null; then
-            log "Attempting to get join command directly from master via SSH..."
-            JOIN_CMD=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                      "${MASTER_USER}@${MASTER_IP}" \
-                      "kubeadm token create --print-join-command 2>/dev/null" 2>&1)
-            
-            if [ -n "$JOIN_CMD" ] && echo "$JOIN_CMD" | grep -q "kubeadm join"; then
-                log "Got join command from master, executing..."
-                sudo $JOIN_CMD
-                success "Joined cluster successfully"
-                return
-            else
-                warn "Could not get join command via SSH"
-            fi
-        fi
-        
-        # Provide manual instructions
-        echo ""
-        echo "To join manually, you have two options:"
-        echo ""
-        echo "Option 1: Copy join command file from master"
-        if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
-            echo "  scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh $JOIN_CMD_FILE"
-            echo "  ./scripts/setup_worker.sh --auto-join"
-        fi
-        echo ""
-        echo "Option 2: Get join command from master and run it"
-        if [ -n "$MASTER_IP" ]; then
-            echo "  On master (${MASTER_IP}), run:"
-            echo "    kubeadm token create --print-join-command"
-            echo "  Then run that command on this node with sudo"
-        else
-            echo "  On master node, run:"
-            echo "    kubeadm token create --print-join-command"
-            echo "  Then run that command on this node with sudo"
-        fi
-        echo ""
+        # This should not happen if the fetch logic above worked
+        error "Join command file not found and could not be fetched from master."
+        echo "Please ensure:"
+        echo "  1. MASTER_IP and MASTER_USER are set in config/cluster.env"
+        echo "  2. SSH access to master is configured"
+        echo "  3. Master node has run setup_master.sh to generate join command"
+        exit 1
     fi
 }
 
