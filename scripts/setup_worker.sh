@@ -64,6 +64,23 @@ fi
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
     log "Loaded config from $CONFIG_FILE"
+    
+    # Validate required configuration
+    if [ -z "$MASTER_IP" ] || [ -z "$MASTER_USER" ]; then
+        warn "MASTER_IP or MASTER_USER not set in $CONFIG_FILE"
+        warn "These are required for automated worker setup"
+        echo ""
+        echo "Please create config/cluster.env.local with:"
+        echo "  MASTER_IP=\"<master-ip-address>\""
+        echo "  MASTER_USER=\"<master-username>\""
+        echo ""
+        echo "Or copy the config from the master node:"
+        echo "  scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/cluster.env.local config/"
+        echo ""
+        if [ "$AUTO_JOIN" = true ]; then
+            error "Cannot proceed in auto-join mode without master configuration"
+        fi
+    fi
 fi
 
 echo ""
