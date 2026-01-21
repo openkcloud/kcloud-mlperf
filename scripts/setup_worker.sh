@@ -6,7 +6,10 @@
 # and set up NVIDIA container runtime.
 #
 # Usage:
-#   ./scripts/setup_worker.sh [--config config/cluster.env]
+#   ./scripts/setup_worker.sh [--auto-join] [--config config/cluster.env]
+#
+# Options:
+#   --auto-join    Automatically join the cluster without prompting
 #
 # Prerequisites:
 #   - Ubuntu 20.04/22.04
@@ -32,8 +35,28 @@ success() { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 
+# Parse command line arguments
+AUTO_JOIN=false
+CONFIG_FILE="$PROJECT_ROOT/config/cluster.env"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --auto-join)
+            AUTO_JOIN=true
+            shift
+            ;;
+        --config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        *)
+            CONFIG_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
 # Load configuration
-CONFIG_FILE="${1:-$PROJECT_ROOT/config/cluster.env}"
 if [ -f "$PROJECT_ROOT/config/cluster.env.local" ]; then
     CONFIG_FILE="$PROJECT_ROOT/config/cluster.env.local"
 fi
@@ -295,6 +318,22 @@ join_cluster() {
     
     JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
     
+    # Try to fetch join command from master if not present
+    if [ ! -f "$JOIN_CMD_FILE" ] && [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
+        log "Join command file not found locally, attempting to fetch from master..."
+        if command -v scp &>/dev/null; then
+            mkdir -p "$PROJECT_ROOT/config"
+            if scp -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+               "${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh" \
+               "$JOIN_CMD_FILE" 2>/dev/null; then
+                chmod +x "$JOIN_CMD_FILE"
+                success "Fetched join command from master"
+            else
+                warn "Could not fetch join command from master (${MASTER_USER}@${MASTER_IP})"
+            fi
+        fi
+    fi
+    
     if [ -f "$JOIN_CMD_FILE" ]; then
         log "Using join command from $JOIN_CMD_FILE"
         sudo bash "$JOIN_CMD_FILE"
@@ -302,8 +341,13 @@ join_cluster() {
     else
         echo ""
         warn "No join command file found."
-        echo "Run the following on this node (get the command from master):"
-        echo "  sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash <hash>"
+        if [ -n "$MASTER_IP" ]; then
+            echo "Copy the join command from master node:"
+            echo "  scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh $JOIN_CMD_FILE"
+        else
+            echo "Run the following on this node (get the command from master):"
+            echo "  sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash <hash>"
+        fi
         echo ""
     fi
 }
@@ -332,10 +376,35 @@ main() {
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
     
-    read -p "Join cluster now? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Check if join command file exists
+    JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
+    
+    if [ "$AUTO_JOIN" = true ]; then
+        log "Auto-join enabled, joining cluster..."
         join_cluster
+    elif [ -f "$JOIN_CMD_FILE" ]; then
+        # If join command exists and we're in a TTY, prompt
+        if [ -t 0 ]; then
+            read -p "Join cluster now? (y/n) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                join_cluster
+            else
+                echo ""
+                echo "To join later, run:"
+                echo "  sudo bash $JOIN_CMD_FILE"
+            fi
+        else
+            # Non-interactive mode - auto-join if file exists
+            log "Non-interactive mode detected, auto-joining cluster..."
+            join_cluster
+        fi
+    else
+        warn "Join command file not found: $JOIN_CMD_FILE"
+        echo "Run setup_master.sh first to generate the join command, then:"
+        echo "  1. Copy config/join-command.sh to this node, or"
+        echo "  2. Run the join command manually:"
+        echo "     sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash <hash>"
     fi
     
     echo ""

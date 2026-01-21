@@ -60,7 +60,7 @@ echo ""
 # Step 1: System Prerequisites
 # ============================================================================
 install_prerequisites() {
-    log "[1/7] Installing prerequisites..."
+    log "[1/8] Installing prerequisites..."
     
     # Disable swap
     sudo swapoff -a
@@ -89,7 +89,7 @@ EOF
 # Step 2: Install containerd
 # ============================================================================
 install_containerd() {
-    log "[2/7] Installing containerd..."
+    log "[2/8] Installing containerd..."
     
     if command -v containerd &>/dev/null; then
         success "containerd already installed"
@@ -114,7 +114,7 @@ install_containerd() {
 # Step 3: Install kubeadm, kubelet, kubectl
 # ============================================================================
 install_kubernetes() {
-    log "[3/7] Installing Kubernetes components..."
+    log "[3/8] Installing Kubernetes components..."
     
     if command -v kubeadm &>/dev/null; then
         success "Kubernetes already installed: $(kubeadm version -o short)"
@@ -200,7 +200,7 @@ cleanup_incomplete_state() {
 # Step 4: Initialize Kubernetes cluster
 # ============================================================================
 init_cluster() {
-    log "[4/7] Initializing Kubernetes cluster..."
+    log "[4/8] Initializing Kubernetes cluster..."
     
     # Check if already initialized and working
     if [ -f /etc/kubernetes/admin.conf ]; then
@@ -254,10 +254,22 @@ EOF
 # Step 5: Install CNI (Flannel)
 # ============================================================================
 install_cni() {
-    log "[5/7] Installing Flannel CNI..."
+    log "[5/8] Installing Flannel CNI..."
+    
+    # Remove any conflicting CNI configurations (e.g., Calico)
+    if [ -f /etc/cni/net.d/10-calico.conflist ]; then
+        log "Removing conflicting Calico CNI configuration..."
+        sudo rm -f /etc/cni/net.d/10-calico.conflist /etc/cni/net.d/calico-kubeconfig
+    fi
     
     if kubectl get pods -n kube-flannel 2>/dev/null | grep -q Running; then
         success "Flannel already installed"
+        # Restart kubelet to pick up CNI changes if we removed Calico
+        if [ ! -f /etc/cni/net.d/10-calico.conflist ] && [ -f /etc/cni/net.d/10-flannel.conflist ]; then
+            log "Restarting kubelet to apply CNI changes..."
+            sudo systemctl restart kubelet || true
+            sleep 5
+        fi
         return
     fi
     
@@ -266,6 +278,11 @@ install_cni() {
     log "Waiting for Flannel to be ready..."
     kubectl wait --for=condition=ready pod -l app=flannel -n kube-flannel --timeout=120s || true
     
+    # Restart kubelet to ensure it picks up Flannel CNI config
+    log "Restarting kubelet to apply Flannel CNI..."
+    sudo systemctl restart kubelet || true
+    sleep 5
+    
     success "Flannel CNI installed"
 }
 
@@ -273,7 +290,7 @@ install_cni() {
 # Step 6: Create NVIDIA RuntimeClass
 # ============================================================================
 create_nvidia_runtime() {
-    log "[6/7] Creating NVIDIA RuntimeClass..."
+    log "[6/8] Creating NVIDIA RuntimeClass..."
     
     if kubectl get runtimeclass nvidia 2>/dev/null; then
         success "NVIDIA RuntimeClass already exists"
@@ -292,10 +309,93 @@ EOF
 }
 
 # ============================================================================
-# Step 7: Generate worker join command
+# Step 7: Install NVIDIA Device Plugin
+# ============================================================================
+install_nvidia_device_plugin() {
+    log "[7/8] Installing NVIDIA Device Plugin..."
+    
+    # Check if device plugin is already running and GPUs are allocatable
+    if kubectl get pods -n kube-system -l name=nvidia-device-plugin-ds --no-headers 2>/dev/null | grep -q Running; then
+        TOTAL_GPUS=$(kubectl get nodes -o jsonpath='{.items[*].status.allocatable.nvidia\.com/gpu}' 2>/dev/null | tr -s ' ' '\n' | grep -v '^$' | wc -l)
+        if [ -n "$TOTAL_GPUS" ] && [ "$TOTAL_GPUS" != "0" ]; then
+            success "NVIDIA Device Plugin already running - $TOTAL_GPUS GPU(s) allocatable"
+            return
+        fi
+    fi
+    
+    # Install NVIDIA Device Plugin with proper configuration for control-plane nodes
+    log "Installing NVIDIA Device Plugin with control-plane tolerations..."
+    kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-device-plugin-daemonset
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-device-plugin-ds
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: nvidia-device-plugin-ds
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      hostNetwork: true
+      runtimeClassName: nvidia
+      priorityClassName: system-node-critical
+      containers:
+      - image: nvcr.io/nvidia/k8s-device-plugin:v0.14.0
+        name: nvidia-device-plugin-ctr
+        env:
+        - name: FAIL_ON_INIT_ERROR
+          value: "false"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: device-plugin
+          mountPath: /var/lib/kubelet/device-plugins
+        - name: nvidia-driver
+          mountPath: /usr/local/nvidia
+          readOnly: true
+      volumes:
+      - name: device-plugin
+        hostPath:
+          path: /var/lib/kubelet/device-plugins
+      - name: nvidia-driver
+        hostPath:
+          path: /usr
+          type: Directory
+EOF
+    
+    log "Waiting for NVIDIA Device Plugin to be ready..."
+    kubectl wait --for=condition=ready pod -n kube-system -l name=nvidia-device-plugin-ds --timeout=120s || true
+    
+    # Verify GPUs are allocatable
+    sleep 10
+    TOTAL_GPUS=$(kubectl get nodes -o jsonpath='{.items[*].status.allocatable.nvidia\.com/gpu}' 2>/dev/null | tr -s ' ' '\n' | grep -v '^$' | wc -l)
+    if [ -n "$TOTAL_GPUS" ] && [ "$TOTAL_GPUS" != "0" ]; then
+        success "NVIDIA Device Plugin installed - $TOTAL_GPUS GPU(s) allocatable"
+    else
+        warn "NVIDIA Device Plugin installed but GPUs not yet allocatable (may need a moment)"
+    fi
+}
+
+# ============================================================================
+# Step 8: Generate worker join command
 # ============================================================================
 generate_join_command() {
-    log "[7/7] Generating worker join command..."
+    log "[8/8] Generating worker join command..."
     
     JOIN_CMD=$(kubeadm token create --print-join-command)
     
@@ -324,6 +424,7 @@ main() {
     init_cluster
     install_cni
     create_nvidia_runtime
+    install_nvidia_device_plugin
     generate_join_command
     
     echo ""
