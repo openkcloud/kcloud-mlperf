@@ -459,7 +459,8 @@ join_cluster() {
             log "You will be prompted for the master password (one-time setup)..."
             # ssh-copy-id will prompt for password interactively
             # We can't fully automate this, but we can check if it worked after
-            if ssh-copy-id -o StrictHostKeyChecking=no \
+            # Use -i to specify our dedicated key
+            if ssh-copy-id -i "$SSH_PUB_KEY" -o StrictHostKeyChecking=no \
                "${MASTER_USER}@${MASTER_IP}" 2>&1; then
                 SSH_COPY_EXIT=$?
             else
