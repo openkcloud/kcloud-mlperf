@@ -304,12 +304,57 @@ cleanup_incomplete_join() {
 join_cluster() {
     log "Joining Kubernetes cluster..."
     
-    # Check if already joined
+    # Check if already successfully joined by verifying node registration
+    # This is more reliable than just checking if kubelet.conf exists
     if [ -f /etc/kubernetes/kubelet.conf ]; then
         if systemctl is-active --quiet kubelet 2>/dev/null; then
-            warn "Node appears to already be joined. Skipping join."
-            echo "If this is incorrect, run 'sudo kubeadm reset --force' first"
-            return
+            # Check if kubelet is actually connected to the API server
+            # Look for connection errors in kubelet status
+            KUBELET_STATUS=$(systemctl status kubelet --no-pager 2>&1 | grep -i "error\|failed\|unable" | head -3)
+            
+            # Check if we can verify node registration (if kubectl is available and configured)
+            NODE_REGISTERED=false
+            if command -v kubectl &>/dev/null && [ -f ~/.kube/config ]; then
+                NODE_NAME=$(hostname)
+                if kubectl get node "$NODE_NAME" &>/dev/null 2>&1; then
+                    NODE_REGISTERED=true
+                    success "Node is already registered in cluster"
+                    return
+                fi
+            fi
+            
+            # If kubelet is running but node isn't registered, it's likely a failed join
+            if [ "$NODE_REGISTERED" = false ]; then
+                if [ -n "$KUBELET_STATUS" ]; then
+                    warn "kubelet is running but node is not registered. This indicates a failed join."
+                    log "Cleaning up incomplete join state..."
+                    cleanup_incomplete_join
+                else
+                    # kubelet is running but we can't verify registration - be cautious
+                    warn "kubelet is running but cannot verify node registration."
+                    warn "If the node is not showing in 'kubectl get nodes', this is a failed join."
+                    
+                    # In auto-join mode, automatically reset and rejoin
+                    if [ "$AUTO_JOIN" = true ]; then
+                        log "Auto-join mode: automatically resetting and rejoining..."
+                        cleanup_incomplete_join
+                    elif [ -t 0 ]; then
+                        # Interactive mode - prompt
+                        read -p "Reset and rejoin? (y/n) " -n 1 -r
+                        echo
+                        if [[ $REPLY =~ ^[Yy]$ ]]; then
+                            cleanup_incomplete_join
+                        else
+                            warn "Skipping join. Run 'sudo kubeadm reset --force' manually if needed."
+                            return
+                        fi
+                    else
+                        # Non-interactive but not auto-join - be safe and reset
+                        log "Non-interactive mode: automatically resetting incomplete join state..."
+                        cleanup_incomplete_join
+                    fi
+                fi
+            fi
         fi
     fi
     
