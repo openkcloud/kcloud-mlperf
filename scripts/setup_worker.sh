@@ -438,7 +438,14 @@ join_cluster() {
     }
     
     # Try to fetch join command from master if not present
-    if [ ! -f "$JOIN_CMD_FILE" ] && [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
+    # Check if MASTER_IP and MASTER_USER are configured
+    if [ -z "$MASTER_IP" ] || [ -z "$MASTER_USER" ]; then
+        warn "MASTER_IP or MASTER_USER not configured in config file"
+        warn "Please set them in config/cluster.env.local or config/cluster.env"
+        error "Cannot fetch join command without master configuration"
+    fi
+    
+    if [ ! -f "$JOIN_CMD_FILE" ]; then
         log "Join command file not found locally, attempting to fetch from master..."
         
         # Always setup SSH keys if passwordless SSH doesn't work
