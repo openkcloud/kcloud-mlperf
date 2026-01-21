@@ -358,8 +358,10 @@ join_cluster() {
         fi
     fi
     
-    # Clean up any incomplete join state before attempting to join
-    cleanup_incomplete_join
+    # Clean up any incomplete join state before attempting to join (only if not already cleaned)
+    if [ ! -f /etc/kubernetes/kubelet.conf ]; then
+        cleanup_incomplete_join
+    fi
     
     JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
     
@@ -368,14 +370,19 @@ join_cluster() {
         log "Join command file not found locally, attempting to fetch from master..."
         if command -v scp &>/dev/null; then
             mkdir -p "$PROJECT_ROOT/config"
-            if scp -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+            log "Fetching from ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh"
+            if scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                "${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh" \
-               "$JOIN_CMD_FILE" 2>/dev/null; then
+               "$JOIN_CMD_FILE" 2>&1; then
                 chmod +x "$JOIN_CMD_FILE"
                 success "Fetched join command from master"
             else
                 warn "Could not fetch join command from master (${MASTER_USER}@${MASTER_IP})"
+                warn "Make sure SSH key is set up or passwordless SSH is configured"
+                warn "You can manually copy it: scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh $JOIN_CMD_FILE"
             fi
+        else
+            warn "scp not available. Install openssh-client or manually copy join-command.sh"
         fi
     fi
     
