@@ -368,48 +368,72 @@ join_cluster() {
     # Setup SSH keys for automated access to master
     setup_ssh_keys() {
         if [ -z "$MASTER_IP" ] || [ -z "$MASTER_USER" ]; then
+            warn "MASTER_IP or MASTER_USER not set, cannot setup SSH"
             return 1
         fi
         
-        SSH_KEY="$HOME/.ssh/id_ed25519"
-        SSH_PUB_KEY="$HOME/.ssh/id_ed25519.pub"
+        SSH_DIR="$HOME/.ssh"
+        SSH_KEY="$SSH_DIR/id_ed25519"
+        SSH_PUB_KEY="$SSH_DIR/id_ed25519.pub"
+        
+        # Create .ssh directory if it doesn't exist
+        mkdir -p "$SSH_DIR"
+        chmod 700 "$SSH_DIR"
         
         # Generate SSH key if it doesn't exist
         if [ ! -f "$SSH_KEY" ]; then
             log "Generating SSH key for automated master access..."
             ssh-keygen -t ed25519 -C "kcloud-worker-$(hostname)" -f "$SSH_KEY" -N "" -q
+            chmod 600 "$SSH_KEY"
+            chmod 644 "$SSH_PUB_KEY"
             success "SSH key generated"
         fi
         
-        # Check if public key is already on master
-        if ssh -o BatchMode=yes -o ConnectTimeout=5 \
-           -o StrictHostKeyChecking=no \
+        # Test if passwordless SSH already works
+        log "Testing passwordless SSH connection to master..."
+        if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
-            return 0  # SSH already works
+            success "Passwordless SSH already configured"
+            return 0
         fi
         
         # Try to copy public key to master
-        log "Setting up passwordless SSH to master (you may be prompted for password once)..."
+        log "Setting up passwordless SSH to master..."
+        log "Note: You may be prompted for password once (this is a one-time setup)"
+        
+        # Method 1: Try ssh-copy-id
         if command -v ssh-copy-id &>/dev/null; then
+            log "Trying ssh-copy-id..."
             if ssh-copy-id -o StrictHostKeyChecking=no \
-               -f "${MASTER_USER}@${MASTER_IP}" 2>&1 | grep -v "WARNING:"; then
-                success "SSH key copied to master"
-                return 0
-            fi
-        else
-            # Manual method if ssh-copy-id not available
-            log "ssh-copy-id not available, trying manual method..."
-            if [ -f "$SSH_PUB_KEY" ]; then
-                cat "$SSH_PUB_KEY" | ssh -o StrictHostKeyChecking=no \
-                    "${MASTER_USER}@${MASTER_IP}" \
-                    "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    success "SSH key copied to master"
+               "${MASTER_USER}@${MASTER_IP}" 2>&1 | tee /tmp/ssh-copy-id.log | grep -v "WARNING:"; then
+                # Verify it worked
+                if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                   "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+                    success "SSH key copied to master via ssh-copy-id"
                     return 0
                 fi
             fi
         fi
         
+        # Method 2: Manual method
+        log "Trying manual SSH key copy method..."
+        if [ -f "$SSH_PUB_KEY" ]; then
+            PUB_KEY_CONTENT=$(cat "$SSH_PUB_KEY")
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+               "${MASTER_USER}@${MASTER_IP}" \
+               "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
+                # Verify it worked
+                sleep 1
+                if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                   "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+                    success "SSH key copied to master via manual method"
+                    return 0
+                fi
+            fi
+        fi
+        
+        warn "Could not setup passwordless SSH automatically"
+        warn "SSH key setup requires password authentication"
         return 1
     }
     
@@ -417,11 +441,20 @@ join_cluster() {
     if [ ! -f "$JOIN_CMD_FILE" ] && [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
         log "Join command file not found locally, attempting to fetch from master..."
         
-        # Setup SSH keys if needed
+        # Always setup SSH keys if passwordless SSH doesn't work
+        log "Ensuring SSH access to master is configured..."
         if ! ssh -o BatchMode=yes -o ConnectTimeout=5 \
            -o StrictHostKeyChecking=no \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
-            setup_ssh_keys
+            if ! setup_ssh_keys; then
+                error "Could not setup SSH access to master. Please ensure:"
+                echo "  1. SSH password authentication is enabled on master"
+                echo "  2. You can manually run: ssh-copy-id ${MASTER_USER}@${MASTER_IP}"
+                echo "  3. Or copy ~/.ssh/id_ed25519.pub to master's ~/.ssh/authorized_keys"
+                exit 1
+            fi
+        else
+            success "Passwordless SSH to master is working"
         fi
         
         if command -v scp &>/dev/null; then
