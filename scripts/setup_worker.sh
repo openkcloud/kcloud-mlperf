@@ -393,12 +393,43 @@ join_cluster() {
     else
         echo ""
         warn "No join command file found."
-        if [ -n "$MASTER_IP" ]; then
-            echo "Copy the join command from master node:"
+        
+        # Try to get join command from master via SSH if possible
+        if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ] && command -v ssh &>/dev/null; then
+            log "Attempting to get join command directly from master via SSH..."
+            JOIN_CMD=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                      "${MASTER_USER}@${MASTER_IP}" \
+                      "kubeadm token create --print-join-command 2>/dev/null" 2>&1)
+            
+            if [ -n "$JOIN_CMD" ] && echo "$JOIN_CMD" | grep -q "kubeadm join"; then
+                log "Got join command from master, executing..."
+                sudo $JOIN_CMD
+                success "Joined cluster successfully"
+                return
+            else
+                warn "Could not get join command via SSH"
+            fi
+        fi
+        
+        # Provide manual instructions
+        echo ""
+        echo "To join manually, you have two options:"
+        echo ""
+        echo "Option 1: Copy join command file from master"
+        if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
             echo "  scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh $JOIN_CMD_FILE"
+            echo "  ./scripts/setup_worker.sh --auto-join"
+        fi
+        echo ""
+        echo "Option 2: Get join command from master and run it"
+        if [ -n "$MASTER_IP" ]; then
+            echo "  On master (${MASTER_IP}), run:"
+            echo "    kubeadm token create --print-join-command"
+            echo "  Then run that command on this node with sudo"
         else
-            echo "Run the following on this node (get the command from master):"
-            echo "  sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash <hash>"
+            echo "  On master node, run:"
+            echo "    kubeadm token create --print-join-command"
+            echo "  Then run that command on this node with sudo"
         fi
         echo ""
     fi
