@@ -403,25 +403,47 @@ join_cluster() {
         fi
         
         SSH_DIR="$HOME/.ssh"
-        SSH_KEY="$SSH_DIR/id_ed25519"
-        SSH_PUB_KEY="$SSH_DIR/id_ed25519.pub"
+        # Use a dedicated key for kcloud automation to avoid conflicts with existing keys
+        SSH_KEY="$SSH_DIR/id_ed25519_kcloud"
+        SSH_PUB_KEY="$SSH_DIR/id_ed25519_kcloud.pub"
+        
+        # Validate MASTER_IP is not the current host
+        CURRENT_IP=$(hostname -I | awk '{print $1}')
+        if [ "$MASTER_IP" = "$CURRENT_IP" ]; then
+            error "MASTER_IP ($MASTER_IP) is the same as current host IP ($CURRENT_IP)"
+            error "MASTER_IP must be the master node IP, not the worker node IP"
+            error "Please set MASTER_IP to the master node address (e.g., 129.254.202.182)"
+            return 1
+        fi
         
         # Create .ssh directory if it doesn't exist
         mkdir -p "$SSH_DIR"
         chmod 700 "$SSH_DIR"
         
-        # Generate SSH key if it doesn't exist
+        # Generate dedicated SSH key for kcloud (always without passphrase for automation)
         if [ ! -f "$SSH_KEY" ]; then
-            log "Generating SSH key for automated master access..."
-            ssh-keygen -t ed25519 -C "kcloud-worker-$(hostname)" -f "$SSH_KEY" -N "" -q
+            log "Generating dedicated SSH key for kcloud automation (no passphrase)..."
+            ssh-keygen -t ed25519 -C "kcloud-worker-$(hostname)-auto" -f "$SSH_KEY" -N "" -q
             chmod 600 "$SSH_KEY"
             chmod 644 "$SSH_PUB_KEY"
             success "SSH key generated"
+        else
+            # Ensure existing key has no passphrase (regenerate if needed)
+            if ssh-keygen -y -f "$SSH_KEY" -P "" &>/dev/null; then
+                log "Using existing kcloud SSH key"
+            else
+                log "Existing key has passphrase, regenerating without passphrase for automation..."
+                rm -f "$SSH_KEY" "$SSH_PUB_KEY"
+                ssh-keygen -t ed25519 -C "kcloud-worker-$(hostname)-auto" -f "$SSH_KEY" -N "" -q
+                chmod 600 "$SSH_KEY"
+                chmod 644 "$SSH_PUB_KEY"
+                success "SSH key regenerated without passphrase"
+            fi
         fi
         
-        # Test if passwordless SSH already works
-        log "Testing passwordless SSH connection to master..."
-        if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+        # Test if passwordless SSH already works with our dedicated key
+        log "Testing passwordless SSH connection to master (${MASTER_IP})..."
+        if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
             success "Passwordless SSH already configured"
             return 0
@@ -447,8 +469,8 @@ join_cluster() {
             # Wait a moment for the key to be processed
             sleep 2
             
-            # Verify it worked by testing passwordless SSH
-            if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+            # Verify it worked by testing passwordless SSH with our key
+            if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                 success "SSH key copied to master via ssh-copy-id"
                 return 0
@@ -457,13 +479,20 @@ join_cluster() {
                 # This can happen if the key was added but needs a moment
                 log "ssh-copy-id completed, waiting for SSH to propagate..."
                 sleep 3
-                if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via ssh-copy-id"
                     return 0
                 else
                     warn "ssh-copy-id completed but passwordless SSH not working"
-                    warn "You may need to manually verify SSH key was added to master"
+                    warn "Verifying key was added to master at ${MASTER_IP}..."
+                    # Try to check if key is on master
+                    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                       "${MASTER_USER}@${MASTER_IP}" \
+                       "grep -q '$(cat $SSH_PUB_KEY)' ~/.ssh/authorized_keys 2>/dev/null" 2>/dev/null; then
+                        log "Key is on master, but passwordless SSH still not working"
+                        log "This may be a permissions issue on the master"
+                    fi
                 fi
             else
                 log "ssh-copy-id failed or was cancelled (exit code: $SSH_COPY_EXIT)"
@@ -490,7 +519,7 @@ join_cluster() {
                "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
                 # Verify it worked
                 sleep 3
-                if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via manual method"
                     return 0
@@ -515,8 +544,9 @@ join_cluster() {
         log "Join command file not found locally, attempting to fetch from master..."
         
         # Always setup SSH keys if passwordless SSH doesn't work
-        log "Ensuring SSH access to master is configured..."
-        if ! ssh -o BatchMode=yes -o ConnectTimeout=5 \
+        log "Ensuring SSH access to master (${MASTER_IP}) is configured..."
+        SSH_KEY="$HOME/.ssh/id_ed25519_kcloud"
+        if ! ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
            -o StrictHostKeyChecking=no \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
             if ! setup_ssh_keys; then
@@ -533,7 +563,7 @@ join_cluster() {
         if command -v scp &>/dev/null; then
             mkdir -p "$PROJECT_ROOT/config"
             log "Fetching from ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh"
-            if scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            if scp -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                "${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh" \
                "$JOIN_CMD_FILE" 2>/dev/null; then
                 chmod +x "$JOIN_CMD_FILE"
@@ -541,7 +571,7 @@ join_cluster() {
             else
                 # Try alternative: get join command directly via SSH
                 log "File fetch failed, trying to get join command directly from master..."
-                JOIN_CMD=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                JOIN_CMD=$(ssh -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                           "${MASTER_USER}@${MASTER_IP}" \
                           "cd ${PROJECT_ROOT} && kubeadm token create --print-join-command 2>/dev/null" 2>/dev/null)
                 
