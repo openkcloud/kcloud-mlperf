@@ -434,38 +434,62 @@ join_cluster() {
         # Method 1: Try ssh-copy-id
         if command -v ssh-copy-id &>/dev/null; then
             log "Trying ssh-copy-id..."
-            # ssh-copy-id will prompt for password, but we can capture the result
-            SSH_COPY_OUTPUT=$(ssh-copy-id -o StrictHostKeyChecking=no \
-               "${MASTER_USER}@${MASTER_IP}" 2>&1)
-            SSH_COPY_EXIT=$?
+            log "You will be prompted for the master password (one-time setup)..."
+            # ssh-copy-id will prompt for password interactively
+            # We can't fully automate this, but we can check if it worked after
+            if ssh-copy-id -o StrictHostKeyChecking=no \
+               "${MASTER_USER}@${MASTER_IP}" 2>&1; then
+                SSH_COPY_EXIT=$?
+            else
+                SSH_COPY_EXIT=$?
+            fi
             
-            # Check if it succeeded (exit code 0 or contains "Number of key(s) added")
-            if [ $SSH_COPY_EXIT -eq 0 ] || echo "$SSH_COPY_OUTPUT" | grep -q "Number of key(s) added"; then
-                # Wait a moment and verify it worked
-                sleep 2
+            # Wait a moment for the key to be processed
+            sleep 2
+            
+            # Verify it worked by testing passwordless SSH
+            if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+               "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+                success "SSH key copied to master via ssh-copy-id"
+                return 0
+            elif [ $SSH_COPY_EXIT -eq 0 ]; then
+                # ssh-copy-id succeeded but passwordless SSH not working yet
+                # This can happen if the key was added but needs a moment
+                log "ssh-copy-id completed, waiting for SSH to propagate..."
+                sleep 3
                 if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via ssh-copy-id"
                     return 0
                 else
-                    log "ssh-copy-id reported success but passwordless SSH not working yet"
-                    log "This may require manual intervention"
+                    warn "ssh-copy-id completed but passwordless SSH not working"
+                    warn "You may need to manually verify SSH key was added to master"
                 fi
             else
-                log "ssh-copy-id failed or was cancelled"
+                log "ssh-copy-id failed or was cancelled (exit code: $SSH_COPY_EXIT)"
             fi
         fi
         
-        # Method 2: Manual method (only if ssh-copy-id didn't work)
+        # Method 2: Manual method (only if ssh-copy-id didn't work and passwordless SSH still doesn't work)
+        # Check again if passwordless SSH works (maybe it just needed a moment)
+        sleep 2
+        if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+           "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+            success "Passwordless SSH is now working"
+            return 0
+        fi
+        
+        # If still not working, try manual method
         log "Trying manual SSH key copy method..."
         if [ -f "$SSH_PUB_KEY" ]; then
             PUB_KEY_CONTENT=$(cat "$SSH_PUB_KEY")
+            log "You will be prompted for the master password again..."
             # This will also prompt for password, but we try it
             if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                "${MASTER_USER}@${MASTER_IP}" \
                "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
                 # Verify it worked
-                sleep 2
+                sleep 3
                 if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via manual method"
