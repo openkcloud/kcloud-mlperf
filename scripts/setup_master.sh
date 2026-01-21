@@ -139,16 +139,81 @@ install_kubernetes() {
 }
 
 # ============================================================================
+# Step 3.5: Clean up incomplete kubeadm state
+# ============================================================================
+cleanup_incomplete_state() {
+    # Check if cluster is fully initialized
+    if [ -f /etc/kubernetes/admin.conf ]; then
+        # Cluster is initialized, check if it's working
+        if kubectl cluster-info &>/dev/null 2>&1; then
+            return 0  # Cluster is working fine
+        fi
+    fi
+    
+    # Check for partial state (pki directory exists but admin.conf doesn't)
+    # OR check for external CA config issues
+    HAS_PARTIAL_STATE=false
+    if [ -d /etc/kubernetes/pki ] && [ ! -f /etc/kubernetes/admin.conf ]; then
+        HAS_PARTIAL_STATE=true
+    fi
+    
+    # Check if kubeadm-config.yaml references external CA but files are missing
+    if [ -f /etc/kubernetes/kubeadm-config.yaml ] && [ ! -f /etc/kubernetes/admin.conf ]; then
+        if grep -q "externalCA" /etc/kubernetes/kubeadm-config.yaml 2>/dev/null; then
+            HAS_PARTIAL_STATE=true
+        fi
+    fi
+    
+    if [ "$HAS_PARTIAL_STATE" = true ]; then
+        warn "Found incomplete kubeadm state (partial certificates/config without admin.conf)"
+        warn "This usually happens when a previous 'kubeadm init' failed partway through"
+        log "Automatically cleaning up incomplete state..."
+        
+        # Reset kubeadm state
+        sudo kubeadm reset --force 2>/dev/null || true
+        
+        # Additional cleanup
+        sudo rm -rf /etc/kubernetes/pki
+        sudo rm -rf /etc/kubernetes/manifests
+        sudo rm -f /etc/kubernetes/*.conf
+        sudo rm -f /etc/kubernetes/kubeadm-config.yaml
+        sudo rm -rf /var/lib/etcd
+        sudo rm -rf ~/.kube/config
+        
+        # Clean up iptables rules
+        sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -X || true
+        
+        success "kubeadm state cleaned up"
+    fi
+    
+    # Check for kubelet service issues
+    if systemctl is-active --quiet kubelet 2>/dev/null; then
+        # Stop kubelet if it's running but cluster isn't initialized
+        if [ ! -f /etc/kubernetes/admin.conf ]; then
+            log "Stopping kubelet service..."
+            sudo systemctl stop kubelet || true
+        fi
+    fi
+}
+
+# ============================================================================
 # Step 4: Initialize Kubernetes cluster
 # ============================================================================
 init_cluster() {
     log "[4/7] Initializing Kubernetes cluster..."
     
-    # Check if already initialized
+    # Check if already initialized and working
     if [ -f /etc/kubernetes/admin.conf ]; then
-        warn "Cluster already initialized. Skipping."
-        return
+        if kubectl cluster-info &>/dev/null 2>&1; then
+            warn "Cluster already initialized and working. Skipping."
+            return
+        else
+            warn "Cluster appears initialized but not responding. You may need to reset."
+        fi
     fi
+    
+    # Clean up any incomplete state before initializing
+    cleanup_incomplete_state
     
     # Create kubeadm config
     cat > /tmp/kubeadm-config.yaml <<EOF
@@ -174,6 +239,7 @@ EOF
     sudo cp /tmp/kubeadm-config.yaml /etc/kubernetes/kubeadm-config.yaml
     
     # Initialize cluster
+    log "Running kubeadm init (this may take a few minutes)..."
     sudo kubeadm init --config=/tmp/kubeadm-config.yaml
     
     # Setup kubeconfig for current user

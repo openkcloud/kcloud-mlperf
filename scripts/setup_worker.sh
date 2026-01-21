@@ -217,10 +217,81 @@ label_node() {
 }
 
 # ============================================================================
+# Clean up incomplete kubeadm join state
+# ============================================================================
+cleanup_incomplete_join() {
+    log "Checking for incomplete kubeadm join state..."
+    
+    # Check if node is already successfully joined
+    # Worker nodes have kubelet config but no admin.conf
+    if [ -f /etc/kubernetes/kubelet.conf ]; then
+        # Check if kubelet can actually connect to the cluster
+        if systemctl is-active --quiet kubelet 2>/dev/null; then
+            # Try to verify node is registered (requires kubectl on master, so we can't fully verify here)
+            # But we can check if kubelet is in a good state
+            if systemctl is-failed --quiet kubelet 2>/dev/null; then
+                warn "kubelet service is in failed state - may indicate incomplete join"
+            else
+                # Node appears to be joined, skip cleanup
+                return 0
+            fi
+        fi
+    fi
+    
+    # Check for partial join state (kubelet config exists but service isn't working)
+    # OR kubelet config doesn't exist but there's partial kubeadm state
+    HAS_PARTIAL_STATE=false
+    
+    if [ -f /etc/kubernetes/kubelet.conf ] && ! systemctl is-active --quiet kubelet 2>/dev/null; then
+        HAS_PARTIAL_STATE=true
+    fi
+    
+    # Check for leftover pki or manifests from failed join
+    if [ -d /etc/kubernetes/pki ] && [ ! -f /etc/kubernetes/kubelet.conf ]; then
+        HAS_PARTIAL_STATE=true
+    fi
+    
+    if [ "$HAS_PARTIAL_STATE" = true ]; then
+        warn "Found incomplete kubeadm join state"
+        warn "This usually happens when a previous 'kubeadm join' failed partway through"
+        log "Automatically cleaning up incomplete join state..."
+        
+        # Reset kubeadm state
+        sudo kubeadm reset --force 2>/dev/null || true
+        
+        # Additional cleanup
+        sudo rm -rf /etc/kubernetes/pki
+        sudo rm -rf /etc/kubernetes/manifests
+        sudo rm -f /etc/kubernetes/*.conf
+        sudo rm -f /etc/kubernetes/kubeadm-config.yaml
+        
+        # Clean up iptables rules
+        sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -X || true
+        
+        # Stop kubelet if it's running
+        sudo systemctl stop kubelet 2>/dev/null || true
+        
+        success "kubeadm join state cleaned up"
+    fi
+}
+
+# ============================================================================
 # Join Cluster
 # ============================================================================
 join_cluster() {
     log "Joining Kubernetes cluster..."
+    
+    # Check if already joined
+    if [ -f /etc/kubernetes/kubelet.conf ]; then
+        if systemctl is-active --quiet kubelet 2>/dev/null; then
+            warn "Node appears to already be joined. Skipping join."
+            echo "If this is incorrect, run 'sudo kubeadm reset --force' first"
+            return
+        fi
+    fi
+    
+    # Clean up any incomplete join state before attempting to join
+    cleanup_incomplete_join
     
     JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
     
