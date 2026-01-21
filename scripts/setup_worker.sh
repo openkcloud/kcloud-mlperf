@@ -64,22 +64,34 @@ fi
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
     log "Loaded config from $CONFIG_FILE"
-    
-    # Validate required configuration
-    if [ -z "$MASTER_IP" ] || [ -z "$MASTER_USER" ]; then
-        warn "MASTER_IP or MASTER_USER not set in $CONFIG_FILE"
-        warn "These are required for automated worker setup"
-        echo ""
-        echo "Please create config/cluster.env.local with:"
-        echo "  MASTER_IP=\"<master-ip-address>\""
-        echo "  MASTER_USER=\"<master-username>\""
-        echo ""
-        echo "Or copy the config from the master node:"
-        echo "  scp ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/cluster.env.local config/"
-        echo ""
-        if [ "$AUTO_JOIN" = true ]; then
-            error "Cannot proceed in auto-join mode without master configuration"
-        fi
+fi
+
+# Try to extract MASTER_IP from join command if config is missing
+if [ -z "$MASTER_IP" ] && [ -f "$PROJECT_ROOT/config/join-command.sh" ]; then
+    EXTRACTED_IP=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$PROJECT_ROOT/config/join-command.sh" | head -1)
+    if [ -n "$EXTRACTED_IP" ]; then
+        MASTER_IP="$EXTRACTED_IP"
+        log "Extracted MASTER_IP=$MASTER_IP from join command"
+    fi
+fi
+
+# Try to get MASTER_USER from current user or common defaults
+if [ -z "$MASTER_USER" ]; then
+    MASTER_USER="${USER:-$(whoami)}"
+    log "Using current user as MASTER_USER: $MASTER_USER"
+fi
+
+# Validate required configuration
+if [ -z "$MASTER_IP" ]; then
+    warn "MASTER_IP not set in config and could not be auto-detected"
+    warn "These are required for automated worker setup"
+    echo ""
+    echo "Please create config/cluster.env.local with:"
+    echo "  MASTER_IP=\"<master-ip-address>\""
+    echo "  MASTER_USER=\"<master-username>\""
+    echo ""
+    if [ "$AUTO_JOIN" = true ]; then
+        error "Cannot proceed in auto-join mode without MASTER_IP"
     fi
 fi
 
