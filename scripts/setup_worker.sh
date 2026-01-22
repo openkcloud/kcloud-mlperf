@@ -459,8 +459,9 @@ join_cluster() {
             log "You will be prompted for the master password (one-time setup)..."
             # ssh-copy-id will prompt for password interactively
             # We can't fully automate this, but we can check if it worked after
-            # Use -i to specify our dedicated key
-            if ssh-copy-id -i "$SSH_PUB_KEY" -o StrictHostKeyChecking=no \
+            # Use -i to specify our dedicated key (use private key, ssh-copy-id will find the .pub)
+            log "Using dedicated SSH key: $SSH_KEY"
+            if ssh-copy-id -i "$SSH_KEY" -f -o StrictHostKeyChecking=no \
                "${MASTER_USER}@${MASTER_IP}" 2>&1; then
                 SSH_COPY_EXIT=$?
             else
@@ -487,12 +488,17 @@ join_cluster() {
                 else
                     warn "ssh-copy-id completed but passwordless SSH not working"
                     warn "Verifying key was added to master at ${MASTER_IP}..."
-                    # Try to check if key is on master
+                    # Try to check if key is on master (use password auth for this check)
+                    PUB_KEY_FINGERPRINT=$(ssh-keygen -lf "$SSH_PUB_KEY" 2>/dev/null | awk '{print $2}')
                     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
                        "${MASTER_USER}@${MASTER_IP}" \
-                       "grep -q '$(cat $SSH_PUB_KEY)' ~/.ssh/authorized_keys 2>/dev/null" 2>/dev/null; then
-                        log "Key is on master, but passwordless SSH still not working"
-                        log "This may be a permissions issue on the master"
+                       "grep -q '$(cat $SSH_PUB_KEY | cut -d\" \" -f1-2)' ~/.ssh/authorized_keys 2>/dev/null" 2>/dev/null; then
+                        log "Key appears to be on master, but passwordless SSH not working"
+                        log "Checking master SSH permissions..."
+                        # Check permissions on master
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                           "${MASTER_USER}@${MASTER_IP}" \
+                           "ls -la ~/.ssh/authorized_keys 2>/dev/null || echo 'authorized_keys not found'" 2>/dev/null || true
                     fi
                 fi
             else
@@ -514,8 +520,10 @@ join_cluster() {
         if [ -f "$SSH_PUB_KEY" ]; then
             PUB_KEY_CONTENT=$(cat "$SSH_PUB_KEY")
             log "You will be prompted for the master password again..."
+            log "Using dedicated SSH key: $SSH_KEY"
             # This will also prompt for password, but we try it
-            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            # Use the dedicated key (even though it has no passphrase, we specify it for consistency)
+            if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                "${MASTER_USER}@${MASTER_IP}" \
                "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
                 # Verify it worked
