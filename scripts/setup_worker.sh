@@ -523,28 +523,15 @@ join_cluster() {
             return 0
         fi
         
-        # If still not working, try manual method
-        log "Trying manual SSH key copy method..."
-        if [ -f "$SSH_PUB_KEY" ]; then
-            PUB_KEY_CONTENT=$(cat "$SSH_PUB_KEY")
-            log "You will be prompted for the master password again..."
-            log "Using dedicated SSH key: $SSH_KEY"
-            # This will also prompt for password, but we try it
-            # Use the dedicated key (even though it has no passphrase, we specify it for consistency)
-            # Disable SSH agent to force use of our key
-            if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-               -o IdentitiesOnly=yes \
-               "${MASTER_USER}@${MASTER_IP}" \
-               "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
-                # Verify it worked
-                sleep 3
-                if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
-                   -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
-                   "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
-                    success "SSH key copied to master via manual method"
-                    return 0
-                fi
-            fi
+        # If still not working, the key might be there but not working
+        # This shouldn't happen if Method 1 worked, but we check one more time
+        log "Retrying passwordless SSH connection..."
+        sleep 2
+        if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+           -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+           "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
+            success "Passwordless SSH is now working"
+            return 0
         fi
         
         warn "Could not setup passwordless SSH automatically"
