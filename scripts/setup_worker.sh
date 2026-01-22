@@ -275,33 +275,26 @@ label_node() {
 cleanup_incomplete_join() {
     log "Checking for incomplete kubeadm join state..."
     
-    # Check if node is already successfully joined
-    # Worker nodes have kubelet config but no admin.conf
-    if [ -f /etc/kubernetes/kubelet.conf ]; then
-        # Check if kubelet can actually connect to the cluster
-        if systemctl is-active --quiet kubelet 2>/dev/null; then
-            # Try to verify node is registered (requires kubectl on master, so we can't fully verify here)
-            # But we can check if kubelet is in a good state
-            if systemctl is-failed --quiet kubelet 2>/dev/null; then
-                warn "kubelet service is in failed state - may indicate incomplete join"
-            else
-                # Node appears to be joined, skip cleanup
-                return 0
-            fi
-        fi
-    fi
-    
-    # Check for partial join state (kubelet config exists but service isn't working)
-    # OR kubelet config doesn't exist but there's partial kubeadm state
+    # Always check for and clean up any leftover files that would prevent join
+    # This is more aggressive but ensures a clean state
     HAS_PARTIAL_STATE=false
     
-    if [ -f /etc/kubernetes/kubelet.conf ] && ! systemctl is-active --quiet kubelet 2>/dev/null; then
+    # Check for any kubeadm-related files that indicate a previous attempt
+    if [ -f /etc/kubernetes/kubelet.conf ] || \
+       [ -d /etc/kubernetes/pki ] || \
+       [ -f /etc/kubernetes/kubeadm-config.yaml ] || \
+       [ -d /etc/kubernetes/manifests ]; then
         HAS_PARTIAL_STATE=true
     fi
     
-    # Check for leftover pki or manifests from failed join
-    if [ -d /etc/kubernetes/pki ] && [ ! -f /etc/kubernetes/kubelet.conf ]; then
-        HAS_PARTIAL_STATE=true
+    # If kubelet is running, we need to check if it's actually working
+    # If we're in auto-join mode and kubelet is running, it likely means a failed join
+    if systemctl is-active --quiet kubelet 2>/dev/null; then
+        # In auto-join mode, if we're here it means the node isn't registered
+        # So we should always clean up
+        if [ "$AUTO_JOIN" = true ]; then
+            HAS_PARTIAL_STATE=true
+        fi
     fi
     
     if [ "$HAS_PARTIAL_STATE" = true ]; then
@@ -309,20 +302,40 @@ cleanup_incomplete_join() {
         warn "This usually happens when a previous 'kubeadm join' failed partway through"
         log "Automatically cleaning up incomplete join state..."
         
-        # Reset kubeadm state
+        # Stop services first to free up ports and resources
+        log "Stopping kubelet and containerd..."
+        sudo systemctl stop kubelet 2>/dev/null || true
+        sudo systemctl stop containerd 2>/dev/null || true
+        sleep 3
+        
+        # Reset kubeadm state (this should handle most cleanup)
+        log "Running kubeadm reset..."
         sudo kubeadm reset --force 2>/dev/null || true
         
-        # Additional cleanup
+        # Additional aggressive cleanup to ensure everything is removed
+        log "Removing leftover Kubernetes files..."
         sudo rm -rf /etc/kubernetes/pki
         sudo rm -rf /etc/kubernetes/manifests
         sudo rm -f /etc/kubernetes/*.conf
         sudo rm -f /etc/kubernetes/kubeadm-config.yaml
         
         # Clean up iptables rules
+        log "Cleaning up iptables rules..."
         sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -X || true
         
-        # Stop kubelet if it's running
+        # Clean up cni configs
+        sudo rm -rf /etc/cni/net.d/*
+        
+        # Ensure kubelet is stopped
         sudo systemctl stop kubelet 2>/dev/null || true
+        sleep 2
+        
+        # Verify port 10250 is free
+        if command -v ss &>/dev/null; then
+            if ss -tlnp | grep -q ':10250'; then
+                warn "Port 10250 is still in use, may need manual intervention"
+            fi
+        fi
         
         success "kubeadm join state cleaned up"
     fi
