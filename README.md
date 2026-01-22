@@ -332,6 +332,24 @@ ssh-copy-id -i ~/.ssh/id_ed25519_kcloud.pub <MASTER_USER>@<MASTER_IP>
 ./scripts/setup_worker.sh --auto-join
 ```
 
+### 4b) GPU 메모리 부족 또는 워커 노드 문제
+
+**증상:** GPU가 사용 중이거나 워커 노드가 NotReady 상태
+
+**해결:**
+```bash
+# 워커 노드에서 - setup_worker.sh가 자동으로 처리합니다
+./scripts/setup_worker.sh --auto-join --free-gpu
+
+# 또는 GPU만 해제하려면 (자동 감지됨)
+./scripts/setup_worker.sh --free-gpu
+
+# setup_worker.sh는 다음을 자동으로 처리합니다:
+# - GPU 사용 프로세스 자동 감지 및 종료
+# - Calico CNI 충돌 자동 정리
+# - kubelet 재시작 (필요 시)
+```
+
 ### 5) containerd 오류: "container runtime is not running"
 
 **증상:** `kubeadm join` 실행 시 containerd 연결 오류
