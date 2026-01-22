@@ -6,10 +6,11 @@
 # and set up NVIDIA container runtime.
 #
 # Usage:
-#   ./scripts/setup_worker.sh [--auto-join] [--config config/cluster.env]
+#   ./scripts/setup_worker.sh [--auto-join] [--free-gpu] [--config config/cluster.env]
 #
 # Options:
 #   --auto-join    Automatically join the cluster without prompting
+#   --free-gpu     Free GPU by killing all processes using it before setup
 #
 # Prerequisites:
 #   - Ubuntu 20.04/22.04
@@ -37,12 +38,17 @@ error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 
 # Parse command line arguments
 AUTO_JOIN=false
+FREE_GPU=false
 CONFIG_FILE="$PROJECT_ROOT/config/cluster.env"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --auto-join)
             AUTO_JOIN=true
+            shift
+            ;;
+        --free-gpu)
+            FREE_GPU=true
             shift
             ;;
         --config)
@@ -101,6 +107,72 @@ echo "╔═══════════════════════�
 echo "║     K-Cloud MLPerf - GPU Worker Node Setup                       ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
 echo ""
+
+# ============================================================================
+# Free GPU - Kill processes using GPU
+# ============================================================================
+free_gpu() {
+    log "Freeing GPU - Killing processes using GPU..."
+    
+    if ! command -v nvidia-smi &>/dev/null; then
+        warn "nvidia-smi not available, skipping GPU cleanup"
+        return
+    fi
+    
+    # Check if any processes are using GPU
+    GPU_PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v '^$' || echo "")
+    
+    if [ -z "$GPU_PIDS" ]; then
+        log "No processes found using GPU"
+        return
+    fi
+    
+    log "Found processes using GPU: $GPU_PIDS"
+    log "Killing GPU processes..."
+    
+    for pid in $GPU_PIDS; do
+        if kill -0 "$pid" 2>/dev/null; then
+            log "  Killing PID $pid..."
+            sudo kill -9 "$pid" 2>/dev/null || true
+        fi
+    done
+    
+    # Also kill common GPU-using processes by name
+    sudo pkill -9 -f "python.*vllm" 2>/dev/null || true
+    sudo pkill -9 -f "torch" 2>/dev/null || true
+    sudo pkill -9 -f "cuda" 2>/dev/null || true
+    
+    sleep 2
+    
+    # Verify GPU is free
+    REMAINING_PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v '^$' || echo "")
+    if [ -z "$REMAINING_PIDS" ]; then
+        success "GPU freed successfully"
+    else
+        warn "Some GPU processes may still be running: $REMAINING_PIDS"
+    fi
+}
+
+# ============================================================================
+# Clean up Calico CNI configuration
+# ============================================================================
+cleanup_calico_cni() {
+    log "Checking for Calico CNI conflicts..."
+    
+    if [ -f /etc/cni/net.d/10-calico.conflist ]; then
+        warn "Found Calico CNI configuration. Removing to prevent conflicts with Flannel."
+        sudo rm -f /etc/cni/net.d/10-calico.conflist /etc/cni/net.d/calico-kubeconfig
+        
+        # Restart kubelet if it's running to pick up CNI changes
+        if systemctl is-active --quiet kubelet 2>/dev/null; then
+            log "Restarting kubelet to apply CNI changes..."
+            sudo systemctl restart kubelet || true
+            sleep 2
+        fi
+        
+        success "Calico CNI configuration removed"
+    fi
+}
 
 # ============================================================================
 # Step 1: Check NVIDIA Driver
@@ -215,13 +287,8 @@ configure_nvidia_runtime() {
 install_kubernetes() {
     log "[6/8] Installing Kubernetes components..."
     
-    # Remove any conflicting Calico CNI configs before installing Kubernetes
-    # Worker nodes should use Flannel (installed on master), not Calico
-    if [ -f /etc/cni/net.d/10-calico.conflist ]; then
-        warn "Found Calico CNI configuration on worker node. Removing to prevent conflicts with Flannel."
-        sudo rm -f /etc/cni/net.d/10-calico.conflist /etc/cni/net.d/calico-kubeconfig
-        success "Calico CNI configuration removed"
-    fi
+    # Clean up Calico CNI configs before installing Kubernetes
+    cleanup_calico_cni
     
     K8S_VERSION="${K8S_VERSION:-1.28}"
     
@@ -331,7 +398,7 @@ cleanup_incomplete_join() {
         log "Cleaning up iptables rules..."
         sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -X || true
         
-        # Clean up cni configs
+        # Clean up cni configs (including Calico)
         sudo rm -rf /etc/cni/net.d/*
         
         # Ensure kubelet is stopped
@@ -680,6 +747,23 @@ main() {
     if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
         error "This script requires root/sudo access"
     fi
+    
+    # Free GPU if requested or if GPU is in use
+    if [ "$FREE_GPU" = true ]; then
+        free_gpu
+    else
+        # Auto-detect if GPU is in use and free it
+        if command -v nvidia-smi &>/dev/null; then
+            GPU_PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v '^$' || echo "")
+            if [ -n "$GPU_PIDS" ]; then
+                warn "GPU is in use. Freeing GPU before setup..."
+                free_gpu
+            fi
+        fi
+    fi
+    
+    # Clean up Calico CNI configs at the start
+    cleanup_calico_cni
     
     check_nvidia_driver
     install_prerequisites
