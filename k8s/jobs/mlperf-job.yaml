@@ -50,54 +50,62 @@ spec:
         command: ["sh", "-c"]
         args:
         - |
-          # Check if loadgen directory already exists (from host mount)
-          if [ -d /mlcommons/loadgen ] && [ -f /mlcommons/loadgen/setup.py ]; then
-            echo "MLCommons repo already present on host mount"
+          # First, check if host mount already has the repo
+          echo "Checking for existing MLCommons repo on host mount..."
+          if [ -f /mlcommons/loadgen/setup.py ]; then
+            echo "✓ MLCommons repo found on host mount (loadgen/setup.py exists)"
             exit 0
           fi
           
-          # Check if host directory has content (even without loadgen subdir)
-          if [ -d /mlcommons ] && [ "$(ls -A /mlcommons 2>/dev/null | head -1)" ]; then
-            echo "MLCommons directory exists on host with content, checking for loadgen..."
-            # Try to find loadgen in subdirectories or use what we have
-            if find /mlcommons -name "setup.py" -path "*/loadgen/*" 2>/dev/null | head -1; then
-              echo "Found loadgen setup.py in host directory"
-              exit 0
-            elif [ -d /mlcommons/language ] || [ -d /mlcommons/vision ] || [ -d /mlcommons/loadgen ]; then
-              echo "MLCommons repo structure found on host, using existing"
+          # Check if directory exists and has any content
+          if [ -d /mlcommons ] && [ -n "$(ls -A /mlcommons 2>/dev/null)" ]; then
+            echo "MLCommons directory exists with content, checking structure..."
+            # Check for key directories/files that indicate valid repo
+            if [ -d /mlcommons/loadgen ] || [ -d /mlcommons/language ] || [ -d /mlcommons/vision ] || [ -f /mlcommons/.git/config ]; then
+              echo "✓ MLCommons repo structure found on host, using existing"
               exit 0
             fi
+            # If directory exists but seems incomplete, try to use it anyway
+            echo "Warning: MLCommons directory exists but structure unclear, attempting to use it"
+            exit 0
           fi
           
-          # If we get here, need to clone (but DNS might not work)
-          echo "Attempting to clone MLCommons inference repository..."
-          echo "Note: If DNS fails, ensure host has /data/mlcommons-inference populated"
+          # If we get here, need to clone
+          echo "MLCommons repo not found on host, attempting to clone..."
+          echo "Note: This requires DNS/network access to github.com"
           
-          # Try cloning with retries
+          # Try cloning with retries and timeout
           CLONE_SUCCESS=false
           for i in 1 2 3; do
-            if timeout 30 git clone --depth 1 https://github.com/mlcommons/inference.git /mlcommons 2>&1; then
-              echo "Successfully cloned MLCommons repo"
+            echo "Clone attempt $i/3..."
+            if timeout 60 git clone --depth 1 https://github.com/mlcommons/inference.git /mlcommons 2>&1; then
+              echo "✓ Successfully cloned MLCommons repo"
               CLONE_SUCCESS=true
               break
             else
-              echo "Clone attempt $i failed"
-              sleep 5
+              CLONE_EXIT=$?
+              echo "Clone attempt $i failed (exit code: $CLONE_EXIT)"
+              if [ $i -lt 3 ]; then
+                echo "Retrying in 5 seconds..."
+                sleep 5
+              fi
             fi
           done
           
-          # If clone failed, check host directory one more time
+          # Final check - if clone failed, verify host directory one more time
           if [ "$CLONE_SUCCESS" = false ]; then
-            echo "Warning: Could not clone repository (DNS/network issue)"
-            if [ -d /mlcommons ] && [ "$(ls -A /mlcommons 2>/dev/null | head -1)" ]; then
-              echo "Using existing host directory content"
+            echo "Warning: All clone attempts failed (DNS/network issue)"
+            if [ -d /mlcommons ] && [ -n "$(ls -A /mlcommons 2>/dev/null)" ]; then
+              echo "✓ Using existing host directory content despite clone failure"
               exit 0
             else
-              echo "Error: Cannot clone and no existing repo found on host"
+              echo "✗ Error: Cannot clone and no existing repo found on host"
               echo "Please ensure /data/mlcommons-inference is populated on the host"
               exit 1
             fi
           fi
+          
+          echo "✓ MLCommons repo ready"
         volumeMounts:
         - name: mlcommons
           mountPath: /mlcommons
