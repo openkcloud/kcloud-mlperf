@@ -766,6 +766,50 @@ main() {
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
     
+    # Check if node is already joined and healthy
+    if [ -f /etc/kubernetes/kubelet.conf ]; then
+        if systemctl is-active --quiet kubelet 2>/dev/null; then
+            # Check if node is actually Ready (not just kubelet running)
+            NODE_READY=false
+            if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
+                SSH_KEY="$HOME/.ssh/id_ed25519_kcloud"
+                if [ -f "$SSH_KEY" ]; then
+                    NODE_NAME=$(hostname)
+                    # Check if node is Ready via master
+                    NODE_STATUS=$(SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                                 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+                                 "${MASTER_USER}@${MASTER_IP}" \
+                                 "kubectl get node $NODE_NAME -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" 2>/dev/null || echo "")
+                    if [ "$NODE_STATUS" = "True" ]; then
+                        NODE_READY=true
+                        success "Node is Ready in cluster"
+                    elif [ "$NODE_STATUS" = "False" ] || [ "$NODE_STATUS" = "Unknown" ]; then
+                        warn "Node is NotReady in cluster. Kubelet may not be reporting status."
+                        warn "Restarting kubelet to fix node status..."
+                        sudo systemctl restart kubelet
+                        sleep 5
+                        # Check again after restart
+                        NODE_STATUS=$(SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                                     -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+                                     "${MASTER_USER}@${MASTER_IP}" \
+                                     "kubectl get node $NODE_NAME -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" 2>/dev/null || echo "")
+                        if [ "$NODE_STATUS" = "True" ]; then
+                            success "Node is now Ready after kubelet restart"
+                            NODE_READY=true
+                        else
+                            warn "Node still not Ready. May need manual intervention."
+                        fi
+                    fi
+                fi
+            fi
+            
+            if [ "$NODE_READY" = true ]; then
+                # Node is healthy, no need to rejoin
+                return
+            fi
+        fi
+    fi
+    
     # Check if join command file exists and auto-join
     JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
     
