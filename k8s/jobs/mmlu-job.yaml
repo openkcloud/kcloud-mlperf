@@ -22,11 +22,14 @@ spec:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
+      tolerations:
+      - key: node.kubernetes.io/unreachable
+        operator: Exists
+        effect: NoSchedule
+      - key: node.kubernetes.io/unreachable
+        operator: Exists
+        effect: NoExecute
+        tolerationSeconds: 300
       containers:
       - name: bench
         image: vllm/vllm-openai:v0.6.6
