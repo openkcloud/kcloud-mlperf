@@ -37,8 +37,32 @@ spec:
         args:
         - |
           if [ ! -d /mlcommons/loadgen ]; then
-            echo "Cloning MLCommons inference repository..."
-            git clone --depth 1 https://github.com/mlcommons/inference.git /mlcommons
+            echo "Checking if MLCommons repo exists on host..."
+            if [ -d /mlcommons ] && [ -f /mlcommons/loadgen/setup.py ]; then
+              echo "MLCommons repo found on host, using existing"
+            else
+              echo "Cloning MLCommons inference repository..."
+              # Try cloning with retries and timeout
+              for i in 1 2 3; do
+                if git clone --depth 1 https://github.com/mlcommons/inference.git /mlcommons 2>&1; then
+                  echo "Successfully cloned MLCommons repo"
+                  break
+                else
+                  echo "Clone attempt $i failed, retrying..."
+                  sleep 5
+                fi
+              done
+              # If still failed, check if we can use existing host directory
+              if [ ! -d /mlcommons/loadgen ]; then
+                echo "Warning: Could not clone repository. Checking host directory..."
+                if [ -d /mlcommons ] && [ "$(ls -A /mlcommons 2>/dev/null)" ]; then
+                  echo "Using existing host directory even without loadgen subdirectory"
+                else
+                  echo "Error: Cannot clone and no existing repo found"
+                  exit 1
+                fi
+              fi
+            fi
           else
             echo "MLCommons repo already present"
           fi
