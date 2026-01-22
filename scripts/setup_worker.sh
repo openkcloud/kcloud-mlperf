@@ -6,11 +6,13 @@
 # and set up NVIDIA container runtime.
 #
 # Usage:
-#   ./scripts/setup_worker.sh [--auto-join] [--free-gpu] [--config config/cluster.env]
+#   ./scripts/setup_worker.sh [--config config/cluster.env]
 #
-# Options:
-#   --auto-join    Automatically join the cluster without prompting
-#   --free-gpu     Free GPU by killing all processes using it before setup
+# The script automatically:
+#   - Detects and frees GPU if in use
+#   - Cleans up Calico CNI conflicts
+#   - Joins cluster automatically if join command is available
+#   - Fetches join command from master if not found locally
 #
 # Prerequisites:
 #   - Ubuntu 20.04/22.04
@@ -36,21 +38,11 @@ success() { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 
-# Parse command line arguments
-AUTO_JOIN=false
-FREE_GPU=false
+# Parse command line arguments (config file only, everything else is automatic)
 CONFIG_FILE="$PROJECT_ROOT/config/cluster.env"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --auto-join)
-            AUTO_JOIN=true
-            shift
-            ;;
-        --free-gpu)
-            FREE_GPU=true
-            shift
-            ;;
         --config)
             CONFIG_FILE="$2"
             shift 2
@@ -97,9 +89,7 @@ if [ -z "$MASTER_IP" ]; then
     echo "  MASTER_IP=\"<master-ip-address>\""
     echo "  MASTER_USER=\"<master-username>\""
     echo ""
-    if [ "$AUTO_JOIN" = true ]; then
-        error "Cannot proceed in auto-join mode without MASTER_IP"
-    fi
+    warn "MASTER_IP is required for automated cluster joining"
 fi
 
 echo ""
@@ -363,11 +353,11 @@ cleanup_incomplete_join() {
     fi
     
     # If kubelet is running, we need to check if it's actually working
-    # If we're in auto-join mode and kubelet is running, it likely means a failed join
+    # If kubelet is running but node isn't registered, it's likely a failed join
     if systemctl is-active --quiet kubelet 2>/dev/null; then
-        # In auto-join mode, if we're here it means the node isn't registered
-        # So we should always clean up
-        if [ "$AUTO_JOIN" = true ]; then
+        # Check if node is actually registered in cluster
+        # If not, we should clean up and rejoin
+        if ! kubectl get nodes | grep "$(hostname)" | grep -q " Ready " 2>/dev/null; then
             HAS_PARTIAL_STATE=true
         fi
     fi
@@ -471,25 +461,9 @@ join_cluster() {
                     warn "kubelet is running but cannot verify node registration."
                     warn "If the node is not showing in 'kubectl get nodes', this is a failed join."
                     
-                    # In auto-join mode, automatically reset and rejoin
-                    if [ "$AUTO_JOIN" = true ]; then
-                        log "Auto-join mode: automatically resetting and rejoining..."
-                        cleanup_incomplete_join
-                    elif [ -t 0 ]; then
-                        # Interactive mode - prompt
-                        read -p "Reset and rejoin? (y/n) " -n 1 -r
-                        echo
-                        if [[ $REPLY =~ ^[Yy]$ ]]; then
-                            cleanup_incomplete_join
-                        else
-                            warn "Skipping join. Run 'sudo kubeadm reset --force' manually if needed."
-                            return
-                        fi
-                    else
-                        # Non-interactive but not auto-join - be safe and reset
-                        log "Non-interactive mode: automatically resetting incomplete join state..."
-                        cleanup_incomplete_join
-                    fi
+                    # Automatically reset and rejoin
+                    log "Automatically resetting and rejoining..."
+                    cleanup_incomplete_join
                 fi
             fi
         fi
@@ -748,17 +722,12 @@ main() {
         error "This script requires root/sudo access"
     fi
     
-    # Free GPU if requested or if GPU is in use
-    if [ "$FREE_GPU" = true ]; then
-        free_gpu
-    else
-        # Auto-detect if GPU is in use and free it
-        if command -v nvidia-smi &>/dev/null; then
-            GPU_PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v '^$' || echo "")
-            if [ -n "$GPU_PIDS" ]; then
-                warn "GPU is in use. Freeing GPU before setup..."
-                free_gpu
-            fi
+    # Auto-detect if GPU is in use and free it
+    if command -v nvidia-smi &>/dev/null; then
+        GPU_PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v '^$' || echo "")
+        if [ -n "$GPU_PIDS" ]; then
+            warn "GPU is in use. Freeing GPU before setup..."
+            free_gpu
         fi
     fi
     
@@ -780,35 +749,24 @@ main() {
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
     
-    # Check if join command file exists
+    # Check if join command file exists and auto-join
     JOIN_CMD_FILE="$PROJECT_ROOT/config/join-command.sh"
     
-    if [ "$AUTO_JOIN" = true ]; then
-        log "Auto-join enabled, joining cluster..."
+    if [ -f "$JOIN_CMD_FILE" ]; then
+        # Auto-join if join command is available
+        log "Join command found, joining cluster..."
         join_cluster
-    elif [ -f "$JOIN_CMD_FILE" ]; then
-        # If join command exists and we're in a TTY, prompt
-        if [ -t 0 ]; then
-            read -p "Join cluster now? (y/n) " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
-                join_cluster
-            else
-                echo ""
-                echo "To join later, run:"
-                echo "  sudo bash $JOIN_CMD_FILE"
-            fi
-        else
-            # Non-interactive mode - auto-join if file exists
-            log "Non-interactive mode detected, auto-joining cluster..."
-            join_cluster
-        fi
     else
-        warn "Join command file not found: $JOIN_CMD_FILE"
-        echo "Run setup_master.sh first to generate the join command, then:"
-        echo "  1. Copy config/join-command.sh to this node, or"
-        echo "  2. Run the join command manually:"
-        echo "     sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash <hash>"
+        # Try to fetch join command from master if not found locally
+        if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
+            log "Join command not found locally, attempting to fetch from master..."
+            join_cluster  # This will try to fetch from master
+        else
+            warn "Join command file not found: $JOIN_CMD_FILE"
+            echo "Run setup_master.sh first to generate the join command, then:"
+            echo "  1. Copy config/join-command.sh to this node, or"
+            echo "  2. Set MASTER_IP and MASTER_USER in config/cluster.env.local to auto-fetch"
+        fi
     fi
     
     echo ""
