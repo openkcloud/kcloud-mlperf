@@ -13,10 +13,19 @@ spec:
       runtimeClassName: nvidia
       nodeSelector:
         nvidia.com/gpu.present: "true"
-      tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       initContainers:
       # Clone MLCommons inference repo if not present
       - name: setup
