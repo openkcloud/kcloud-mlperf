@@ -32,10 +32,18 @@ spec:
         tolerationSeconds: 300
       dnsPolicy: ClusterFirst
       dnsConfig:
+        nameservers:
+        - 10.96.0.10
+        - 8.8.8.8
+        - 8.8.4.4
         options:
         - name: ndots
           value: "2"
         - name: edns0
+        - name: timeout
+          value: "2"
+        - name: attempts
+          value: "3"
       containers:
       - name: bench
         image: vllm/vllm-openai:v0.6.6
