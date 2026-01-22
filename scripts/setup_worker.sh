@@ -455,58 +455,61 @@ join_cluster() {
         log "Setting up passwordless SSH to master..."
         log "Note: You may be prompted for password once (this is a one-time setup)"
         
-        # Method 1: Try ssh-copy-id
-        if command -v ssh-copy-id &>/dev/null; then
-            log "Trying ssh-copy-id..."
-            log "You will be prompted for the master password (one-time setup)..."
-            # ssh-copy-id will prompt for password interactively
-            # We can't fully automate this, but we can check if it worked after
-            # Use -i to specify our dedicated key (use private key, ssh-copy-id will find the .pub)
-            # Disable SSH agent to force use of our key
+        # Method 1: Manual key copy (more reliable than ssh-copy-id for dedicated keys)
+        # This gives us full control over which key is used
+        log "Copying SSH key to master..."
+        log "You will be prompted for the master password (one-time setup)..."
+        if [ -f "$SSH_PUB_KEY" ]; then
+            PUB_KEY_CONTENT=$(cat "$SSH_PUB_KEY")
             log "Using dedicated SSH key: $SSH_KEY"
-            SSH_AUTH_SOCK="" ssh-copy-id -i "$SSH_KEY" -f -o StrictHostKeyChecking=no \
-               -o IdentitiesOnly=yes \
-               "${MASTER_USER}@${MASTER_IP}" 2>&1
-            SSH_COPY_EXIT=$?
+            
+            # Copy the key to master's authorized_keys
+            # This will prompt for password, but ensures we use the right key
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+               "${MASTER_USER}@${MASTER_IP}" \
+               "mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
+                if ! grep -qF '${PUB_KEY_CONTENT}' ~/.ssh/authorized_keys 2>/dev/null; then \
+                  echo '${PUB_KEY_CONTENT}' >> ~/.ssh/authorized_keys; \
+                fi && \
+                chmod 600 ~/.ssh/authorized_keys" 2>&1; then
+                SSH_COPY_EXIT=0
+            else
+                SSH_COPY_EXIT=$?
+            fi
             
             # Wait a moment for the key to be processed
             sleep 2
             
-            # Verify it worked by testing passwordless SSH with our key
+            # Verify it worked by testing passwordless SSH with our dedicated key
             # Disable SSH agent and force use of our key
             if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
                -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
                "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
-                success "SSH key copied to master via ssh-copy-id"
+                success "SSH key copied to master successfully"
                 return 0
             elif [ $SSH_COPY_EXIT -eq 0 ]; then
-                # ssh-copy-id succeeded but passwordless SSH not working yet
+                # Key copy succeeded but passwordless SSH not working yet
                 # This can happen if the key was added but needs a moment
-                log "ssh-copy-id completed, waiting for SSH to propagate..."
+                log "Key copied, waiting for SSH to propagate..."
                 sleep 3
                 if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
                    -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
-                    success "SSH key copied to master via ssh-copy-id"
+                    success "SSH key copied to master successfully"
                     return 0
                 else
-                    warn "ssh-copy-id completed but passwordless SSH not working"
-                    warn "Verifying key was added to master at ${MASTER_IP}..."
-                    # Try to check if key is on master (use password auth for this check)
-                    PUB_KEY_FINGERPRINT=$(ssh-keygen -lf "$SSH_PUB_KEY" 2>/dev/null | awk '{print $2}')
-                    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                    warn "Key was copied but passwordless SSH not working"
+                    warn "Verifying key on master and checking permissions..."
+                    # Check if key is on master and verify permissions
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
                        "${MASTER_USER}@${MASTER_IP}" \
-                       "grep -q '$(cat $SSH_PUB_KEY | cut -d\" \" -f1-2)' ~/.ssh/authorized_keys 2>/dev/null" 2>/dev/null; then
-                        log "Key appears to be on master, but passwordless SSH not working"
-                        log "Checking master SSH permissions..."
-                        # Check permissions on master
-                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-                           "${MASTER_USER}@${MASTER_IP}" \
-                           "ls -la ~/.ssh/authorized_keys 2>/dev/null || echo 'authorized_keys not found'" 2>/dev/null || true
-                    fi
+                       "grep -qF '${PUB_KEY_CONTENT}' ~/.ssh/authorized_keys 2>/dev/null && \
+                        echo 'Key found' && \
+                        ls -la ~/.ssh/authorized_keys ~/.ssh/ 2>/dev/null || \
+                        echo 'Key not found or permission issue'" 2>/dev/null || true
                 fi
             else
-                log "ssh-copy-id failed or was cancelled (exit code: $SSH_COPY_EXIT)"
+                log "SSH key copy failed or was cancelled (exit code: $SSH_COPY_EXIT)"
             fi
         fi
         
