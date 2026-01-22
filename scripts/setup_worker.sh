@@ -215,6 +215,14 @@ configure_nvidia_runtime() {
 install_kubernetes() {
     log "[6/8] Installing Kubernetes components..."
     
+    # Remove any conflicting Calico CNI configs before installing Kubernetes
+    # Worker nodes should use Flannel (installed on master), not Calico
+    if [ -f /etc/cni/net.d/10-calico.conflist ]; then
+        warn "Found Calico CNI configuration on worker node. Removing to prevent conflicts with Flannel."
+        sudo rm -f /etc/cni/net.d/10-calico.conflist /etc/cni/net.d/calico-kubeconfig
+        success "Calico CNI configuration removed"
+    fi
+    
     K8S_VERSION="${K8S_VERSION:-1.28}"
     
     if command -v kubelet &>/dev/null; then
