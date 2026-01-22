@@ -804,8 +804,21 @@ main() {
             fi
             
             if [ "$NODE_READY" = true ]; then
-                # Node is healthy, no need to rejoin
-                return
+                # Node is healthy, verify it stays Ready
+                log "Node is Ready, verifying stability..."
+                sleep 3
+                NODE_STATUS=$(SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                             -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+                             "${MASTER_USER}@${MASTER_IP}" \
+                             "kubectl get node $NODE_NAME -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" 2>/dev/null || echo "")
+                if [ "$NODE_STATUS" = "True" ]; then
+                    success "Node is Ready and stable"
+                    return
+                else
+                    warn "Node became NotReady. Restarting kubelet..."
+                    sudo systemctl restart kubelet
+                    sleep 5
+                fi
             fi
         fi
     fi
@@ -827,6 +840,42 @@ main() {
             echo "Run setup_master.sh first to generate the join command, then:"
             echo "  1. Copy config/join-command.sh to this node, or"
             echo "  2. Set MASTER_IP and MASTER_USER in config/cluster.env.local to auto-fetch"
+        fi
+    fi
+    
+    # After joining, verify node is Ready and fix if needed
+    if [ -f /etc/kubernetes/kubelet.conf ] && systemctl is-active --quiet kubelet 2>/dev/null; then
+        if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
+            SSH_KEY="$HOME/.ssh/id_ed25519_kcloud"
+            if [ -f "$SSH_KEY" ]; then
+                log "Verifying node is Ready in cluster after join..."
+                NODE_NAME=$(hostname)
+                sleep 3  # Give kubelet a moment to report status
+                for i in {1..12}; do
+                    NODE_STATUS=$(SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                                 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+                                 "${MASTER_USER}@${MASTER_IP}" \
+                                 "kubectl get node $NODE_NAME -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" 2>/dev/null || echo "")
+                    if [ "$NODE_STATUS" = "True" ]; then
+                        success "Node is Ready in cluster"
+                        break
+                    elif [ "$NODE_STATUS" = "False" ] || [ "$NODE_STATUS" = "Unknown" ]; then
+                        if [ $i -eq 1 ]; then
+                            warn "Node is NotReady. Restarting kubelet..."
+                            sudo systemctl restart kubelet
+                            sleep 5
+                        fi
+                        log "Waiting for node to become Ready... ($i/12)"
+                        sleep 5
+                    else
+                        log "Waiting for node status... ($i/12)"
+                        sleep 5
+                    fi
+                done
+                if [ "$NODE_STATUS" != "True" ]; then
+                    warn "Node may still not be Ready. Check manually: kubectl get nodes"
+                fi
+            fi
         fi
     fi
     
