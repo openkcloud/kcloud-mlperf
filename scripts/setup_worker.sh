@@ -442,8 +442,10 @@ join_cluster() {
         fi
         
         # Test if passwordless SSH already works with our dedicated key
+        # Disable SSH agent to force use of our key
         log "Testing passwordless SSH connection to master (${MASTER_IP})..."
-        if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+        if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+           -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
             success "Passwordless SSH already configured"
             return 0
@@ -460,19 +462,20 @@ join_cluster() {
             # ssh-copy-id will prompt for password interactively
             # We can't fully automate this, but we can check if it worked after
             # Use -i to specify our dedicated key (use private key, ssh-copy-id will find the .pub)
+            # Disable SSH agent to force use of our key
             log "Using dedicated SSH key: $SSH_KEY"
-            if ssh-copy-id -i "$SSH_KEY" -f -o StrictHostKeyChecking=no \
-               "${MASTER_USER}@${MASTER_IP}" 2>&1; then
-                SSH_COPY_EXIT=$?
-            else
-                SSH_COPY_EXIT=$?
-            fi
+            SSH_AUTH_SOCK="" ssh-copy-id -i "$SSH_KEY" -f -o StrictHostKeyChecking=no \
+               -o IdentitiesOnly=yes \
+               "${MASTER_USER}@${MASTER_IP}" 2>&1
+            SSH_COPY_EXIT=$?
             
             # Wait a moment for the key to be processed
             sleep 2
             
             # Verify it worked by testing passwordless SSH with our key
-            if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+            # Disable SSH agent and force use of our key
+            if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+               -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
                "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                 success "SSH key copied to master via ssh-copy-id"
                 return 0
@@ -481,7 +484,8 @@ join_cluster() {
                 # This can happen if the key was added but needs a moment
                 log "ssh-copy-id completed, waiting for SSH to propagate..."
                 sleep 3
-                if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                   -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via ssh-copy-id"
                     return 0
@@ -509,7 +513,8 @@ join_cluster() {
         # Method 2: Manual method (only if ssh-copy-id didn't work and passwordless SSH still doesn't work)
         # Check again if passwordless SSH works (maybe it just needed a moment)
         sleep 2
-        if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+        if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+           -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
             success "Passwordless SSH is now working"
             return 0
@@ -523,12 +528,15 @@ join_cluster() {
             log "Using dedicated SSH key: $SSH_KEY"
             # This will also prompt for password, but we try it
             # Use the dedicated key (even though it has no passphrase, we specify it for consistency)
-            if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            # Disable SSH agent to force use of our key
+            if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+               -o IdentitiesOnly=yes \
                "${MASTER_USER}@${MASTER_IP}" \
                "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" 2>&1; then
                 # Verify it worked
                 sleep 3
-                if ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                   -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
                    "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
                     success "SSH key copied to master via manual method"
                     return 0
@@ -555,8 +563,9 @@ join_cluster() {
         # Always setup SSH keys if passwordless SSH doesn't work
         log "Ensuring SSH access to master (${MASTER_IP}) is configured..."
         SSH_KEY="$HOME/.ssh/id_ed25519_kcloud"
-        if ! ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
-           -o StrictHostKeyChecking=no \
+        # Disable SSH agent to force use of our dedicated key
+        if ! SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+           -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
            "${MASTER_USER}@${MASTER_IP}" "exit" 2>/dev/null; then
             if ! setup_ssh_keys; then
                 error "Could not setup SSH access to master. Please ensure:"
@@ -572,7 +581,9 @@ join_cluster() {
         if command -v scp &>/dev/null; then
             mkdir -p "$PROJECT_ROOT/config"
             log "Fetching from ${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh"
-            if scp -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            # Disable SSH agent to force use of our dedicated key
+            if SSH_AUTH_SOCK="" scp -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no \
+               -o ConnectTimeout=10 -o IdentitiesOnly=yes \
                "${MASTER_USER}@${MASTER_IP}:${PROJECT_ROOT}/config/join-command.sh" \
                "$JOIN_CMD_FILE" 2>/dev/null; then
                 chmod +x "$JOIN_CMD_FILE"
@@ -580,7 +591,8 @@ join_cluster() {
             else
                 # Try alternative: get join command directly via SSH
                 log "File fetch failed, trying to get join command directly from master..."
-                JOIN_CMD=$(ssh -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                JOIN_CMD=$(SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no \
+                          -o ConnectTimeout=10 -o IdentitiesOnly=yes \
                           "${MASTER_USER}@${MASTER_IP}" \
                           "cd ${PROJECT_ROOT} && kubeadm token create --print-join-command 2>/dev/null" 2>/dev/null)
                 
