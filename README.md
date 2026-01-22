@@ -56,16 +56,16 @@ nano config/cluster.env.local
 `config/cluster.env.local` 예시:
 ```bash
 # Master Node Configuration
-MASTER_IP="129.254.202.181"        # 마스터 노드 IP
-MASTER_USER="jungwooshim"         # 마스터 노드 사용자명
+MASTER_IP="192.168.1.100"          # 마스터 노드 IP (실제 IP로 변경)
+MASTER_USER="ubuntu"               # 마스터 노드 사용자명 (실제 사용자명으로 변경)
 
 # Worker Node Configuration
-WORKER_IP="129.254.202.129"       # 워커 노드 IP
-WORKER_USER="jungwooshim"         # 워커 노드 사용자명
-WORKER_SSH_PORT="22"              # SSH 포트 (기본값: 22)
+WORKER_IP="192.168.1.101"          # 워커 노드 IP (실제 IP로 변경)
+WORKER_USER="ubuntu"               # 워커 노드 사용자명 (실제 사용자명으로 변경)
+WORKER_SSH_PORT="22"               # SSH 포트 (기본값: 22)
 
 # HuggingFace Token (필수)
-HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxx"  # HuggingFace 토큰
+HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxx"  # HuggingFace 토큰 (실제 토큰으로 변경)
 
 # Kubernetes Configuration (선택사항)
 K8S_VERSION="1.28"                 # Kubernetes 버전
@@ -81,9 +81,9 @@ nano config/cluster.env.local
 
 워커 노드 최소 설정:
 ```bash
-MASTER_IP="129.254.202.181"       # 마스터 노드 IP (필수)
-MASTER_USER="jungwooshim"         # 마스터 노드 사용자명 (필수)
-HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxx"  # HuggingFace 토큰
+MASTER_IP="192.168.1.100"          # 마스터 노드 IP (실제 IP로 변경, 필수)
+MASTER_USER="ubuntu"               # 마스터 노드 사용자명 (실제 사용자명으로 변경, 필수)
+HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxx"  # HuggingFace 토큰 (실제 토큰으로 변경)
 ```
 
 ### 2) 클러스터 설치
