@@ -337,6 +337,25 @@ cleanup_incomplete_join() {
             fi
         fi
         
+        # Restart containerd (it was stopped for cleanup, but kubeadm join needs it)
+        log "Restarting containerd (required for kubeadm join)..."
+        sudo systemctl start containerd || true
+        sudo systemctl enable containerd || true
+        sleep 2
+        
+        # Verify containerd is running
+        if ! systemctl is-active --quiet containerd 2>/dev/null; then
+            warn "containerd failed to start, attempting to start again..."
+            sudo systemctl start containerd || true
+            sleep 2
+        fi
+        
+        if systemctl is-active --quiet containerd 2>/dev/null; then
+            success "containerd is running"
+        else
+            error "containerd failed to start - kubeadm join will fail"
+        fi
+        
         success "kubeadm join state cleaned up"
     fi
 }
@@ -613,6 +632,21 @@ join_cluster() {
     fi
     
     if [ -f "$JOIN_CMD_FILE" ]; then
+        # Ensure containerd is running before join (required by kubeadm)
+        if ! systemctl is-active --quiet containerd 2>/dev/null; then
+            log "Starting containerd (required for kubeadm join)..."
+            sudo systemctl start containerd || true
+            sudo systemctl enable containerd || true
+            sleep 2
+            
+            if ! systemctl is-active --quiet containerd 2>/dev/null; then
+                error "containerd is not running - kubeadm join will fail"
+                error "Please start containerd manually: sudo systemctl start containerd"
+                exit 1
+            fi
+            success "containerd is running"
+        fi
+        
         log "Using join command from $JOIN_CMD_FILE"
         sudo bash "$JOIN_CMD_FILE"
         success "Joined cluster successfully"
