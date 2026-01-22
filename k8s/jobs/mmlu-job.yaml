@@ -30,6 +30,12 @@ spec:
         operator: Exists
         effect: NoExecute
         tolerationSeconds: 300
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "2"
+        - name: edns0
       containers:
       - name: bench
         image: vllm/vllm-openai:v0.6.6
