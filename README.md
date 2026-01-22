@@ -119,8 +119,8 @@ kubectl get pods -n kube-system
 cd ~/kcloud-mlperf
 git pull  # 최신 코드 받기
 
-# 자동 조인 모드 (권장)
-./scripts/setup_worker.sh --auto-join
+# 자동으로 모든 작업 수행 (GPU 해제, Calico 정리, 클러스터 조인)
+./scripts/setup_worker.sh
 ```
 
 이 스크립트는 자동으로:
@@ -133,12 +133,6 @@ git pull  # 최신 코드 받기
 - 클러스터 자동 조인 (`kubeadm join`)
 - 불완전한 조인 상태 자동 정리
 
-**수동 모드 (자동 조인이 실패한 경우):**
-```bash
-./scripts/setup_worker.sh
-# 조인 명령어를 수동으로 입력하거나
-# 마스터에서 생성된 join-command.sh를 복사하여 실행
-```
 
 **워커 조인 확인 (마스터 노드에서):**
 ```bash
@@ -225,11 +219,10 @@ kcloud-mlperf/
 - ✅ 불완전한 조인 상태 자동 감지 및 정리
 - ✅ SSH 키 자동 생성 및 마스터에 복사 (비밀번호 1회 입력)
 - ✅ 마스터에서 조인 명령어 자동 가져오기
-- ✅ `--auto-join` 플래그로 완전 자동화
-- ✅ `--free-gpu` 플래그로 GPU 프로세스 강제 종료
 - ✅ GPU 사용 프로세스 자동 감지 및 해제
 - ✅ Calico CNI 충돌 자동 정리
 - ✅ containerd 자동 재시작 (필요 시)
+- ✅ 완전 자동화 - 플래그 없이 모든 작업 자동 수행
 
 ---
 
@@ -342,15 +335,13 @@ ssh-copy-id -i ~/.ssh/id_ed25519_kcloud.pub <MASTER_USER>@<MASTER_IP>
 **해결:**
 ```bash
 # 워커 노드에서 - setup_worker.sh가 자동으로 처리합니다
-./scripts/setup_worker.sh --auto-join --free-gpu
-
-# 또는 GPU만 해제하려면 (자동 감지됨)
-./scripts/setup_worker.sh --free-gpu
+./scripts/setup_worker.sh
 
 # setup_worker.sh는 다음을 자동으로 처리합니다:
 # - GPU 사용 프로세스 자동 감지 및 종료
 # - Calico CNI 충돌 자동 정리
 # - kubelet 재시작 (필요 시)
+# - 클러스터 자동 조인
 ```
 
 ### 5) containerd 오류: "container runtime is not running"
