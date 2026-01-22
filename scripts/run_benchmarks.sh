@@ -398,13 +398,25 @@ run_job() {
     echo ""
     local poll_count=0
     local start_time=$(date +%s)
+    local max_wait_time=7200  # 2 hours max wait time
     while true; do
         sleep 10
         poll_count=$((poll_count + 1))
+        local now=$(date +%s)
+        local elapsed=$((now - start_time))
+        
+        # Check for timeout
+        if [ $elapsed -gt $max_wait_time ]; then
+            kill $logs_pid 2>/dev/null || true
+            wait $logs_pid 2>/dev/null || true
+            echo ""
+            echo "✗ $description: TIMEOUT (exceeded ${max_wait_time}s)"
+            echo "FAIL $description (timeout)" >> "$SUMMARY_FILE"
+            return 1
+        fi
         
         if [ $((poll_count % 3)) -eq 0 ]; then
-            local now=$(date +%s)
-            local elapsed_min=$(( (now - start_time) / 60 ))
+            local elapsed_min=$((elapsed / 60))
             local pod_status_now=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
             
             local recent_progress=$(kubectl logs $pod -n $NAMESPACE --tail=10 2>/dev/null | grep -E '^\s*\[|samples/s|q/s|ETA:|%' | tail -3)
@@ -417,8 +429,9 @@ run_job() {
             fi
         fi
         
-        succeeded=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.succeeded}' 2>/dev/null)
-        failed=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.failed}' 2>/dev/null)
+        # Check Job status first (most reliable)
+        succeeded=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+        failed=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
         
         if [ "$succeeded" = "1" ]; then
             kill $logs_pid 2>/dev/null || true
@@ -443,15 +456,36 @@ run_job() {
             return 1
         fi
         
-        local current_pod_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
+        # Also check Pod status as fallback
+        local current_pod_status=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
         if [ "$current_pod_status" = "Succeeded" ]; then
-            kill $logs_pid 2>/dev/null || true
-            wait $logs_pid 2>/dev/null || true
-            echo ""
-            # Extract metrics from log file
-            extract_metrics "$job_name" "$log_file" "$metrics_file"
-            echo "✓ $description: PASS"
-            return 0
+            # Pod succeeded but Job status might not be updated yet, wait a bit more
+            sleep 5
+            # Re-check Job status
+            succeeded=$(kubectl get job $job_name -n $NAMESPACE -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+            if [ "$succeeded" = "1" ]; then
+                kill $logs_pid 2>/dev/null || true
+                wait $logs_pid 2>/dev/null || true
+                echo ""
+                # Extract metrics from log file
+                extract_metrics "$job_name" "$log_file" "$metrics_file"
+                echo "✓ $description: PASS"
+                echo "PASS $description" >> "$SUMMARY_FILE"
+                return 0
+            else
+                # Pod succeeded but Job not marked as succeeded - check exit code
+                local exit_code=$(kubectl get pod $pod -n $NAMESPACE -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")
+                if [ "$exit_code" = "0" ] || [ -z "$exit_code" ]; then
+                    kill $logs_pid 2>/dev/null || true
+                    wait $logs_pid 2>/dev/null || true
+                    echo ""
+                    # Extract metrics from log file
+                    extract_metrics "$job_name" "$log_file" "$metrics_file"
+                    echo "✓ $description: PASS (Pod succeeded)"
+                    echo "PASS $description" >> "$SUMMARY_FILE"
+                    return 0
+                fi
+            fi
         elif [ "$current_pod_status" = "Failed" ]; then
             kill $logs_pid 2>/dev/null || true
             wait $logs_pid 2>/dev/null || true
