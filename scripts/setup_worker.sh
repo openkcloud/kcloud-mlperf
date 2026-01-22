@@ -435,10 +435,6 @@ join_cluster() {
     # This is more reliable than just checking if kubelet.conf exists
     if [ -f /etc/kubernetes/kubelet.conf ]; then
         if systemctl is-active --quiet kubelet 2>/dev/null; then
-            # Check if kubelet is actually connected to the API server
-            # Look for connection errors in kubelet status
-            KUBELET_STATUS=$(systemctl status kubelet --no-pager 2>&1 | grep -i "error\|failed\|unable" | head -3)
-            
             # Check if we can verify node registration (if kubectl is available and configured)
             NODE_REGISTERED=false
             if command -v kubectl &>/dev/null && [ -f ~/.kube/config ]; then
@@ -450,19 +446,40 @@ join_cluster() {
                 fi
             fi
             
-            # If kubelet is running but node isn't registered, it's likely a failed join
+            # If we can't verify registration (no kubectl/kubeconfig on worker), 
+            # check if kubelet is actually working by looking at its status
             if [ "$NODE_REGISTERED" = false ]; then
+                # Check if kubelet is actually connected to the API server
+                KUBELET_STATUS=$(systemctl status kubelet --no-pager 2>&1 | grep -i "error\|failed\|unable" | head -3)
+                
                 if [ -n "$KUBELET_STATUS" ]; then
-                    warn "kubelet is running but node is not registered. This indicates a failed join."
+                    warn "kubelet is running but has errors. This indicates a failed join."
                     log "Cleaning up incomplete join state..."
                     cleanup_incomplete_join
                 else
-                    # kubelet is running but we can't verify registration - be cautious
-                    warn "kubelet is running but cannot verify node registration."
-                    warn "If the node is not showing in 'kubectl get nodes', this is a failed join."
+                    # kubelet is running but we can't verify registration
+                    # On worker nodes, we typically don't have kubeconfig, so we can't verify
+                    # But if kubelet is running without errors, assume it's working
+                    # However, if join command exists and we're here, something might be wrong
+                    # Let's check if we should rejoin by trying to verify via master
+                    if [ -n "$MASTER_IP" ] && [ -n "$MASTER_USER" ]; then
+                        log "Cannot verify registration locally, checking via master..."
+                        SSH_KEY="$HOME/.ssh/id_ed25519_kcloud"
+                        if [ -f "$SSH_KEY" ]; then
+                            NODE_NAME=$(hostname)
+                            if SSH_AUTH_SOCK="" ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 \
+                               -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+                               "${MASTER_USER}@${MASTER_IP}" \
+                               "kubectl get node $NODE_NAME &>/dev/null" 2>/dev/null; then
+                                success "Node is registered in cluster (verified via master)"
+                                return
+                            fi
+                        fi
+                    fi
                     
-                    # Automatically reset and rejoin
-                    log "Automatically resetting and rejoining..."
+                    # If we can't verify, assume it's a failed join and clean up
+                    warn "kubelet is running but cannot verify node registration."
+                    warn "Cleaning up and rejoining to ensure proper state..."
                     cleanup_incomplete_join
                 fi
             fi
