@@ -236,6 +236,7 @@ cgroupDriver: systemd
 EOF
     
     # Save config for future reference
+    sudo mkdir -p /etc/kubernetes
     sudo cp /tmp/kubeadm-config.yaml /etc/kubernetes/kubeadm-config.yaml
     
     # Initialize cluster
