@@ -1,0 +1,22 @@
+# Secrets
+*.pem
+*.key
+kubeconfig
+.env
+secrets/
+
+# OS
+.DS_Store
+__MACOSX/
+
+# Large binaries
+*.deb
+*.tar.gz
+*.zip
+
+# OMC
+.omc/
+.claude/
+
+# Ansible retry files
+*.retry

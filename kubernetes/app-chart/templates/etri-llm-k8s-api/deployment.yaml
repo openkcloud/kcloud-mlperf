@@ -1,0 +1,38 @@
+{{- with .Values }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .components.etriLLMAPI.metadata.name }}
+  namespace: {{ .global.environment }}
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: etri-llm-api
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/instance: {{ .components.etriLLMAPI.metadata.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .components.etriLLMAPI.metadata.name }}
+  replicas: 1      
+  template:
+    metadata:
+      labels:
+        app: {{ .components.etriLLMAPI.metadata.name }}
+        app.kubernetes.io/instance: {{ .components.etriLLMAPI.metadata.name }}
+    spec:
+      serviceAccountName: {{ .components.etriLLMAPI.metadata.name }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ .components.etriLLMAPI.metadata.name }}
+          ports:
+          - containerPort: {{ .components.etriLLMAPI.containers.containerPort }}
+            name: api
+            protocol: TCP        
+          image: {{ .components.etriLLMAPI.containers.image }}
+          envFrom:
+          - secretRef:
+              name: {{ .components.etriLLMAPI.metadata.name }} 
+      imagePullSecrets:
+      - name: {{ .global.imagePullSecret.metadata.name }}
+{{- end }}

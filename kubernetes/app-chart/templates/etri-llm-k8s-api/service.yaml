@@ -1,0 +1,19 @@
+{{- with .Values }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: etri-llm-api
+    control-plane: controller-manager
+  name: {{ .components.etriLLMAPI.metadata.name }}-service
+  namespace: {{ .global.namespace }}
+spec:
+  ports:
+  - name: api
+    port: {{ .components.etriLLMAPI.containers.containerPort }}
+    protocol: TCP
+    targetPort: {{ .components.etriLLMAPI.containers.containerPort }}
+  selector:
+    app: {{ .components.etriLLMAPI.metadata.name }}
+{{- end }}      
