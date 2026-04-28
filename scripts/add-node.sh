@@ -2,7 +2,7 @@
 # add-node.sh — append a new node to the kubespray inventory and join it to the cluster.
 #
 # Usage:
-#   ./add-node.sh <hostname> <ip> [--port 122] [--role kube_node|kube_control_plane] [--password <SUDO_PASS>]
+#   ./add-node.sh <hostname> <ip> [--port 122] [--role kube_node|kube_control_plane] [--password "$ANSIBLE_PASSWORD"]
 #
 # Examples:
 #   ./add-node.sh node5 10.254.184.197                           # worker on default port
@@ -24,7 +24,12 @@ case "${1:-}" in --help|-h) grep '^# ' "$0" | sed 's/^# //'; exit 0 ;; esac
 NAME="$1"; IP="$2"; shift 2
 PORT=122
 ROLE=kube_node
-PASSWD="${ANSIBLE_PASSWORD:-<SUDO_PASS>}"
+PASSWD="${ANSIBLE_PASSWORD:-${SUDO_PASS:-}}"
+if [ -z "$PASSWD" ]; then
+  echo "ERROR: ANSIBLE_PASSWORD or SUDO_PASS must be set in your environment (e.g. via a sourced .env)." >&2
+  echo "       Refusing to fall back to a hardcoded default. See config/credentials.example.env." >&2
+  exit 2
+fi
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;

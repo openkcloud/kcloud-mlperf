@@ -1,0 +1,63 @@
+# NFS PersistentVolumeClaims for shared benchmark storage.
+#
+# NFS server is node2 (10.254.184.195).
+# These PVCs are consumed by:
+#   - etri-llm-backend deployment (helm chart, volumeMounts: model-volume, dataset-volume, results-volume)
+#   - benchmark Job templates in k8s/benchmark-jobs/
+#
+# The storageClass "nfs-client" is provisioned by the NFS provisioner deployed
+# via kubernetes/02-deploy-nfs-provisioner.sh.
+#
+# Apply:
+#   kubectl apply -f k8s/storage/nfs-pvc-template.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-nfs-pvc
+  namespace: llm-evaluation
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    etri/storage-tier: nfs
+    etri/content: models
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 500Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dataset-nfs-pvc
+  namespace: llm-evaluation
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    etri/storage-tier: nfs
+    etri/content: datasets
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: results-nfs-pvc
+  namespace: llm-evaluation
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    etri/storage-tier: nfs
+    etri/content: results
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 100Gi

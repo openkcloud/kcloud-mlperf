@@ -77,3 +77,15 @@ kubeconfig/config
 
 # Generic kubeconfig
 *.kubeconfig
+
+# Mission hardening pass — ephemeral
+logs/
+results/
+backups/
+*.log
+.env
+config/.env
+node_modules/
+
+# Scrubbed kubespray paths
+kubespray/inventory/etri/credentials/
