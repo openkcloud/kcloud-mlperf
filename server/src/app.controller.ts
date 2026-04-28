@@ -1,9 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { AppService } from './app.service';
 
-@Controller({
-  path: 'api',
-}) // all endpoints start with "api"
+@Controller() // global prefix 'api' is set in main.ts
 export class AppController {
   constructor(private readonly appService: AppService) {}
 

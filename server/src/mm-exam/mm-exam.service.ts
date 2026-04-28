@@ -90,7 +90,21 @@ export class MmExamService implements OnModuleInit {
       console.log(`MM Exam ID=${exam.id} delay: ${mmDelay}`);
 
       if (mmDelay <= 0) {
-        await this.executeCreateGrpcExam(exam);
+        // Use a 30s minimum delay so the operator has time to initialize the CRD
+        // before gRPC status is queried. Without this, the gRPC returns empty
+        // and the exam is permanently marked as Undefined.
+        const minDelay = 30_000;
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        const timeout = setTimeout(async () => {
+          await this.executeCreateGrpcExam(exam);
+          this.schedulerRegistry.deleteTimeout(
+            this.generateScheduleExamId(exam.id),
+          );
+        }, minDelay);
+        this.schedulerRegistry.addTimeout(
+          this.generateScheduleExamId(exam.id),
+          timeout,
+        );
         return;
       }
 
@@ -146,7 +160,7 @@ export class MmExamService implements OnModuleInit {
         datasetName: data.dataset,
         framework: data.framework,
         gpuUtil: `${data.gpu_util}`,
-        maxTestSamples: `${data.data_number}`,
+        maxTestSamples: `${data.data_number === 0 ? '' : data.data_number}`, // 0 = all samples (empty string = no limit)
         modelName: data.model,
         nTrain: `${data.n_train}`, // default value
         precision: data.precision,

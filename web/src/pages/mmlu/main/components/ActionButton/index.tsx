@@ -26,7 +26,7 @@ type ActionButtonProps = {
 // ----------------------------------------------------------------------
 
 export const MmluExamActionButton = (props: ActionButtonProps) => {
-  const { status, id, name, tablePageNumber, errorLog, exam, onUseData } = props;
+  const { status, id, name, tablePageNumber: _tablePageNumber, errorLog, exam, onUseData } = props;
 
   const navigate = useNavigate();
 

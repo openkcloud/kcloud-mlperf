@@ -53,6 +53,7 @@ const RepetitionCell = memo<{ id: number; status: StatusEnum; retryNum: number }
 
 type MmluExamResultTableProps = {
   onUseData?: (exam: MmExamResultList) => void;
+  hideSweepRuns?: boolean;
 };
 
 const createColumns = (
@@ -184,7 +185,7 @@ const DEFAULT_PAGE_SIZE = 10 as const;
 // ----------------------------------------------------------------------
 
 export const MmluExamResultTable = memo((props: MmluExamResultTableProps) => {
-  const { onUseData } = props;
+  const { onUseData, hideSweepRuns = false } = props;
   const { mlExamIds } = useStore(store => store.testComparison);
 
   const navigate = useNavigate();
@@ -208,17 +209,22 @@ export const MmluExamResultTable = memo((props: MmluExamResultTableProps) => {
 
   const filteredData = useMemo(() => {
     if (!data?.list) return [];
-    if (!searchTerm) return data.list;
+
+    const baseList = hideSweepRuns
+      ? data.list.filter(item => !item.description?.startsWith('[sweep:'))
+      : data.list;
+
+    if (!searchTerm) return baseList;
 
     const lowerSearchTerm = searchTerm.toLowerCase();
-    return data.list.filter(
+    return baseList.filter(
       item =>
         item.name.toLowerCase().includes(lowerSearchTerm) ||
         item.model.toLowerCase().includes(lowerSearchTerm) ||
         item.dataset.toLowerCase().includes(lowerSearchTerm) ||
         item.gpu_type.toLowerCase().includes(lowerSearchTerm)
     );
-  }, [data?.list, searchTerm]);
+  }, [data?.list, searchTerm, hideSweepRuns]);
 
   // const paginatedData = useMemo(() => {
   //   const startIndex = pagination.pageIndex * pagination.pageSize;

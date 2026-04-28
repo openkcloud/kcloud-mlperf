@@ -1,12 +1,16 @@
 import { lazy } from 'react';
-import { Navigate, useRoutes } from 'react-router-dom';
+import { Link, Navigate, useRoutes } from 'react-router-dom';
+
+import { Button, Container, Typography } from '@mui/material';
 
 import {
+  DashboardPageLinks,
   HomePageLinks,
   MmluPageLinks,
-  MpExamPageLinks
+  MpExamPageLinks,
+  NpuEvalPageLinks
 } from '@/contexts/RouterContext/router.links.ts';
-import { MlPerfPaths, MmluPaths } from '@/contexts/RouterContext/router.paths.ts';
+import { MlPerfPaths, MmluPaths, NpuEvalPaths } from '@/contexts/RouterContext/router.paths.ts';
 
 // ----------------------------------------------------------------------
 
@@ -18,11 +22,26 @@ const MLPerfPage = lazy(() => import('@/pages/mlperf/main'));
 const MMLUTestComparisonPage = lazy(() => import('@/pages/mmlu/test-comparison'));
 const MMLUTestResultPage = lazy(() => import('@/pages/mmlu/test-result'));
 
+const NpuEvalPage = lazy(() => import('@/pages/npu/main'));
+const NpuTestResultPage = lazy(() => import('@/pages/npu/test-result'));
+const NpuComparisonPage = lazy(() => import('@/pages/npu/test-comparison'));
+const DeviceComparisonPage = lazy(() => import('@/pages/npu/device-comparison'));
+
+const GpuRealtimePage = lazy(() => import('@/pages/dashboard/gpu-realtime'));
+const SweepControlPage = lazy(() => import('@/pages/dashboard/sweep-control'));
+const MlperfDeviceComparisonPage = lazy(() => import('@/pages/mlperf/device-comparison'));
+const MmluDeviceComparisonPage = lazy(() => import('@/pages/mmlu/device-comparison'));
+
 // ----------------------------------------------------------------------
 
-const NotFoundPage = () => {
-  return <h1>Not found page</h1>;
-};
+const NotFoundPage = () => (
+  <Container maxWidth="sm" sx={{ py: 12, textAlign: 'center' }}>
+    <Typography variant="h1" sx={{ fontSize: '6rem', fontWeight: 700, color: 'text.disabled' }}>404</Typography>
+    <Typography variant="h5" sx={{ mt: 2 }}>Page not found</Typography>
+    <Typography variant="body1" sx={{ mt: 1, color: 'text.secondary' }}>The page you're looking for doesn't exist or has moved.</Typography>
+    <Button component={Link} to="/" variant="contained" sx={{ mt: 4 }}>Go home</Button>
+  </Container>
+);
 
 // ----------------------------------------------------------------------
 
@@ -48,6 +67,10 @@ export const Routes = () => {
         {
           path: MlPerfPaths.RESULT_PATH,
           element: <TestResultPage />
+        },
+        {
+          path: MlPerfPaths.DEVICE_COMPARISON_PATH,
+          element: <MlperfDeviceComparisonPage />
         }
       ]
     },
@@ -67,8 +90,45 @@ export const Routes = () => {
         {
           path: MmluPaths.RESULT_PATH,
           element: <MMLUTestResultPage />
+        },
+        {
+          path: MmluPaths.DEVICE_COMPARISON_PATH,
+          element: <MmluDeviceComparisonPage />
         }
       ]
+    },
+
+    // npu eval pages
+    {
+      path: NpuEvalPageLinks.main,
+      children: [
+        {
+          index: true,
+          element: <NpuEvalPage />
+        },
+        {
+          path: NpuEvalPaths.COMPARISON_PATH,
+          element: <NpuComparisonPage />
+        },
+        {
+          path: NpuEvalPaths.RESULT_PATH,
+          element: <NpuTestResultPage />
+        },
+        {
+          path: NpuEvalPaths.DEVICE_COMPARISON_PATH,
+          element: <DeviceComparisonPage />
+        }
+      ]
+    },
+
+    // dashboard pages
+    {
+      path: DashboardPageLinks.gpuRealtime,
+      element: <GpuRealtimePage />
+    },
+    {
+      path: DashboardPageLinks.sweepControl,
+      element: <SweepControlPage />
     },
 
     // not found pages

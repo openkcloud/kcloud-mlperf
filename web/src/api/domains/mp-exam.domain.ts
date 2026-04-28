@@ -25,7 +25,7 @@ export const MpExamApi = {
   update: async (params: { id: number } & Partial<MpExamCreateBody>) => {
     const { id, ...rest } = params;
 
-    const { data } = await httpClient.patch<MpExamDetails>(`mp-exam/update/${id}`, {
+    const { data } = await httpClient.patch<MpExamDetails>(`/mp-exam/update/${id}`, {
       ...rest
     });
 
@@ -83,7 +83,7 @@ export const MpExamApi = {
   // ----------------------------------------------------------------------
 
   stopExam: async (id: number) => {
-    const { data } = await httpClient.patch<MpExamDetails>(`mp-exam/stop/${id}`);
+    const { data } = await httpClient.patch<MpExamDetails>(`/mp-exam/stop/${id}`);
 
     return data;
   },

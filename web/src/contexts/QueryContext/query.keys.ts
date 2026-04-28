@@ -41,6 +41,23 @@ export const MmExamQueryKeys = {
 
 // ----------------------------------------------------------------------
 
+export const NpuEvalQueryKeys = {
+  PREFIX: 'npu-eval',
+
+  list: (page: number, limit: number = 10, search?: string) => [
+    NpuEvalQueryKeys.PREFIX,
+    'list',
+    page,
+    limit,
+    search
+  ],
+  details: (id: number | string) => [NpuEvalQueryKeys.PREFIX, 'details', id.toString()],
+  npuList: () => [NpuEvalQueryKeys.PREFIX, 'npu-list'],
+  checkExamStatus: (id: string | number) => [NpuEvalQueryKeys.PREFIX, 'exam-status', id.toString()]
+} as const;
+
+// ----------------------------------------------------------------------
+
 export const FilesQueryKeys = {
   PREFIX: 'files',
 

@@ -63,7 +63,7 @@ export const BarGraph = memo((props: BarChartProps) => {
     >
       <BarChart
         height={400}
-        dataset={sanitizedDataset}
+        dataset={sanitizedDataset as typeof dataset}
         series={styledSeries}
         xAxis={styledXAxis}
         yAxis={styledYAxis}

@@ -17,5 +17,6 @@ import { GrpcClientModule } from '../grpc-client/grpc-client.module';
   ],
   controllers: [MpExamController],
   providers: [MpExamService],
+  exports: [MpExamService],
 })
 export class MpExamModule {}

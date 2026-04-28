@@ -88,7 +88,11 @@ export class MpExam {
   })
   status: string;
 
-  // Test GPU type: A6000
+  // Device type: GPU or NPU
+  @Column({ type: 'varchar', length: 10, default: 'GPU' })
+  device_type: string;
+
+  // Test GPU/NPU type: A6000, L40, A40, RNGD
   @Column({ type: 'varchar', length: 100 })
   gpu_type: string;
 

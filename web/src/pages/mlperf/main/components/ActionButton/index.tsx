@@ -26,7 +26,7 @@ type MlPerfExamActionButtonProps = {
 // ----------------------------------------------------------------------
 
 export const MlPerfExamActionButton = (props: MlPerfExamActionButtonProps) => {
-  const { status, id, name, tablePageNumber, errorLog, exam, onUseData } = props;
+  const { status, id, name, tablePageNumber: _tablePageNumber, errorLog, exam, onUseData } = props;
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();

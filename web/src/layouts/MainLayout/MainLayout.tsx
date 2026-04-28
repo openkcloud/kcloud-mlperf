@@ -3,14 +3,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 
 import { Box, Drawer, IconButton, Typography, useMediaQuery, useTheme, styled } from '@mui/material';
 import { Menu as MenuIcon, Close as CloseIcon } from '@mui/icons-material';
-import clsx from 'clsx';
+import _clsx from 'clsx';
 
 import ChevronRightSVG from '@/assets/icons/chevron-right.svg?react';
 import CloudSVG from '@/assets/icons/cloud.svg?react';
 import HexagonSVG from '@/assets/icons/hexagon.svg?react';
 import { AppLoader } from '@/components/AppLoader';
 
-import { MmluPageLinks, MpExamPageLinks } from '@/contexts/RouterContext/router.links.ts';
+import { DashboardPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks } from '@/contexts/RouterContext/router.links.ts';
 
 // ----------------------------------------------------------------------
 
@@ -99,7 +99,7 @@ const StyledNavLink = styled(NavLink)(() => ({
 
 // ----------------------------------------------------------------------
 
-const NAV_ITEMS = [
+const BENCHMARK_NAV_ITEMS = [
   {
     to: MpExamPageLinks.main,
     label: 'MLPerf',
@@ -110,9 +110,57 @@ const NAV_ITEMS = [
   {
     to: MmluPageLinks.main,
     label: 'MMLU-Pro',
-    sublabel: 'Language Understanding',
+    sublabel: 'Language understanding',
     Icon: HexagonSVG,
     segment: 'mmlu'
+  },
+  {
+    to: NpuEvalPageLinks.main,
+    label: 'NPU Eval (FuriosaAI RNGD)',
+    sublabel: 'Accelerator evaluation',
+    Icon: HexagonSVG,
+    segment: 'npu-eval'
+  }
+] as const;
+
+const COMPARISON_NAV_ITEMS = [
+  {
+    to: MpExamPageLinks.deviceComparison,
+    label: 'MLPerf vs NPU',
+    sublabel: 'Cross-device comparison',
+    Icon: HexagonSVG,
+    segment: 'ml-perf/device-comparison'
+  },
+  {
+    to: MmluPageLinks.deviceComparison,
+    label: 'MMLU vs NPU',
+    sublabel: 'Cross-device comparison',
+    Icon: HexagonSVG,
+    segment: 'mmlu/device-comparison'
+  },
+  {
+    to: NpuEvalPageLinks.deviceComparison,
+    label: 'NPU vs GPU',
+    sublabel: 'Cross-device comparison',
+    Icon: HexagonSVG,
+    segment: 'npu-eval/device-comparison'
+  }
+] as const;
+
+const OPERATIONS_NAV_ITEMS = [
+  {
+    to: DashboardPageLinks.gpuRealtime,
+    label: 'GPU Realtime',
+    sublabel: 'Live benchmark feed',
+    Icon: CloudSVG,
+    segment: 'dashboard/gpu-realtime'
+  },
+  {
+    to: DashboardPageLinks.sweepControl,
+    label: 'Sweep Control',
+    sublabel: 'Start, pause, or drain',
+    Icon: CloudSVG,
+    segment: 'dashboard/sweep-control'
   }
 ] as const;
 
@@ -184,7 +232,7 @@ const Sidebar = ({ onClose }: SidebarProps) => (
     {/* Divider */}
     <Box sx={{ height: '1px', background: 'rgba(255,255,255,0.06)', mx: -0.5, mb: 2 }} />
 
-    {/* Section Label */}
+    {/* Section: Benchmarks */}
     <Typography
       sx={{
         color: 'rgba(148, 163, 184, 0.4)',
@@ -198,36 +246,74 @@ const Sidebar = ({ onClose }: SidebarProps) => (
     >
       Benchmarks
     </Typography>
-
-    {/* Nav Links */}
-    {NAV_ITEMS.map(({ to, label, sublabel, Icon }) => (
+    {BENCHMARK_NAV_ITEMS.map(({ to, label, sublabel, Icon }) => (
       <StyledNavLink key={to} to={to}>
         <Icon className="nav-icon" />
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography
-            sx={{
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              color: 'inherit',
-              lineHeight: 1.4,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis'
-            }}
-          >
+          <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: 'inherit', lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {label}
           </Typography>
-          <Typography
-            sx={{
-              fontSize: '0.6875rem',
-              color: 'rgba(148, 163, 184, 0.5)',
-              fontWeight: 400,
-              lineHeight: 1.3,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis'
-            }}
-          >
+          <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(148, 163, 184, 0.5)', fontWeight: 400, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {sublabel}
+          </Typography>
+        </Box>
+        <ChevronRightSVG className="nav-chevron" />
+      </StyledNavLink>
+    ))}
+
+    {/* Section: Cross-device comparisons */}
+    <Box sx={{ height: '1px', background: 'rgba(255,255,255,0.06)', mx: -0.5, mt: 1.5, mb: 1 }} />
+    <Typography
+      sx={{
+        color: 'rgba(148, 163, 184, 0.4)',
+        fontSize: '0.625rem',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        px: 0.5,
+        mb: 1.25
+      }}
+    >
+      Cross-device comparisons
+    </Typography>
+    {COMPARISON_NAV_ITEMS.map(({ to, label, sublabel, Icon }) => (
+      <StyledNavLink key={to} to={to}>
+        <Icon className="nav-icon" />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: 'inherit', lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {label}
+          </Typography>
+          <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(148, 163, 184, 0.5)', fontWeight: 400, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {sublabel}
+          </Typography>
+        </Box>
+        <ChevronRightSVG className="nav-chevron" />
+      </StyledNavLink>
+    ))}
+
+    {/* Section: Operations */}
+    <Box sx={{ height: '1px', background: 'rgba(255,255,255,0.06)', mx: -0.5, mt: 1.5, mb: 1 }} />
+    <Typography
+      sx={{
+        color: 'rgba(148, 163, 184, 0.4)',
+        fontSize: '0.625rem',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        px: 0.5,
+        mb: 1.25
+      }}
+    >
+      Operations
+    </Typography>
+    {OPERATIONS_NAV_ITEMS.map(({ to, label, sublabel, Icon }) => (
+      <StyledNavLink key={to} to={to}>
+        <Icon className="nav-icon" />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: 'inherit', lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {label}
+          </Typography>
+          <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(148, 163, 184, 0.5)', fontWeight: 400, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {sublabel}
           </Typography>
         </Box>
@@ -298,8 +384,22 @@ export const MainLayout = (props: MainLayoutProps) => {
   }, [pathname]);
 
   const isMMlu = pathname.startsWith('/mmlu');
-  const pageTitle = isMMlu ? 'MMLU-Pro Benchmark' : 'MLPerf Benchmark';
-  const pageBadge = isMMlu ? 'MMLU-Pro' : 'MLPerf v5.1';
+  const isNpu = pathname.startsWith('/npu-eval');
+  const isDashboard = pathname.startsWith('/dashboard');
+  const pageTitle = isNpu
+    ? 'NPU Evaluation'
+    : isMMlu
+      ? 'MMLU-Pro Benchmark'
+      : isDashboard
+        ? 'GPU Realtime Dashboard'
+        : 'MLPerf Benchmark';
+  const pageBadge = isNpu
+    ? 'FuriosaAI RNGD'
+    : isMMlu
+      ? 'MMLU-Pro'
+      : isDashboard
+        ? 'Live'
+        : 'MLPerf v5.1';
 
   return (
     <StyledWrapper>
@@ -403,8 +503,12 @@ export const MainLayout = (props: MainLayoutProps) => {
               px: 1.5,
               py: 0.5,
               borderRadius: '9999px',
-              background: 'linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(99,102,241,0.06) 100%)',
-              border: '1px solid rgba(99,102,241,0.18)',
+              background: isNpu
+                ? 'linear-gradient(135deg, rgba(249,115,22,0.08) 0%, rgba(251,146,60,0.06) 100%)'
+                : 'linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(99,102,241,0.06) 100%)',
+              border: isNpu
+                ? '1px solid rgba(249,115,22,0.25)'
+                : '1px solid rgba(99,102,241,0.18)',
               flexShrink: 0
             }}
           >
@@ -412,7 +516,7 @@ export const MainLayout = (props: MainLayoutProps) => {
               sx={{
                 fontSize: '0.6875rem',
                 fontWeight: 600,
-                color: '#4F46E5',
+                color: isNpu ? '#F97316' : '#4F46E5',
                 letterSpacing: '0.01em',
                 whiteSpace: 'nowrap'
               }}

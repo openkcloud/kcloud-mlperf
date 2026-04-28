@@ -107,9 +107,6 @@ export const TableActionButton = memo<TableActionButtonProps>(props => {
     handleClose();
   };
 
-  // Determine if DELETE should be enabled
-  const canDelete = status === 'Error' || status === 'Completed' || status === 'Idle';
-
   // Determine which modal to use based on URL
   const isMmlu = window.location.pathname.includes('/mmlu');
   const DeleteModal = isMmlu ? MmluDeleteConfirmModal : MlperfDeleteConfirmModal;

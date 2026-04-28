@@ -9,8 +9,22 @@ import {
   AccordionSummary,
   Box,
   Chip,
+  FormControlLabel,
+  Switch,
   Typography
 } from '@mui/material';
+
+// ----------------------------------------------------------------------
+
+const HIDE_SWEEP_KEY = 'HIDE_SWEEP_RUNS';
+
+const initHideSweep = (): boolean => {
+  const stored = localStorage.getItem(HIDE_SWEEP_KEY);
+  if (stored !== null) return stored === 'true';
+  const defaultOn = import.meta.env.PROD;
+  localStorage.setItem(HIDE_SWEEP_KEY, String(defaultOn));
+  return defaultOn;
+};
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -33,7 +47,13 @@ dayjs.extend(timezone);
 const MMLUPage = () => {
   const [modalData, setModalData] = useState<MmExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
+  const [hideSweep, setHideSweep] = useState(initHideSweep);
   const formRef = useRef<MmluExamFormHandle | null>(null);
+
+  const handleHideSweepChange = (checked: boolean) => {
+    setHideSweep(checked);
+    localStorage.setItem(HIDE_SWEEP_KEY, String(checked));
+  };
 
   const onSubmit: SubmitHandler<MlExamFormInput> = async data => {
     const {
@@ -137,8 +157,26 @@ const MMLUPage = () => {
         />
       </Box>
 
+      {/* Toolbar — Hide sweep toggle */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={hideSweep}
+              onChange={e => handleHideSweepChange(e.target.checked)}
+            />
+          }
+          label={
+            <Typography sx={{ fontSize: '0.8125rem', color: '#475569' }}>
+              Hide sweep runs
+            </Typography>
+          }
+        />
+      </Box>
+
       {/* Results Table — Primary View */}
-      <MmluExamResultTable onUseData={handleUseData} />
+      <MmluExamResultTable onUseData={handleUseData} hideSweepRuns={hideSweep} />
 
       {/* Create Test — Collapsible */}
       <Accordion

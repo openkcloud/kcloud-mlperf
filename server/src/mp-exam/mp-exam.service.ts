@@ -87,7 +87,21 @@ export class MpExamService implements OnModuleInit {
       console.log(`MP Exam ID=${exam.id} delay: ${mpDelay}`);
 
       if (mpDelay <= 0) {
-        await this.executeCreateGrpcExam(exam);
+        // Use a 30s minimum delay so the operator has time to initialize the CRD
+        // before gRPC status is queried. Without this, the gRPC returns empty
+        // and the exam is permanently marked as Undefined.
+        const minDelay = 30_000;
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        const timeout = setTimeout(async () => {
+          await this.executeCreateGrpcExam(exam);
+          this.schedulerRegistry.deleteTimeout(
+            this.generateScheduleExamId(exam.id),
+          );
+        }, minDelay);
+        this.schedulerRegistry.addTimeout(
+          this.generateScheduleExamId(exam.id),
+          timeout,
+        );
         return;
       }
 
@@ -145,7 +159,7 @@ export class MpExamService implements OnModuleInit {
         nTrain: '1', // default value
         precision: data.precision,
         mode: data.mode,
-        totalSampleCount: `${data.data_number}`, // mlperf data number
+        totalSampleCount: `${data.data_number === 0 ? 13368 : data.data_number}`, // 0 = full dataset (CNN-DailyMail has 13368 samples)
         scenario: data.scenario,
         serverTargetQps: `${data.target_qps}`,
         numWorkers: `${data.num_workers}`,

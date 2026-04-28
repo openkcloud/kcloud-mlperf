@@ -25,7 +25,7 @@ export const MmExamApi = {
   update: async (params: { id: number } & Partial<MmExamCreateBody>) => {
     const { id, ...rest } = params;
 
-    const { data } = await httpClient.patch<MmExamResultResponse>(`mm-exam/update/${id}`, {
+    const { data } = await httpClient.patch<MmExamResultResponse>(`/mm-exam/update/${id}`, {
       ...rest
     });
 
@@ -69,7 +69,7 @@ export const MmExamApi = {
   // ----------------------------------------------------------------------
 
   stopExam: async (id: number) => {
-    const { data } = await httpClient.patch<MmExamResultList>(`mm-exam/stop/${id}`);
+    const { data } = await httpClient.patch<MmExamResultList>(`/mm-exam/stop/${id}`);
 
     return data;
   },

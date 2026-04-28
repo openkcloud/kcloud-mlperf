@@ -15,5 +15,6 @@ import { MmExamResult } from '../entities/mm-exam-result.entity';
   ],
   controllers: [MmExamController],
   providers: [MmExamService],
+  exports: [MmExamService],
 })
 export class MmExamModule {}

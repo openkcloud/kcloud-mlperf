@@ -13,7 +13,7 @@ import { MmExamQueryKeys } from '@/contexts/QueryContext/query.keys';
 type ExamStatusConfig = { id: number; status: StatusEnum; tablePageNumber: number };
 
 export const useExamStatus = (config: ExamStatusConfig) => {
-  const { status, id, tablePageNumber } = config;
+  const { status, id, tablePageNumber: _tablePageNumber } = config;
 
   const queryClient = useQueryClient();
 

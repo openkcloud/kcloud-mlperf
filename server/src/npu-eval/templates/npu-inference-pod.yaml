@@ -1,0 +1,70 @@
+# FuriosaAI RNGD NPU Inference Pod Template
+# Used by the NPU evaluation service to run LLM inference benchmarks
+# Ref: https://developer.furiosa.ai/latest/en/furiosa_llm/k8s_deployment.html
+apiVersion: v1
+kind: Pod
+metadata:
+  name: npu-inference-{{EXAM_ID}}
+  namespace: llm-evaluation
+  labels:
+    app: npu-inference
+    exam-id: "{{EXAM_ID}}"
+    device-type: npu
+    benchmark: "{{BENCHMARK}}"
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    furiosa.ai/npu: "true"
+  containers:
+    - name: furiosa-llm
+      image: furiosaai/furiosa-llm:latest
+      command:
+        - furiosa-llm
+        - serve
+        - "{{MODEL_NAME}}"
+        - --host=0.0.0.0
+        - --port=8000
+        - --device=npu:0:*
+      ports:
+        - containerPort: 8000
+          name: http
+      resources:
+        requests:
+          cpu: "{{CPU_CORES}}"
+          memory: "{{RAM_CAPACITY}}Gi"
+          furiosa.ai/rngd: "{{NPU_NUM}}"
+        limits:
+          cpu: "{{CPU_CORES}}"
+          memory: "{{RAM_CAPACITY}}Gi"
+          furiosa.ai/rngd: "{{NPU_NUM}}"
+      env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token-secret
+              key: token
+              optional: true
+      volumeMounts:
+        - mountPath: /root/.cache/huggingface
+          name: model-cache
+      securityContext:
+        seccompProfile:
+          type: Unconfined
+        capabilities:
+          drop: ["ALL"]
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8000
+        initialDelaySeconds: 180
+        periodSeconds: 30
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8000
+        initialDelaySeconds: 180
+        periodSeconds: 10
+  volumes:
+    - name: model-cache
+      persistentVolumeClaim:
+        claimName: model-nfs-pvc

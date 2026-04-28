@@ -81,6 +81,12 @@ export class CreateMpExamDto {
   @Min(0)
   tensor_parallel_size: number;
 
+  // Optional - defaults to GPU
+  @IsOptional()
+  @IsString()
+  @Length(1, 10)
+  device_type: string;
+
   // Required
   @IsString()
   @Length(1, 100)

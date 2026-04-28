@@ -17,6 +17,13 @@ import { MpExam } from './entities/mp-exam.entity';
 import { MpExamResult } from './entities/mp-exam-result.entity';
 import { MmExam } from './entities/mm-exam.entity';
 import { MmExamResult } from './entities/mm-exam-result.entity';
+import { NpuExam } from './entities/npu-exam.entity';
+import { NpuExamResult } from './entities/npu-exam-result.entity';
+import { NpuEvalModule } from './npu-eval/npu-eval.module';
+import { RealtimeModule } from './realtime/realtime.module';
+import { GpuSweepModule } from './gpu-sweep/gpu-sweep.module';
+import { GpuSweep } from './gpu-sweep/entities/gpu-sweep.entity';
+import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
 
 @Module({
   imports: [
@@ -34,7 +41,7 @@ import { MmExamResult } from './entities/mm-exam-result.entity';
         username: configService.get('DATABASE_USER'),
         password: configService.get('DATABASE_PASSWORD'),
         database: configService.get('DATABASE_NAME'),
-        entities: [MpExam, MpExamResult, MmExam, MmExamResult],
+        entities: [MpExam, MpExamResult, MmExam, MmExamResult, NpuExam, NpuExamResult, GpuSweep, GpuSweepCell],
         synchronize: configService.get('NODE_ENV') === 'development',
       }),
       inject: [ConfigService],
@@ -46,6 +53,9 @@ import { MmExamResult } from './entities/mm-exam-result.entity';
     MmExamResultModule,
     LokiModule,
     FilesModule,
+    NpuEvalModule,
+    RealtimeModule,
+    GpuSweepModule,
   ],
   controllers: [AppController],
   providers: [AppService],

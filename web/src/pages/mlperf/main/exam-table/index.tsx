@@ -55,6 +55,7 @@ const RepetitionCell = memo<{ id: number; status: StatusEnum; retryNum: number }
 
 type MlperfExamResultTableProps = {
   onUseData?: (exam: MpExamDetails) => void;
+  hideSweepRuns?: boolean;
 };
 
 const createColumns = (
@@ -260,7 +261,7 @@ const DEFAULT_PAGE_SIZE = 10 as const;
 // ----------------------------------------------------------------------
 
 export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) => {
-  const { onUseData } = props;
+  const { onUseData, hideSweepRuns = false } = props;
   const { mpExamIds } = useStore(store => store.testComparison);
 
   const navigate = useNavigate();
@@ -327,7 +328,12 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
 
   const filteredData = useMemo(() => {
     if (!data?.list) return [];
-    if (!searchTerm) return data.list;
+
+    const baseList = hideSweepRuns
+      ? data.list.filter(item => !item.description?.startsWith('[sweep:'))
+      : data.list;
+
+    if (!searchTerm) return baseList;
 
     const lowerSearchTerm = searchTerm.toLowerCase().trim();
 
@@ -344,39 +350,39 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
           (id): id is number => id !== undefined
         );
         if (bestIds.length > 0) {
-          return data.list.filter(item => bestIds.includes(item.id));
+          return baseList.filter(item => bestIds.includes(item.id));
         }
         return [];
       }
       if (lowerSearchTerm === 'best tps') {
         if (bestPerfExamId !== undefined) {
-          return data.list.filter(item => item.id === bestPerfExamId);
+          return baseList.filter(item => item.id === bestPerfExamId);
         }
         return [];
       }
       if (lowerSearchTerm === 'best acc' || lowerSearchTerm === 'best accuracy') {
         if (bestAccExamId !== undefined) {
-          return data.list.filter(item => item.id === bestAccExamId);
+          return baseList.filter(item => item.id === bestAccExamId);
         }
         return [];
       }
       if (lowerSearchTerm === 'best performance') {
         if (bestPerfExamId !== undefined) {
-          return data.list.filter(item => item.id === bestPerfExamId);
+          return baseList.filter(item => item.id === bestPerfExamId);
         }
         return [];
       }
     }
 
     // Regular search
-    return data.list.filter(
+    return baseList.filter(
       item =>
         item.name.toLowerCase().includes(lowerSearchTerm) ||
         item.model.toLowerCase().includes(lowerSearchTerm) ||
         item.dataset.toLowerCase().includes(lowerSearchTerm) ||
         item.gpu_type.toLowerCase().includes(lowerSearchTerm)
     );
-  }, [data?.list, searchTerm, bestPerfExamId, bestAccExamId]);
+  }, [data?.list, searchTerm, bestPerfExamId, bestAccExamId, hideSweepRuns]);
 
   if (!data || data.list.length === 0) return null;
 

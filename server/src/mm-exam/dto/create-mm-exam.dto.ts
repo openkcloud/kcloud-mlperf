@@ -59,6 +59,12 @@ export class CreateMmExamDto {
   @Min(0)
   gpu_util: number;
 
+  // Optional - defaults to GPU
+  @IsOptional()
+  @IsString()
+  @Length(1, 10)
+  device_type: string;
+
   // Required
   @IsString()
   @Length(1, 100)

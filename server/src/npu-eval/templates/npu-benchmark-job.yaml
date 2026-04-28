@@ -1,0 +1,247 @@
+# FuriosaAI RNGD NPU Benchmark Job Template
+# Runs benchmarks against a furiosa-llm inference server
+# Iterates over dataset samples, measures: TTFT, TT100T, TPS, latency
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: npu-benchmark-{{EXAM_ID}}-{{RUN_NUM}}
+  namespace: llm-evaluation
+  labels:
+    app: npu-benchmark
+    exam-id: "{{EXAM_ID}}"
+    device-type: npu
+    benchmark: "{{BENCHMARK}}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: npu-benchmark
+        exam-id: "{{EXAM_ID}}"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: benchmark-runner
+          image: furiosaai/furiosa-llm:latest
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              import json
+              import requests
+              import os
+              import sys
+
+              SERVER_URL = "http://npu-inference-{{EXAM_ID}}.llm-evaluation.svc.cluster.local:8000"
+              MODEL = "{{MODEL_NAME}}"
+              MAX_TOKENS = {{MAX_OUTPUT_TOKENS}}
+              BENCHMARK = "{{BENCHMARK}}"
+              DATASET = "{{DATASET}}"
+              DATA_NUMBER = {{DATA_NUMBER}}
+              BATCH_SIZE = {{BATCH_SIZE}}
+              RETRY_NUM = {{RETRY_NUM}}
+
+              effective_max_tokens = MAX_TOKENS if MAX_TOKENS > 0 else 4096
+
+              # --- Load dataset samples ---
+              def load_dataset_samples():
+                  samples = []
+                  if BENCHMARK == "mlperf":
+                      # CNN-DailyMail dataset
+                      dataset_path = "/mnt/datasets/cnn_eval.json"
+                      if os.path.exists(dataset_path):
+                          with open(dataset_path, "r") as f:
+                              data = json.load(f)
+                          if isinstance(data, list):
+                              for item in data:
+                                  text = item.get("article", item.get("text", item.get("input", "")))
+                                  if text:
+                                      samples.append(f"Summarize the following article:\n\n{text[:2000]}")
+                          elif isinstance(data, dict):
+                              for key, val in data.items():
+                                  if isinstance(val, str) and len(val) > 50:
+                                      samples.append(f"Summarize the following article:\n\n{val[:2000]}")
+                                      if len(samples) >= 50000:
+                                          break
+                  elif BENCHMARK == "mmlu":
+                      # MMLU-Pro dataset
+                      dataset_dir = "/mnt/datasets/mmlu-pro"
+                      if os.path.isdir(dataset_dir):
+                          for fname in sorted(os.listdir(dataset_dir)):
+                              fpath = os.path.join(dataset_dir, fname)
+                              if fname.endswith(".json") or fname.endswith(".jsonl"):
+                                  with open(fpath, "r") as f:
+                                      if fname.endswith(".jsonl"):
+                                          for line in f:
+                                              try:
+                                                  item = json.loads(line.strip())
+                                                  q = item.get("question", item.get("input", ""))
+                                                  if q:
+                                                      samples.append(q)
+                                              except:
+                                                  pass
+                                      else:
+                                          data = json.load(f)
+                                          if isinstance(data, list):
+                                              for item in data:
+                                                  q = item.get("question", item.get("input", ""))
+                                                  if q:
+                                                      samples.append(q)
+
+                  # Fallback if no dataset found
+                  if not samples:
+                      print(f"WARNING: No dataset samples loaded from {BENCHMARK}. Using default prompts.", flush=True)
+                      samples = [
+                          "Explain the theory of relativity in detail, covering special and general relativity.",
+                          "Describe the process of photosynthesis and its importance in ecosystems.",
+                          "Discuss the causes and effects of climate change on global ecosystems.",
+                          "Explain how neural networks work in machine learning applications.",
+                          "Describe the history and evolution of the Internet from ARPANET to today.",
+                      ]
+
+                  return samples
+
+              # --- Wait for server readiness ---
+              print("Waiting for inference server...", flush=True)
+              for i in range(120):
+                  try:
+                      r = requests.get(f"{SERVER_URL}/health", timeout=5)
+                      if r.status_code == 200:
+                          print(f"Server ready after {i*5}s", flush=True)
+                          break
+                  except:
+                      pass
+                  time.sleep(5)
+              else:
+                  print("ERROR: Server not ready after 600s", flush=True)
+                  sys.exit(1)
+
+              # --- Load samples ---
+              all_samples = load_dataset_samples()
+              num_samples = len(all_samples) if DATA_NUMBER == 0 else min(DATA_NUMBER, len(all_samples))
+              samples = all_samples[:num_samples]
+              print(f"Loaded {len(all_samples)} total samples, using {num_samples} for benchmark", flush=True)
+
+              # --- Run benchmark ---
+              results = []
+              for run in range(RETRY_NUM):
+                  print(f"\n=== Run {run+1}/{RETRY_NUM} ({num_samples} samples) ===", flush=True)
+                  run_start = time.perf_counter()
+
+                  total_tokens = 0
+                  total_ttft = 0
+                  total_tpot_sum = 0
+                  tt100t_values = []
+                  sample_count = 0
+
+                  for idx, prompt in enumerate(samples):
+                      sample_start = time.perf_counter()
+                      first_token_time = None
+                      token_100_time = None
+                      token_count = 0
+
+                      try:
+                          resp = requests.post(
+                              f"{SERVER_URL}/v1/chat/completions",
+                              json={
+                                  "model": MODEL,
+                                  "messages": [{"role": "user", "content": prompt}],
+                                  "max_tokens": effective_max_tokens,
+                                  "temperature": 0.0,
+                                  "stream": True,
+                              },
+                              stream=True,
+                              timeout=300,
+                          )
+
+                          for line in resp.iter_lines():
+                              if line:
+                                  decoded = line.decode("utf-8")
+                                  if decoded.startswith("data: ") and decoded != "data: [DONE]":
+                                      token_count += 1
+                                      if first_token_time is None:
+                                          first_token_time = time.perf_counter()
+                                      if token_count == 100 and token_100_time is None:
+                                          token_100_time = time.perf_counter()
+                                      if MAX_TOKENS > 0 and token_count >= MAX_TOKENS:
+                                          break
+
+                      except Exception as e:
+                          print(f"  Sample {idx+1}: ERROR - {e}", flush=True)
+                          continue
+
+                      sample_end = time.perf_counter()
+
+                      if first_token_time:
+                          ttft = first_token_time - sample_start
+                          total_ttft += ttft
+                          if token_count > 1:
+                              tpot = (sample_end - first_token_time) / (token_count - 1)
+                              total_tpot_sum += tpot
+                      if token_100_time:
+                          tt100t_values.append(token_100_time - sample_start)
+
+                      total_tokens += token_count
+                      sample_count += 1
+
+                      if (idx + 1) % 50 == 0 or (idx + 1) == num_samples:
+                          elapsed = time.perf_counter() - run_start
+                          print(f"  Progress: {idx+1}/{num_samples} samples, {total_tokens} tokens, {elapsed:.1f}s elapsed", flush=True)
+
+                  run_end = time.perf_counter()
+                  run_time = run_end - run_start
+
+                  avg_ttft = total_ttft / sample_count if sample_count > 0 else None
+                  avg_tps = total_tokens / run_time if run_time > 0 else 0
+                  avg_tpot = total_tpot_sum / sample_count if sample_count > 0 else None
+                  avg_tt100t = sum(tt100t_values) / len(tt100t_values) if tt100t_values else None
+                  best_tt100t = min(tt100t_values) if tt100t_values else None
+                  sps = sample_count / run_time if run_time > 0 else 0
+
+                  result = {
+                      "run": run + 1,
+                      "ttft": round(avg_ttft, 4) if avg_ttft else None,
+                      "tt100t": round(avg_tt100t, 4) if avg_tt100t else None,
+                      "tps": round(avg_tps, 2),
+                      "latency": round(run_time, 4),
+                      "tpot": round(avg_tpot, 6) if avg_tpot else None,
+                      "sps": round(sps, 4),
+                      "token_count": total_tokens,
+                      "sample_count": sample_count,
+                      "best_tt100t": round(best_tt100t, 4) if best_tt100t else None,
+                  }
+                  results.append(result)
+                  print(f"\nRun {run+1} complete: {json.dumps(result)}", flush=True)
+
+              # Summary
+              summary = {
+                  "exam_id": "{{EXAM_ID}}",
+                  "benchmark": BENCHMARK,
+                  "device": "NPU:RNGD",
+                  "model": MODEL,
+                  "total_samples_per_run": num_samples,
+                  "results": results,
+                  "best_tt100t": min((r["best_tt100t"] for r in results if r.get("best_tt100t")), default=None),
+                  "best_tps": max((r["tps"] for r in results), default=0),
+                  "target_met": any(r.get("best_tt100t") and r["best_tt100t"] < 1.1 for r in results),
+              }
+              print("\nSUMMARY:" + json.dumps(summary), flush=True)
+          volumeMounts:
+            - mountPath: /mnt/datasets
+              name: dataset-cache
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          securityContext:
+            seccompProfile:
+              type: Unconfined
+      volumes:
+        - name: dataset-cache
+          persistentVolumeClaim:
+            claimName: dataset-nfs-pvc

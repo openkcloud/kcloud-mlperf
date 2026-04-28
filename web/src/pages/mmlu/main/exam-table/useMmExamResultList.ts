@@ -5,7 +5,7 @@ import type { PaginationParams } from '@/api/types/common.types';
 
 import { MmExamQueryKeys } from '@/contexts/QueryContext/query.keys.ts';
 
-export const useMmExamResultList = (params: PaginationParams) => {
+export const useMmExamResultList = (_params: PaginationParams) => {
   const { data, isLoading, refetch } = useQuery({
     queryKey: MmExamQueryKeys.list(1, 10000),
     queryFn: () => MmExamApi.list({ page: 1, limit: 10000 }),
