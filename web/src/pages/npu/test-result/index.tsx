@@ -6,6 +6,7 @@ import { BarChart } from '@mui/x-charts/BarChart';
 import dayjs from 'dayjs';
 
 import { NpuEvalApi } from '@/api/domains/npu-eval.domain';
+import { JobStatusFooter } from '@/components/JobStatusFooter';
 import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { NpuEvalPageLinks } from '@/contexts/RouterContext/router.links';
 import { StatusEnum } from '@/enums/status.enum';
@@ -208,7 +209,7 @@ const NpuTestResultPage = () => {
       )}
 
       {/* Results Table */}
-      <Paper sx={{ p: 3 }}>
+      <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>Detailed Results</Typography>
         <TableContainer>
           <Table size="small">
@@ -253,6 +254,13 @@ const NpuTestResultPage = () => {
           </Table>
         </TableContainer>
       </Paper>
+
+      <JobStatusFooter
+        benchmark="npu"
+        examId={examData.id}
+        examStatus={examData.status}
+        artifacts={[]}
+      />
     </Box>
   );
 };

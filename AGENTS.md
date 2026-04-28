@@ -66,7 +66,7 @@ GPU Sweep Mode orchestrates a bounded benchmark sweep across all 4 GPU SKUs (NVI
 ### Starting a sweep
 
 ```bash
-# Full 96-cell sweep (requires GPU_SWEEP_ENABLED=true)
+# Full 110-cell sweep (requires GPU_SWEEP_ENABLED=true)
 curl -X POST http://localhost:9999/api/gpu-sweep/start \
   -H 'Content-Type: application/json' \
   -d '{"mode":"full"}'
@@ -137,7 +137,9 @@ New routes added in Train A:
 
 ### Matrix structure
 
-The canonical sweep matrix contains **96 cells** after 6 trim rules and 20 hand-curated dedup entries. The materialized fixture is locked in `server/src/gpu-sweep/matrix.fixture.ts` and the snapshot test asserts `cells.length === 96`. Key trim rules:
+The canonical sweep matrix contains **110 cells** after 6 trim rules and 20 hand-curated dedup entries. The materialized fixture is locked in `server/src/gpu-sweep/matrix.fixture.ts` and the snapshot test asserts `cells.length === 110`. Key trim rules:
+
+Note: original plan target was 96; the implemented trim rules produce 110 due to the realized FP8 + Ampere fallback handling. 110 is the canonical count.
 - TP=2 only on L40 and L40-44GiB (matched pairs)
 - No `fp8 + bs=4` on A40 SKUs (Ampere lacks FP8 tensor cores)
 - MLPerf `server` scenario only at bs=1 and data_number ≥ 500

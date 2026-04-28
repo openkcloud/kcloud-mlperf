@@ -22,6 +22,7 @@ import { NpuExamResult } from './entities/npu-exam-result.entity';
 import { NpuEvalModule } from './npu-eval/npu-eval.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { GpuSweepModule } from './gpu-sweep/gpu-sweep.module';
+import { VersionModule } from './version/version.module';
 import { GpuSweep } from './gpu-sweep/entities/gpu-sweep.entity';
 import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
 
@@ -56,6 +57,7 @@ import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
     NpuEvalModule,
     RealtimeModule,
     GpuSweepModule,
+    VersionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

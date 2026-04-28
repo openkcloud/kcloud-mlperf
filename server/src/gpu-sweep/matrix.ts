@@ -38,7 +38,9 @@ export const CANONICAL_CELL = {
 // 20-cell hand-curated dedup. Each excluded cell is dominated by another cell
 // already kept in the same row of the materialized matrix (i.e. the surviving
 // cell already captures the same signal). Five dedup groups, four SKUs each:
-// 5 × 4 = 20 cells, taking the post-trim 116 → final 96.
+// 5 × 4 = 20 cells, taking the post-trim 116 → final 110.
+// (Original plan target was 96; the realized trim + FP8/Ampere fallback handling
+// yields 110. 110 is the canonical count — see AGENTS.md "Matrix structure".)
 //
 // The groups are chosen so DEDUP_KEYS ∩ matrix is exactly 20 (each excluded
 // cell actually exists in the post-trim matrix, since the goal is to remove

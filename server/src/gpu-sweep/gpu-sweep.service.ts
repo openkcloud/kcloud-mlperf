@@ -523,10 +523,7 @@ export class GpuSweepService {
           if (cell.kind === GpuSweepCellKind.MLPERF) {
             await this.mpExamService.stopMpExam(cell.exam_id);
           } else {
-            // mm-exam stop method
-            await (this.mmExamService as unknown as {
-              stopMmExam: (id: number) => Promise<unknown>;
-            }).stopMmExam(cell.exam_id);
+            await this.mmExamService.stop(cell.exam_id);
           }
         }
       } catch (err) {

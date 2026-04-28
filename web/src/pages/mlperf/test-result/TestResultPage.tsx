@@ -8,6 +8,7 @@ import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 
 import { DownloadButton } from '@/components/DownloadButton';
+import { JobStatusFooter } from '@/components/JobStatusFooter';
 import { TestResultInfo } from '@/components/TestResultInfo';
 import { TIMEZONE } from '@/constants/timezone.constants';
 import { MpExamModeEnum } from '@/enums/mp-exam-mode.enum';
@@ -310,6 +311,12 @@ const TestResultPage = () => {
             ))}
         </Fragment>
       )}
+      <JobStatusFooter
+        benchmark="mlperf"
+        examId={testResult.id}
+        examStatus={testResult.status}
+        artifacts={[]}
+      />
     </Box>
   );
 };

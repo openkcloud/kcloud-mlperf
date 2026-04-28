@@ -45,7 +45,7 @@ You're on the NPU node (RNGD). Your job is to:
   - This is the pre-compiled Furiosa artifact (NOT raw HF weights)
   - Contains `.edf` files for RNGD execution
 - **NFS models** (mounted): `/mnt/models/Llama-3.1-8B-Instruct/` — raw HF safetensors (NOT for furiosa-llm)
-- **HF Token**: `${HF_TOKEN}`
+- **HF Token**: `***REDACTED — rotate at https://huggingface.co/settings/tokens then store in $HF_TOKEN env / k8s Secret***`
 
 ### Dataset Location (NFS)
 - MLPerf: `/mnt/datasets/cnn_eval.json` — 13,368 CNN-DailyMail articles
