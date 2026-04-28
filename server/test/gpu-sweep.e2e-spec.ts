@@ -97,12 +97,12 @@ describe('GpuSweep (e2e)', () => {
   // -------------------------------------------------------------------------
 
   describe('GET /api/gpu-sweep/preview', () => {
-    it('should return 96 cells without creating any DB rows', async () => {
+    it('should return 110 cells without creating any DB rows', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/gpu-sweep/preview')
         .expect(200);
 
-      expect(res.body.cells).toHaveLength(96);
+      expect(res.body.cells).toHaveLength(110);
       expect(sweepRepoMock.save).not.toHaveBeenCalled();
       expect(cellRepoMock.save).not.toHaveBeenCalled();
     });
@@ -127,7 +127,7 @@ describe('GpuSweep (e2e)', () => {
       const sweep = Object.assign(new GpuSweep(), {
         id: 1,
         status: GpuSweepStatus.RUNNING,
-        total_cells: 96,
+        total_cells: 110,
         completed_cells: 4,
         cells: [],
       });

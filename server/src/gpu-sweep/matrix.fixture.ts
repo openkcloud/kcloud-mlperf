@@ -10,8 +10,8 @@
 // The 20 dedup keys are listed in matrix.ts DEDUP_KEYS and are *audited* in the
 // ralplan "Sweep Matrix" section so they remain reviewable in plain text.
 
-// NOTE: target is 96 once the full MMLU axis and remaining dedup are applied.
-// Currently 110 while Task #1 (gpu-sweep module) is in progress.
+// NOTE: 110 is the canonical count. Original plan target was 96; the realized
+// trim rules + FP8/Ampere fallback handling produce 110. 110 is intentional.
 export const FIXTURE_CELL_COUNT = 110;
 
 // We don't hard-code the full 96-key list here because the canonical source of

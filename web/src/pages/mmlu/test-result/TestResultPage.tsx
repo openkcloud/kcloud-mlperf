@@ -8,6 +8,7 @@ import utc from 'dayjs/plugin/utc';
 import * as XLSX from 'xlsx';
 
 import { BarGraph } from '@/components/Graphs/BarGraph';
+import { JobStatusFooter } from '@/components/JobStatusFooter';
 import { TestResultInfo } from '@/components/TestResultInfo';
 import { TIMEZONE } from '@/constants/timezone.constants.ts';
 
@@ -307,6 +308,12 @@ const TestResultPage = () => {
           ))}
         </Box>
       )}
+      <JobStatusFooter
+        benchmark="mmlu"
+        examId={testResult.id}
+        examStatus={testResult.status}
+        artifacts={[]}
+      />
     </Box>
   );
 };
