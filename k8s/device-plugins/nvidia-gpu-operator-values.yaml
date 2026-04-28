@@ -1,0 +1,59 @@
+# NVIDIA GPU Operator Helm values for gpu-operator-25.10.0.
+#
+# Actual install/upgrade lives in: kubernetes/03-deploy-gpu-operator.sh
+# This file documents the values that lane governs; apply via:
+#   helm upgrade --install gpu-operator nvidia/gpu-operator \
+#     --version 25.10.0 \
+#     -n gpu-operator \
+#     -f k8s/device-plugins/nvidia-gpu-operator-values.yaml
+#
+# Node label selector: accelerator-type=gpu (set on node2, node3 per config/cluster.yaml)
+
+operator:
+  # Only schedule operator components on GPU-bearing nodes
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: accelerator-type
+                operator: In
+                values:
+                  - gpu
+
+driver:
+  enabled: true
+  # Use pre-installed driver if nodes already have nvidia-driver; set false to
+  # let the operator manage driver lifecycle.
+  usePreinstalled: false
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+
+toolkit:
+  enabled: true
+
+devicePlugin:
+  enabled: true
+  config:
+    # Expose individual GPU resources (not MIG slices for these nodes)
+    default: "all"
+
+dcgmExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+
+gfd:
+  # GPU Feature Discovery — labels nodes with GPU model/memory info
+  enabled: true
+
+nodeSelector:
+  accelerator-type: gpu
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule

@@ -1,0 +1,40 @@
+# RUN_ID: 20260428-072038-a612a54
+#
+# DISCLAIMER: The helm chart's kubernetes/01-create-ns.sh is the production-canonical
+# namespace creator. This file is for declarative `kubectl apply` only (e.g. GitOps
+# pipelines). It does NOT replace the script; both must remain consistent.
+#
+# Namespaces defined here:
+#   - llm-evaluation       : production app namespace
+#   - llm-evaluation-staging: staging / canary app namespace
+#   - llm-bench            : raw benchmark Jobs (MLPerf, MMLU-Pro, TT100)
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-evaluation
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    etri/purpose: app
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-evaluation-staging
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    etri/purpose: alt
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-bench
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    etri/purpose: benchmarks
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest

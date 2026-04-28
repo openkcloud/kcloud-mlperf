@@ -1,0 +1,203 @@
+generated_at: "2026-04-28T07:24:30Z"
+run_id: "20260428-072038-a612a54"
+cluster_name: etri-llm-bench
+kubernetes_version:
+  client: v1.28.12
+  server: v1.28.12
+
+nodes:
+  - name: node1
+    role: control-plane
+    status: Ready
+    os: "Ubuntu 22.04.5 LTS"
+    kernel: "5.15.0-161-generic"
+    cpu_count: 96
+    cpu_vendor: AMD
+    ram_gb: 251          # 263683520 KiB / 1048576 = ~251 GiB
+    disk_root_gb: 9770   # 10401954720 KiB / 1048576 = ~9920 GiB raw; df / size
+    container_runtime: "containerd://1.7.21"
+    kubelet_version: v1.28.12
+    accelerator:
+      type: cpu
+      vendor: intel
+      count: 0
+    ssh_reachable: true
+    ssh_port: 122
+    ntp_synchronized: true
+    taints:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+    labels_notable:
+      - "node-role.kubernetes.io/control-plane"
+      - "feature.node.kubernetes.io/cpu-model.vendor_id: AMD"
+    age_days: 60
+
+  - name: node2
+    role: worker
+    status: Ready
+    os: "Ubuntu 22.04.5 LTS"
+    kernel: "5.15.0-176-generic"
+    cpu_count: 96
+    cpu_vendor: AMD
+    ram_gb: 251          # 263681480 KiB / 1048576 = ~251 GiB
+    disk_root_gb: 9920   # 10401954720 KiB / 1048576
+    container_runtime: "containerd://1.7.21"
+    kubelet_version: v1.28.12
+    accelerator:
+      type: gpu
+      vendor: nvidia
+      model: "NVIDIA L40"
+      count: 2
+      memory_mib_per_device: 46068
+      driver_version: "580.126.09"
+      cuda_runtime_version: "13.0"
+      compute_capability: "8.9"
+      gpu_family: ada-lovelace
+    ssh_reachable: true
+    ssh_port: 122
+    ntp_synchronized: true
+    taints: []
+    labels_notable:
+      - "nvidia.com/gpu.product: NVIDIA-L40"
+      - "nvidia.com/gpu.count: 2"
+      - "nvidia.com/cuda.driver-version.full: 580.126.09"
+    network:
+      primary_interface: eno1
+      speed_mbps: 1000
+    nfs_role: server
+    age_days: 60
+
+  - name: node3
+    role: worker
+    status: Ready
+    os: "Ubuntu 22.04.5 LTS"
+    kernel: "5.15.0-176-generic"
+    cpu_count: 16
+    cpu_vendor: AMD
+    ram_gb: 251          # 263708148 KiB / 1048576 = ~251 GiB
+    disk_root_gb: 9920   # 10401954720 KiB / 1048576
+    container_runtime: "containerd://1.7.21"
+    kubelet_version: v1.28.12
+    accelerator:
+      type: gpu
+      vendor: nvidia
+      model: "NVIDIA A40"
+      count: 2
+      memory_mib_per_device: 46068
+      driver_version: "580.126.09"
+      cuda_runtime_version: "13.0"
+      compute_capability: "8.6"
+      gpu_family: ampere
+    ssh_reachable: true
+    ssh_port: 122
+    ntp_synchronized: true
+    taints: []
+    labels_notable:
+      - "nvidia.com/gpu.product: NVIDIA-A40"
+      - "nvidia.com/gpu.count: 2"
+      - "nvidia.com/cuda.driver-version.full: 580.126.09"
+    network:
+      primary_interface: eno1
+      speed_mbps: 1000
+    nfs_role: client
+    anomaly: "cpu_count=16 is significantly lower than node1/node2 (96). Hardware difference confirmed."
+    age_days: 60
+
+  - name: node4
+    role: worker
+    status: Ready
+    os: "Ubuntu 22.04.5 LTS"
+    kernel: "6.8.0-101-generic"
+    cpu_count: 128
+    cpu_vendor: Intel
+    ram_gb: 503          # 528008840 KiB / 1048576 = ~503 GiB
+    disk_root_gb: 1758   # 1844296244 KiB / 1048576 = ~1758 GiB
+    container_runtime: "containerd://1.7.21"
+    kubelet_version: v1.28.12
+    accelerator:
+      type: npu
+      vendor: furiosa
+      model: RNGD
+      count: 1
+      pci_bdf: "0000:27:00.0"
+      driver_version: "2026.1.0"
+      driver_git: "96977d5"
+      firmware_version: "1.11.0"
+      firmware_git: "cfd5306"
+      temperature_celsius: 33.01
+      power_watts: 40.32
+      k8s_resource: "furiosa.ai/rngd"
+    ssh_reachable: true
+    ssh_port: 22
+    ntp_synchronized: true
+    taints: []
+    labels_notable:
+      - "furiosa.ai/npu: true"
+      - "furiosa.ai/npu.family: rngd"
+      - "furiosa.ai/driver.version: 2026.1.0"
+      - "furiosa.ai/firmware.version: 1.11.0"
+      - "accelerator: furiosa-rngd"
+      - "feature.node.kubernetes.io/network-sriov.capable: true"
+    network:
+      primary_interface: enp90s0f0np0
+      speed_mbps: 10000
+    nfs_role: client
+    age_days: 7
+
+  # node5 is SKIPPED — state: pending_join per cluster.yaml
+  - name: node5
+    role: worker
+    state: pending_join
+    ssh_reachable: false
+    note: "Skipped per instructions — node5 is not yet joined to the cluster."
+
+helm_releases:
+  - name: alloy
+    namespace: monitoring
+    revision: 1
+    status: deployed
+    chart: alloy-1.4.0
+    app_version: v1.11.3
+  - name: app-chart
+    namespace: llm-evaluation
+    revision: 5
+    status: deployed
+    chart: app-chart-0.1.0
+    app_version: "1.16.0"
+    note: "Most recently updated — deployed 2026-04-28T06:59:32Z"
+  - name: furiosa-device-plugin
+    namespace: furiosa-system
+    revision: 1
+    status: deployed
+    chart: furiosa-device-plugin-2026.1.0
+    app_version: "2026.1.0"
+  - name: furiosa-feature-discovery
+    namespace: furiosa-system
+    revision: 2
+    status: deployed
+    chart: furiosa-feature-discovery-2026.1.0
+    app_version: "2026.1.0"
+  - name: gpu-operator
+    namespace: gpu-operator
+    revision: 1
+    status: deployed
+    chart: gpu-operator-v1.0.0-devel
+    app_version: main-latest
+  - name: loki
+    namespace: loki
+    revision: 1
+    status: deployed
+    chart: loki-2.1.1
+    app_version: v2.0.0
+  - name: nfs-subdir-external-provisioner
+    namespace: nfs-provisioner
+    revision: 1
+    status: deployed
+    chart: nfs-subdir-external-provisioner-4.0.18
+    app_version: "4.0.2"
+  - name: prometheus
+    namespace: monitoring
+    revision: 1
+    status: deployed
+    chart: prometheus-27.42.2
+    app_version: v3.7.3

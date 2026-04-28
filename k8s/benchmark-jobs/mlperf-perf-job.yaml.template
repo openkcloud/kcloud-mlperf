@@ -1,0 +1,111 @@
+# MLPerf Inference v5.1 — Performance scenario Job template.
+#
+# One Job instance per sweep cell (GPU type × model × precision × batch size × scenario).
+# Apply via envsubst:
+#   envsubst < k8s/benchmark-jobs/mlperf-perf-job.yaml.template | kubectl apply -f -
+#
+# Required env vars:
+#   RUN_ID            — unique run identifier, e.g. 20260428-072038-a612a54
+#   GPU_TYPE          — GPU model string, e.g. L40 or A40
+#   NODE_SELECTOR_GPU — node label value for gpu-pair, e.g. l40-a40
+#   MODEL             — HF model ID, e.g. meta-llama/Llama-3.1-8B-Instruct
+#   PRECISION         — fp16 | bf16 | fp8
+#   BATCH_SIZE        — integer batch size
+#   DATA_NUMBER       — number of dataset samples
+#   SCENARIO          — Offline | Server
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-perf-${RUN_ID}-${GPU_TYPE}-${PRECISION}-${SCENARIO}
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: mlperf-perf-job
+    app.kubernetes.io/managed-by: kubectl
+    etri.run-id: "${RUN_ID}"
+    etri.benchmark: mlperf-inference
+    etri.model: "${MODEL}"
+    etri.device: "${GPU_TYPE}"
+    etri.precision: "${PRECISION}"
+    etri.scenario: "${SCENARIO}"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mlperf-perf-job
+        etri.run-id: "${RUN_ID}"
+        etri.benchmark: mlperf-inference
+        etri.device: "${GPU_TYPE}"
+        etri.precision: "${PRECISION}"
+        etri.scenario: "${SCENARIO}"
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        accelerator-type: gpu
+        gpu-pair: "${NODE_SELECTOR_GPU}"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      imagePullSecrets:
+        - name: image-pull-secret
+      containers:
+        - name: mlperf-runner
+          image: mondrianai/etri-llm-mlperf:v0.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RUN_ID
+              value: "${RUN_ID}"
+            - name: MODEL
+              value: "${MODEL}"
+            - name: PRECISION
+              value: "${PRECISION}"
+            - name: BATCH_SIZE
+              value: "${BATCH_SIZE}"
+            - name: DATA_NUMBER
+              value: "${DATA_NUMBER}"
+            - name: SCENARIO
+              value: "${SCENARIO}"
+            - name: GPU_TYPE
+              value: "${GPU_TYPE}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              python3 /app/run_mlperf.py \
+                --model "${MODEL}" \
+                --precision "${PRECISION}" \
+                --batch-size "${BATCH_SIZE}" \
+                --data-number "${DATA_NUMBER}" \
+                --scenario "${SCENARIO}" \
+                --output-dir /mnt/results/${RUN_ID}/mlperf/${GPU_TYPE}/${PRECISION}/${SCENARIO}
+          resources:
+            requests:
+              nvidia.com/gpu: "1"
+              cpu: "4"
+              memory: 32Gi
+            limits:
+              nvidia.com/gpu: "1"
+              cpu: "8"
+              memory: 64Gi
+          volumeMounts:
+            - name: model-volume
+              mountPath: /mnt/models
+              readOnly: true
+            - name: dataset-volume
+              mountPath: /mnt/datasets
+              readOnly: true
+            - name: results-volume
+              mountPath: /mnt/results
+      volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: model-nfs-pvc
+        - name: dataset-volume
+          persistentVolumeClaim:
+            claimName: dataset-nfs-pvc
+        - name: results-volume
+          persistentVolumeClaim:
+            claimName: results-nfs-pvc
