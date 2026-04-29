@@ -103,6 +103,50 @@ export interface CalibrationResponse {
   completed_at: string | null;
 }
 
+export type SweepDisabledReason =
+  | 'feature_flag_off'
+  | 'node_not_ready'
+  | 'device_plugin_missing'
+  | 'no_model_artifact'
+  | 'missing_permission'
+  | 'node_pending_join';
+
+export interface SweepOptionFlag {
+  key: string;
+  label: string;
+  enabled: boolean;
+  disabled_reason: SweepDisabledReason | null;
+}
+
+export interface SweepNodeOption {
+  name: string;
+  state: 'active' | 'pending_join' | 'not_ready' | string;
+  enabled: boolean;
+  disabled_reason: SweepDisabledReason | null;
+}
+
+export interface SweepHardwareOption extends SweepOptionFlag {
+  vendor: 'nvidia' | 'furiosa' | 'rebellions' | string;
+  node: string | null;
+}
+
+export interface SweepModelOption extends SweepOptionFlag {
+  precisions: string[];
+}
+
+export interface SweepOptionsResponse {
+  enabled: boolean;
+  feature_flag_reason: SweepDisabledReason | null;
+  benchmarks: SweepOptionFlag[];
+  hardware: SweepHardwareOption[];
+  nodes: SweepNodeOption[];
+  models: SweepModelOption[];
+  precisions: SweepOptionFlag[];
+  scenarios: SweepOptionFlag[];
+  batch_sizes: number[];
+  concurrencies: number[];
+}
+
 export interface SweepStatusResponse {
   enabled: boolean;
   paused?: boolean;

@@ -38,11 +38,44 @@ async function stubNpuList(page: import('@playwright/test').Page) {
   });
 }
 
+// Stub /api/comparison/* so diagnostic panel renders with a known reason
+async function stubComparisonApi(page: import('@playwright/test').Page) {
+  const emptyDiagnostic = {
+    reason: 'no_runs_exist',
+    message: 'No benchmark runs have been submitted.',
+    counts: { completed: 0, running: 0, failed: 0 },
+    hardware_available: false,
+    ingestion_errors: [],
+  };
+  await page.route('**/comparison/diagnostics**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(emptyDiagnostic),
+    });
+  });
+  await page.route('**/comparison/list**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ runs: [], total: 0, diagnostic: emptyDiagnostic }),
+    });
+  });
+  await page.route('**/comparison/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ runs: [], total: 0, diagnostic: emptyDiagnostic }),
+    });
+  });
+}
+
 test.describe('Device-comparison route parity (A4)', () => {
   for (const { path, label } of DEVICE_COMPARISON_ROUTES) {
     test(`${path} renders without crashing`, async ({ page }) => {
       await stubRealtime(page);
       await stubNpuList(page);
+      await stubComparisonApi(page);
       await page.goto(path);
       // No unhandled JS errors
       const errors: string[] = [];
@@ -54,9 +87,22 @@ test.describe('Device-comparison route parity (A4)', () => {
     test(`${path} returns HTTP 200 (route exists)`, async ({ page }) => {
       await stubRealtime(page);
       await stubNpuList(page);
+      await stubComparisonApi(page);
       const response = await page.goto(path);
       // SPA routes return 200 from the dev server
       expect(response?.status()).toBeLessThan(400);
+    });
+
+    test(`${path} shows diagnostic panel when no runs exist`, async ({ page }) => {
+      await stubRealtime(page);
+      await stubNpuList(page);
+      await stubComparisonApi(page);
+      await page.goto(path);
+      await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+      const panel = page.locator('[data-testid="comparison-diagnostic-panel"]');
+      await expect(panel).toBeVisible({ timeout: 8_000 });
+      const reason = await panel.getAttribute('data-reason');
+      expect(reason).toBe('no_runs_exist');
     });
   }
 

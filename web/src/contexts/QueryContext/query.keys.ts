@@ -65,3 +65,17 @@ export const FilesQueryKeys = {
   datasets: () => [FilesQueryKeys.PREFIX, 'datasets-list'],
   settings: () => [FilesQueryKeys.PREFIX, 'settings']
 };
+
+// ----------------------------------------------------------------------
+
+export const DevicesQueryKeys = {
+  PREFIX: 'devices',
+
+  list: (deviceType?: 'gpu' | 'npu' | 'all') => [
+    DevicesQueryKeys.PREFIX,
+    'list',
+    deviceType ?? 'all'
+  ],
+  nodes: () => [DevicesQueryKeys.PREFIX, 'nodes'],
+  health: () => [DevicesQueryKeys.PREFIX, 'health']
+} as const;

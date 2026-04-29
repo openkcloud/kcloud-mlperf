@@ -28,6 +28,7 @@ const NpuComparisonPage = lazy(() => import('@/pages/npu/test-comparison'));
 const DeviceComparisonPage = lazy(() => import('@/pages/npu/device-comparison'));
 
 const GpuRealtimePage = lazy(() => import('@/pages/dashboard/gpu-realtime'));
+const NpuRealtimePage = lazy(() => import('@/pages/dashboard/npu-realtime'));
 const SweepControlPage = lazy(() => import('@/pages/dashboard/sweep-control'));
 const MlperfDeviceComparisonPage = lazy(() => import('@/pages/mlperf/device-comparison'));
 const MmluDeviceComparisonPage = lazy(() => import('@/pages/mmlu/device-comparison'));
@@ -125,6 +126,10 @@ export const Routes = () => {
     {
       path: DashboardPageLinks.gpuRealtime,
       element: <GpuRealtimePage />
+    },
+    {
+      path: DashboardPageLinks.npuRealtime,
+      element: <NpuRealtimePage />
     },
     {
       path: DashboardPageLinks.sweepControl,

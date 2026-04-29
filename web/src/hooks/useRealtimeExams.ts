@@ -3,19 +3,71 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { httpClient } from '@/libs/http-client';
 
 // -----------------------------------------------------------------------
-// Types matching the SSE snapshot shape from /realtime/exams
+// Backend wire types — must mirror server/src/realtime/realtime.service.ts
 // -----------------------------------------------------------------------
 
+type WireMetricsStatus = 'available' | 'unavailable' | 'pending';
+
+type WireRealtimeSlot = {
+  device_type: 'gpu' | 'npu';
+  vendor: 'nvidia' | 'furiosa' | 'rebellions';
+  model: string;
+  node: string;
+  slot_id: number;
+  status: 'idle' | 'running' | 'preparing' | 'error' | 'pending_join';
+  pending_join_reason?: string;
+  current_exam: {
+    id: number;
+    kind: 'mp' | 'mm' | 'npu';
+    exam_name: string | null;
+    elapsed_seconds: number;
+  } | null;
+  last_known_metric: { tps: number | null; tt100t_seconds: number | null };
+  last_metric_timestamp: string | null;
+  metrics_status: WireMetricsStatus;
+};
+
+type WireRealtimeSnapshot = {
+  timestamp: string;
+  slots: WireRealtimeSlot[];
+  sweep_progress: {
+    completed: number;
+    total: number;
+    active_sweep_id: number | null;
+    paused: boolean;
+  };
+  operator_race_alerts: number;
+};
+
+// -----------------------------------------------------------------------
+// Flat shape consumed by DeviceRealtimeDashboard. The backend uses nested
+// objects (current_exam, last_known_metric); here we flatten them for
+// rendering convenience and explicitly preserve null + status reasoning.
+// -----------------------------------------------------------------------
+
+export type MetricsStatus = WireMetricsStatus;
+
 export type RealtimeExamSlot = {
+  /** Slot-join key — equals the device `model` (e.g. 'NVIDIA-L40-44GiB'). */
   gpu_type: string;
+  device_type: 'gpu' | 'npu';
+  vendor: 'nvidia' | 'furiosa' | 'rebellions';
+  model: string;
   node: string;
   exam_id: number | null;
   exam_name: string | null;
+  /** Capitalized status string used by the StatusChip component. */
   status: string;
   elapsed_seconds: number | null;
   tps: number | null;
   tt100t: number | null;
   sweep_cell_id: number | null;
+  /** Why metrics may be missing — never blank, never faked. */
+  metrics_status: MetricsStatus;
+  /** ISO8601 timestamp of the last emitted metric, or null. */
+  last_metric_timestamp: string | null;
+  /** Set when status is 'Pending Join' — explains why the device is offline. */
+  pending_join_reason: string | null;
 };
 
 export type RealtimeSnapshot = {
@@ -47,6 +99,48 @@ const EMPTY_SNAPSHOT: RealtimeSnapshot = {
 
 // -----------------------------------------------------------------------
 
+const STATUS_LABEL: Record<WireRealtimeSlot['status'], string> = {
+  idle: 'Idle',
+  running: 'Running',
+  preparing: 'Preparing',
+  error: 'Failed',
+  pending_join: 'Pending Join',
+};
+
+export function adaptSnapshot(wire: WireRealtimeSnapshot): RealtimeSnapshot {
+  return {
+    timestamp: wire.timestamp,
+    operator_race_alerts: wire.operator_race_alerts,
+    sweep_progress: {
+      completed: wire.sweep_progress.completed,
+      total: wire.sweep_progress.total,
+      paused: wire.sweep_progress.paused,
+    },
+    slots: wire.slots.map((s) => ({
+      // gpu_type is the slot-join key consumed by DeviceRealtimeDashboard's
+      // slotKeyFromDevice() helper — keep it equal to the device model so the
+      // useDeviceRegistry-driven dashboard can match by-key.
+      gpu_type: s.model,
+      device_type: s.device_type,
+      vendor: s.vendor,
+      model: s.model,
+      node: s.node,
+      exam_id: s.current_exam?.id ?? null,
+      exam_name: s.current_exam?.exam_name ?? null,
+      status: STATUS_LABEL[s.status] ?? s.status,
+      elapsed_seconds: s.current_exam?.elapsed_seconds ?? null,
+      tps: s.last_known_metric.tps,
+      tt100t: s.last_known_metric.tt100t_seconds,
+      sweep_cell_id: null,
+      metrics_status: s.metrics_status,
+      last_metric_timestamp: s.last_metric_timestamp,
+      pending_join_reason: s.pending_join_reason ?? null,
+    })),
+  };
+}
+
+// -----------------------------------------------------------------------
+
 export function useRealtimeExams({ pollIntervalMs = FALLBACK_POLL_MS }: UseRealtimeExamsOptions = {}): UseRealtimeExamsResult {
   const [snapshot, setSnapshot] = useState<RealtimeSnapshot | null>(null);
   const [connected, setConnected] = useState(false);
@@ -67,12 +161,13 @@ export function useRealtimeExams({ pollIntervalMs = FALLBACK_POLL_MS }: UseRealt
     stopPoll();
     const fetchOnce = async () => {
       try {
-        const res = await httpClient.get<RealtimeSnapshot>(SSE_URL + '/snapshot');
-        setSnapshot(res.data ?? EMPTY_SNAPSHOT);
+        const res = await httpClient.get<WireRealtimeSnapshot>(SSE_URL + '/snapshot');
+        setSnapshot(res.data ? adaptSnapshot(res.data) : EMPTY_SNAPSHOT);
         setConnected(true);
         setError(null);
       } catch {
         setSnapshot(prev => prev ?? EMPTY_SNAPSHOT);
+        setConnected(false);
       }
     };
     fetchOnce();
@@ -89,16 +184,22 @@ export function useRealtimeExams({ pollIntervalMs = FALLBACK_POLL_MS }: UseRealt
     const es = new EventSource(`${baseURL}${SSE_URL}`);
     esRef.current = es;
 
-    es.addEventListener('snapshot', (ev: MessageEvent) => {
+    const onSnapshot = (ev: MessageEvent) => {
       try {
-        const data = JSON.parse(ev.data) as RealtimeSnapshot;
-        setSnapshot(data);
+        const data = JSON.parse(ev.data) as WireRealtimeSnapshot;
+        setSnapshot(adaptSnapshot(data));
         setConnected(true);
         setError(null);
       } catch {
-        // malformed message — ignore
+        // malformed frame — keep last known snapshot, surface the error
+        setError('Malformed realtime frame — keeping last snapshot');
       }
-    });
+    };
+
+    es.addEventListener('snapshot', onSnapshot);
+    // Also accept default 'message' events for tolerance with proxies that
+    // strip event names. ping events are ignored.
+    es.onmessage = onSnapshot;
 
     es.onerror = () => {
       es.close();

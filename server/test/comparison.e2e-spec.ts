@@ -1,0 +1,556 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { ComparisonModule } from '../src/comparison/comparison.module';
+import { MpExam } from '../src/entities/mp-exam.entity';
+import { MpExamResult } from '../src/entities/mp-exam-result.entity';
+import { MmExam } from '../src/entities/mm-exam.entity';
+import { MmExamResult } from '../src/entities/mm-exam-result.entity';
+import { NpuExam } from '../src/entities/npu-exam.entity';
+import { NpuExamResult } from '../src/entities/npu-exam-result.entity';
+import { StatusEnum } from '../src/enums/status.enum';
+
+// ----------------------------------------------------------------------
+// Test fixtures — covers GPU L40, GPU A40, NPU RNGD (furiosa), NPU Atom+
+// (rebellions) across empty/partial/failed/running/completed states.
+// ----------------------------------------------------------------------
+
+function makeMpExam(overrides: Partial<MpExam> = {}): MpExam {
+  return {
+    id: 1,
+    name: 'mlperf-l40',
+    description: '',
+    model: 'meta-llama/Llama-3.1-8B-Instruct',
+    precision: 'FP16',
+    mode: 'Performance',
+    framework: 'pytorch',
+    batch_size: 1,
+    min_duration: 1,
+    dataset: 'cnn-dailymail',
+    data_number: 100,
+    scenario: 'Offline',
+    target_qps: 1,
+    num_workers: 1,
+    tensor_parallel_size: 1,
+    status: StatusEnum.COMPLETED,
+    device_type: 'GPU',
+    gpu_type: 'NVIDIA-L40',
+    gpu_num: 1,
+    cpu_core: 8,
+    ram_capacity: 32,
+    retry_num: 1,
+    error_log: '',
+    started_at: '2026-04-28T10:00:00+09:00',
+    end_at: '2026-04-28T10:30:00+09:00',
+    created_at: new Date(),
+    modified_at: new Date(),
+    results: [],
+    ...overrides,
+  } as MpExam;
+}
+
+function makeMmExam(overrides: Partial<MmExam> = {}): MmExam {
+  return {
+    id: 100,
+    name: 'mmlu-a40',
+    description: '',
+    n_train: 0,
+    model: 'meta-llama/Llama-3.1-8B-Instruct',
+    precision: 'FP16',
+    framework: 'vllm',
+    subject: 'all',
+    dataset: 'mmlu-pro',
+    data_number: 100,
+    batch_size: 1,
+    gpu_util: 0.9,
+    device_type: 'GPU',
+    gpu_type: 'NVIDIA-A40',
+    gpu_num: 1,
+    cpu_core: 8,
+    ram_capacity: 32,
+    retry_num: 1,
+    status: StatusEnum.COMPLETED,
+    error_log: '',
+    started_at: '2026-04-28T11:00:00+09:00',
+    end_at: '2026-04-28T11:45:00+09:00',
+    created_at: new Date(),
+    modified_at: new Date(),
+    results: [],
+    ...overrides,
+  } as MmExam;
+}
+
+function makeNpuExam(overrides: Partial<NpuExam> = {}): NpuExam {
+  return {
+    id: 200,
+    name: 'npu-rngd',
+    description: '',
+    benchmark: 'mlperf',
+    model: 'meta-llama/Llama-3.1-8B-Instruct',
+    precision: 'FP8',
+    framework: 'furiosa-llm',
+    batch_size: 1,
+    dataset: 'cnn-dailymail',
+    data_number: 100,
+    npu_type: 'RNGD',
+    npu_num: 1,
+    cpu_core: 8,
+    ram_capacity: 32,
+    retry_num: 1,
+    max_output_tokens: 4096,
+    status: StatusEnum.COMPLETED,
+    error_log: '',
+    started_at: '2026-04-28T12:00:00+09:00',
+    end_at: '2026-04-28T12:30:00+09:00',
+    created_at: new Date(),
+    modified_at: new Date(),
+    results: [],
+    ...overrides,
+  } as NpuExam;
+}
+
+// Builds a chainable mock that supports: find, findOne with relations option.
+function buildRepoMock<T>(rows: T[]) {
+  return {
+    _rows: rows,
+    find: jest.fn().mockImplementation((opts?: { where?: Partial<T> }) => {
+      if (!opts || !opts.where) return Promise.resolve(rows);
+      const where = opts.where;
+      const filtered = rows.filter((r) =>
+        Object.entries(where).every(([k, v]) => {
+          // TypeORM In() expression — naive support
+          if (
+            v &&
+            typeof v === 'object' &&
+            (v as { _type?: string })._type === 'in'
+          ) {
+            const arr = (v as { _value: unknown[] })._value;
+            return arr.includes((r as Record<string, unknown>)[k]);
+          }
+          return (r as Record<string, unknown>)[k] === v;
+        }),
+      );
+      return Promise.resolve(filtered);
+    }),
+    findOne: jest.fn().mockImplementation((opts: { where: Partial<T> }) => {
+      const where = opts.where;
+      const found = rows.find((r) =>
+        Object.entries(where).every(
+          ([k, v]) => (r as Record<string, unknown>)[k] === v,
+        ),
+      );
+      return Promise.resolve(found || null);
+    }),
+  };
+}
+
+// ----------------------------------------------------------------------
+
+describe('ComparisonController (e2e)', () => {
+  let app: INestApplication<App>;
+  let mpRepo: ReturnType<typeof buildRepoMock<MpExam>>;
+  let mmRepo: ReturnType<typeof buildRepoMock<MmExam>>;
+  let npuRepo: ReturnType<typeof buildRepoMock<NpuExam>>;
+
+  // Default fixture: 1 mp (L40, completed), 1 mm (A40, completed),
+  // 1 npu RNGD running, 1 npu Atom+ failed.
+  function bootstrapWith(opts?: {
+    mp?: MpExam[];
+    mm?: MmExam[];
+    npu?: NpuExam[];
+  }) {
+    const defaultMp: MpExam[] = opts?.mp ?? [
+      makeMpExam({
+        id: 1,
+        gpu_type: 'NVIDIA-L40',
+        results: [
+          {
+            id: 10,
+            exam_id: 1,
+            result_number: 1,
+            result_perf_tps: 62.94,
+            result_perf_sps: 1.4,
+            result_tt100t: 1.588,
+          } as MpExamResult,
+        ],
+      }),
+    ];
+    const defaultMm: MmExam[] = opts?.mm ?? [
+      makeMmExam({
+        id: 100,
+        gpu_type: 'NVIDIA-A40',
+        results: [
+          {
+            id: 200,
+            exam_id: 100,
+            result_number: 1,
+            result_acc_total: 64.5,
+          } as MmExamResult,
+        ],
+      }),
+    ];
+    const defaultNpu: NpuExam[] = opts?.npu ?? [
+      makeNpuExam({
+        id: 200,
+        npu_type: 'RNGD',
+        status: StatusEnum.RUNNING,
+        end_at: '',
+        results: [
+          {
+            id: 300,
+            exam_id: 200,
+            result_number: 1,
+            result_tt100t: 0.92,
+            result_tps: 87.1,
+            result_sps: 2.3,
+            result_accuracy: 0,
+          } as NpuExamResult,
+        ],
+      }),
+      makeNpuExam({
+        id: 201,
+        name: 'npu-atom',
+        npu_type: 'Atom+',
+        status: StatusEnum.ERROR,
+        error_log: 'inference server unreachable',
+        results: [],
+      }),
+    ];
+
+    return { mp: defaultMp, mm: defaultMm, npu: defaultNpu };
+  }
+
+  async function bootApp(fixtures: {
+    mp: MpExam[];
+    mm: MmExam[];
+    npu: NpuExam[];
+  }) {
+    mpRepo = buildRepoMock<MpExam>(fixtures.mp);
+    mmRepo = buildRepoMock<MmExam>(fixtures.mm);
+    npuRepo = buildRepoMock<NpuExam>(fixtures.npu);
+    const mpResultRepo = buildRepoMock<MpExamResult>([]);
+    const mmResultRepo = buildRepoMock<MmExamResult>([]);
+    const npuResultRepo = buildRepoMock<NpuExamResult>([]);
+
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [ComparisonModule],
+    })
+      .overrideProvider(getRepositoryToken(MpExam))
+      .useValue(mpRepo)
+      .overrideProvider(getRepositoryToken(MpExamResult))
+      .useValue(mpResultRepo)
+      .overrideProvider(getRepositoryToken(MmExam))
+      .useValue(mmRepo)
+      .overrideProvider(getRepositoryToken(MmExamResult))
+      .useValue(mmResultRepo)
+      .overrideProvider(getRepositoryToken(NpuExam))
+      .useValue(npuRepo)
+      .overrideProvider(getRepositoryToken(NpuExamResult))
+      .useValue(npuResultRepo)
+      .compile();
+
+    app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    );
+    await app.init();
+  }
+
+  afterEach(async () => {
+    if (app) await app.close();
+  });
+
+  // -------------------------------------------------------------------
+  // /api/comparison/list — completed state
+  // -------------------------------------------------------------------
+
+  describe('GET /api/comparison/list', () => {
+    it('returns normalized rows across all benchmarks and hardware', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+      expect(body.total).toBe(4);
+      expect(Array.isArray(body.runs)).toBe(true);
+
+      // L40 row
+      const l40 = body.runs.find(
+        (r: { hardware: { model: string } }) =>
+          r.hardware.model === 'NVIDIA-L40',
+      );
+      expect(l40).toBeDefined();
+      expect(l40.hardware.type).toBe('gpu');
+      expect(l40.hardware.vendor).toBe('nvidia');
+      expect(l40.benchmark).toBe('mlperf');
+      expect(l40.metrics.tt100t_seconds).toBe(1.588);
+      expect(l40.metrics.tps).toBe(62.94);
+      expect(Array.isArray(l40.artifacts)).toBe(true);
+      expect(l40.artifacts.length).toBeGreaterThan(0);
+
+      // A40 row
+      const a40 = body.runs.find(
+        (r: { hardware: { model: string } }) =>
+          r.hardware.model === 'NVIDIA-A40',
+      );
+      expect(a40).toBeDefined();
+      expect(a40.benchmark).toBe('mmlu');
+      expect(a40.metrics.accuracy_pct).toBe(64.5);
+
+      // RNGD (furiosa)
+      const rngd = body.runs.find(
+        (r: { hardware: { model: string } }) => r.hardware.model === 'RNGD',
+      );
+      expect(rngd).toBeDefined();
+      expect(rngd.hardware.type).toBe('npu');
+      expect(rngd.hardware.vendor).toBe('furiosa');
+      expect(rngd.status).toBe(StatusEnum.RUNNING);
+
+      // Atom+ (rebellions)
+      const atom = body.runs.find(
+        (r: { hardware: { model: string } }) => r.hardware.model === 'Atom+',
+      );
+      expect(atom).toBeDefined();
+      expect(atom.hardware.type).toBe('npu');
+      expect(atom.hardware.vendor).toBe('rebellions');
+      expect(atom.status).toBe(StatusEnum.ERROR);
+    });
+
+    // ---------- empty state ----------
+    it('returns diagnostic envelope with reason="no_runs_exist" when DB has no rows', async () => {
+      await bootApp({ mp: [], mm: [], npu: [] });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(true);
+      expect(body.reason).toBe('no_runs_exist');
+      expect(body.total_runs).toBe(0);
+      expect(typeof body.message).toBe('string');
+      expect(body.message.length).toBeGreaterThan(0);
+    });
+
+    // ---------- partial / filtered state ----------
+    it('returns reason="all_runs_filtered" when filters exclude all rows', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=npu&node=node-does-not-exist')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(true);
+      expect(body.reason).toBe('all_runs_filtered');
+      expect(body.total_runs).toBeGreaterThan(0);
+      expect(body.filtered_runs).toBe(0);
+      expect(body.filters_applied.hardware).toBe('npu');
+      expect(body.filters_applied.node).toBe('node-does-not-exist');
+    });
+
+    it('filters by benchmark=mlperf', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?benchmark=mlperf')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+      // L40 mp + RNGD npu (mlperf benchmark) = 2
+      const benchmarks = body.runs.map(
+        (r: { benchmark: string }) => r.benchmark,
+      );
+      expect(benchmarks.every((b: string) => b === 'mlperf')).toBe(true);
+    });
+
+    it('filters by hardware=gpu', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=gpu')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+      const types = body.runs.map(
+        (r: { hardware: { type: string } }) => r.hardware.type,
+      );
+      expect(types.every((t: string) => t === 'gpu')).toBe(true);
+    });
+
+    it('filters by hardware=npu', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=npu')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+      const types = body.runs.map(
+        (r: { hardware: { type: string } }) => r.hardware.type,
+      );
+      expect(types.every((t: string) => t === 'npu')).toBe(true);
+    });
+
+    it('rejects invalid benchmark filter with 400', async () => {
+      await bootApp(bootstrapWith());
+
+      await request(app.getHttpServer())
+        .get('/api/comparison/list?benchmark=bogus')
+        .expect(400);
+    });
+
+    it('rejects invalid hardware filter with 400', async () => {
+      await bootApp(bootstrapWith());
+
+      await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=quantum')
+        .expect(400);
+    });
+
+    // ---------- ingestion-failed state ----------
+    it('returns reason="ingestion_failed" when DB read throws', async () => {
+      await bootApp({ mp: [], mm: [], npu: [] });
+      // Force a thrown error from one of the repo finds.
+      mpRepo.find.mockRejectedValueOnce(new Error('db connection lost'));
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(true);
+      expect(body.reason).toBe('ingestion_failed');
+      expect(body.message).toContain('db connection lost');
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // /api/comparison/:benchmark/:idA/:idB — pair comparison
+  // -------------------------------------------------------------------
+
+  describe('GET /api/comparison/:benchmark/:idA/:idB', () => {
+    it('returns pair with delta when both runs exist (mlperf, GPU vs NPU)', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/mlperf/1/200')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.benchmark).toBe('mlperf');
+      expect(body.a.id).toBe(1);
+      expect(body.a.hardware.type).toBe('gpu');
+      expect(body.b.id).toBe(200);
+      expect(body.b.hardware.type).toBe('npu');
+      expect(body.delta).toBeDefined();
+      // 1.588 - 0.92 = 0.668
+      expect(body.delta.tt100t_seconds).toBeCloseTo(0.668, 2);
+      // 62.94 - 87.1 = -24.16
+      expect(body.delta.tps).toBeCloseTo(-24.16, 2);
+    });
+
+    it('404s when one of the ids does not exist', async () => {
+      await bootApp(bootstrapWith());
+
+      await request(app.getHttpServer())
+        .get('/api/comparison/mlperf/1/9999')
+        .expect(404);
+    });
+
+    it('rejects invalid benchmark with 400', async () => {
+      await bootApp(bootstrapWith());
+
+      await request(app.getHttpServer())
+        .get('/api/comparison/bogus/1/2')
+        .expect(400);
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // /api/comparison/diagnostics
+  // -------------------------------------------------------------------
+
+  describe('GET /api/comparison/diagnostics', () => {
+    it('returns counts per benchmark with hardware availability', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/diagnostics')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+
+      expect(body.benchmarks.mlperf.total).toBe(1);
+      expect(body.benchmarks.mlperf.completed).toBe(1);
+      expect(body.benchmarks.mmlu.total).toBe(1);
+      expect(body.benchmarks.mmlu.completed).toBe(1);
+      expect(body.benchmarks.npu_eval.total).toBe(2);
+      expect(body.benchmarks.npu_eval.running).toBe(1);
+      expect(body.benchmarks.npu_eval.failed).toBe(1);
+
+      expect(body.hardware.gpu_available).toBe(true);
+      expect(body.hardware.npu_available).toBe(true);
+      expect(body.hardware.vendors_seen).toContain('nvidia');
+      expect(body.hardware.vendors_seen).toContain('furiosa');
+      expect(body.hardware.vendors_seen).toContain('rebellions');
+
+      expect(body.ingestion).toBeDefined();
+      expect(typeof body.generated_at).toBe('string');
+    });
+
+    it('reports no hardware available when DB is empty', async () => {
+      await bootApp({ mp: [], mm: [], npu: [] });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/diagnostics')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.hardware.gpu_available).toBe(false);
+      expect(body.hardware.npu_available).toBe(false);
+      expect(body.benchmarks.mlperf.total).toBe(0);
+      expect(body.benchmarks.mmlu.total).toBe(0);
+      expect(body.benchmarks.npu_eval.total).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Vendor classification — defects from the brief: do NOT mix RNGD ↔ Atom+
+  // -------------------------------------------------------------------
+
+  describe('vendor classification regression', () => {
+    it('classifies RNGD as furiosa, Atom+ as rebellions, not the reverse', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=npu')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      const rngd = body.runs.find(
+        (r: { hardware: { model: string } }) => r.hardware.model === 'RNGD',
+      );
+      const atom = body.runs.find(
+        (r: { hardware: { model: string } }) => r.hardware.model === 'Atom+',
+      );
+      expect(rngd.hardware.vendor).toBe('furiosa');
+      expect(rngd.hardware.vendor).not.toBe('rebellions');
+      expect(atom.hardware.vendor).toBe('rebellions');
+      expect(atom.hardware.vendor).not.toBe('furiosa');
+    });
+  });
+});

@@ -8,12 +8,13 @@ import {
   Sse,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { Observable, Subject, interval, from } from 'rxjs';
-import { switchMap, takeUntil } from 'rxjs/operators';
+import { Observable, Subject, interval, from, merge } from 'rxjs';
+import { map, switchMap, takeUntil } from 'rxjs/operators';
 import { RealtimeService } from './realtime.service';
 
 const MAX_SUBSCRIBERS = 20;
 const EMIT_INTERVAL_MS = 2000;
+const KEEPALIVE_INTERVAL_MS = 15000;
 
 @Controller('realtime')
 export class RealtimeController implements OnModuleDestroy {
@@ -60,15 +61,28 @@ export class RealtimeController implements OnModuleDestroy {
       this.subscriberCount--;
     });
 
-    return interval(EMIT_INTERVAL_MS).pipe(
-      takeUntil(done$),
+    const snapshots$ = interval(EMIT_INTERVAL_MS).pipe(
       switchMap(() => from(this.realtimeService.buildSnapshot())),
-      // NestJS SSE expects Observable<MessageEvent>; wrap snapshot in {data}
-      switchMap((snapshot) =>
-        from(
-          Promise.resolve({ data: snapshot } as unknown as MessageEvent),
-        ),
+      map(
+        (snapshot) =>
+          ({ type: 'snapshot', data: snapshot }) as unknown as MessageEvent,
       ),
     );
+
+    // Keepalive: emit a `ping` event so idle proxies (nginx/k8s ingress with
+    // 60s default) don't sever the connection between snapshots. EventSource
+    // ignores unknown event types, so the frontend's 'snapshot' listener is
+    // unaffected — but the bytes on the wire reset proxy idle timers.
+    const keepalive$ = interval(KEEPALIVE_INTERVAL_MS).pipe(
+      map(
+        () =>
+          ({
+            type: 'ping',
+            data: { timestamp: new Date().toISOString() },
+          }) as unknown as MessageEvent,
+      ),
+    );
+
+    return merge(snapshots$, keepalive$).pipe(takeUntil(done$));
   }
 }

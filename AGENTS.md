@@ -146,3 +146,60 @@ Note: original plan target was 96; the implemented trim rules produce 110 due to
 - Each cell runs `retry_num=3` passes
 
 See the full ralplan at `.omc/plans/ralplan-gpu-saturation-and-realtime-dashboard.md` for the complete cell budget breakdown.
+
+## Compute Devices: NVIDIA, Furiosa, and Rebellions
+
+The platform supports **three distinct vendor ecosystems** that are completely separate:
+
+| Vendor | Device | Resource | Node | Status |
+|--------|--------|----------|------|--------|
+| **NVIDIA** | GPU (L40, A40, L40-44GiB, A40-44GiB) | `nvidia.com/gpu` | node2, node3 | Ready ✓ |
+| **Furiosa** | RNGD NPU | `furiosa.ai/warboy` | node4 | Ready ✓ |
+| **Rebellions** | Atom+ NPU | `rebellions.ai/atomplus` | node5 | Pending Join (requires explicit team lead approval) |
+
+**CRITICAL**: Do NOT conflate vendors or assume they share implementation details. Each vendor:
+- Runs its own device plugin (separate namespace/daemonset)
+- Advertises separate Kubernetes resources
+- Has distinct scheduling and resource allocation rules
+- Requires vendor-specific kernel drivers and runtime
+
+See `docs/device_registry.md` for device discovery, registration, and API details.
+
+## Operator Documentation
+
+| Document | Purpose |
+|----------|---------|
+| `docs/node5_atomplus_runbook.md` | Step-by-step node5 (Rebellions Atom+) join procedure with rollback at each step. Hardware: PCI 1eff:1220, /dev/rsd0, rbln-smi/rbln-stat. **LEAD-GATED**: Do NOT execute without explicit team lead approval. |
+| `docs/dashboard_troubleshooting.md` | Empty state diagnostics for all 5 dashboards (gpu-realtime, npu-realtime, sweep-control, mlperf/device-comparison, mmlu/device-comparison). Includes reason codes and resolution steps. |
+| `docs/sweep_control_usage.md` | How to use GPU sweep options (full vs calibration). Disabled reason codes and fixes (feature_flag_off, node_not_ready, device_plugin_missing, no_model_artifact, missing_permission, node_pending_join). |
+| `docs/device_registry.md` | How /api/devices, cluster.yaml, and Kubernetes API combine. Device vendor separation, data model, and integration with dashboards. |
+| `docs/operator_recovery_runbook.md` | Emergency procedures: node NotReady, device plugin crash, helm rollback, database rollback, image rollback, branch revert. Includes prevention checklist. |
+| `docs/operator_runbook.md` (existing) | Daily health checks, exam troubleshooting, result access, and rollback procedures. |
+
+## Frontend Routes
+
+| Route | Component | Purpose |
+|-------|-----------|---------|
+| `/dashboard/gpu-realtime` | GPU device cards + sweep progress | Real-time GPU saturation metrics (SSE) |
+| `/dashboard/npu-realtime` | NPU device cards (Furiosa RNGD + Rebellions Atom+) | Real-time NPU metrics; shows pending_join state for node5 |
+| `/dashboard/sweep-control` | Sweep matrix UI (admin-gated) | Start/pause/drain GPU sweep; check status |
+| `/mlperf/device-comparison` | Per-device aggregate metrics | Compare MLPerf throughput/latency across GPU SKUs |
+| `/mmlu/device-comparison` | Per-device aggregate metrics | Compare MMLU accuracy/latency across all vendors |
+
+## Backend API Endpoints (New in P0)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/devices` | GET | List all devices; supports ?vendor=, ?status= filters |
+| `/api/devices/sync` | POST | Force rebuild device registry from cluster |
+| `/api/gpu-sweep/start` | POST | Start sweep (mode: full or calibration) |
+| `/api/gpu-sweep/pause/{id}` | PATCH | Pause sweep; allow running jobs to finish |
+| `/api/gpu-sweep/drain/{id}` | PATCH | Drain sweep; cancel all jobs immediately |
+| `/api/gpu-sweep/resume/{id}` | PATCH | Resume paused sweep |
+| `/api/gpu-sweep/status` | GET | Get sweep status and node state |
+| `/api/gpu-sweep/preview` | GET | Preview sweep matrix without executing |
+| `/api/comparison/mlperf` | GET | MLPerf metrics aggregated by device |
+| `/api/comparison/mmlu` | GET | MMLU metrics aggregated by device |
+| `/api/realtime/exams` | GET (SSE) | Real-time device slot updates (20-subscriber cap, 5s fallback) |
+
+**See Also**: `server/AGENTS.md` for implementation details and device registry internals.

@@ -156,6 +156,13 @@ const OPERATIONS_NAV_ITEMS = [
     segment: 'dashboard/gpu-realtime'
   },
   {
+    to: DashboardPageLinks.npuRealtime,
+    label: 'NPU Realtime',
+    sublabel: 'RNGD + Atom+ live feed',
+    Icon: HexagonSVG,
+    segment: 'dashboard/npu-realtime'
+  },
+  {
     to: DashboardPageLinks.sweepControl,
     label: 'Sweep Control',
     sublabel: 'Start, pause, or drain',
@@ -385,21 +392,26 @@ export const MainLayout = (props: MainLayoutProps) => {
 
   const isMMlu = pathname.startsWith('/mmlu');
   const isNpu = pathname.startsWith('/npu-eval');
+  const isNpuRealtime = pathname.startsWith('/dashboard/npu-realtime');
   const isDashboard = pathname.startsWith('/dashboard');
   const pageTitle = isNpu
     ? 'NPU Evaluation'
     : isMMlu
       ? 'MMLU-Pro Benchmark'
-      : isDashboard
-        ? 'GPU Realtime Dashboard'
-        : 'MLPerf Benchmark';
+      : isNpuRealtime
+        ? 'NPU Realtime Dashboard'
+        : isDashboard
+          ? 'GPU Realtime Dashboard'
+          : 'MLPerf Benchmark';
   const pageBadge = isNpu
     ? 'FuriosaAI RNGD'
     : isMMlu
       ? 'MMLU-Pro'
-      : isDashboard
+      : isNpuRealtime
         ? 'Live'
-        : 'MLPerf v5.1';
+        : isDashboard
+          ? 'Live'
+          : 'MLPerf v5.1';
 
   return (
     <StyledWrapper>

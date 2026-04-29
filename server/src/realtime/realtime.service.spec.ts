@@ -8,6 +8,9 @@ import {
 import { MpExam } from '../entities/mp-exam.entity';
 import { MmExam } from '../entities/mm-exam.entity';
 import { MpExamResult } from '../entities/mp-exam-result.entity';
+import { NpuExam } from '../entities/npu-exam.entity';
+import { NpuExamResult } from '../entities/npu-exam-result.entity';
+import { DeviceRegistryService } from '../device-registry/device-registry.service';
 import { StatusEnum } from '../enums/status.enum';
 import type { SweepStatusResponse } from '../gpu-sweep/dto/gpu-sweep.dto';
 
@@ -20,10 +23,13 @@ const mockRepo = () => ({
   })),
 });
 
-async function buildModule(gpuSweepService: IGpuSweepService | null = null) {
+// Null deviceRegistry → falls back to 4 hardcoded GPU slots
+async function buildModule(gpuSweepService: IGpuSweepService | null = null, deviceRegistry: Partial<DeviceRegistryService> | null = null) {
   const mpRepo = mockRepo();
   const mmRepo = mockRepo();
   const mpResultRepo = mockRepo();
+  const npuExamRepo = mockRepo();
+  const npuResultRepo = mockRepo();
 
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -31,11 +37,14 @@ async function buildModule(gpuSweepService: IGpuSweepService | null = null) {
       { provide: getRepositoryToken(MpExam), useValue: mpRepo },
       { provide: getRepositoryToken(MmExam), useValue: mmRepo },
       { provide: getRepositoryToken(MpExamResult), useValue: mpResultRepo },
+      { provide: getRepositoryToken(NpuExam), useValue: npuExamRepo },
+      { provide: getRepositoryToken(NpuExamResult), useValue: npuResultRepo },
       { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: gpuSweepService },
+      { provide: DeviceRegistryService, useValue: deviceRegistry },
     ],
   }).compile();
 
-  return { service: module.get<RealtimeService>(RealtimeService), mpRepo, mmRepo };
+  return { service: module.get<RealtimeService>(RealtimeService), mpRepo, mmRepo, npuExamRepo, npuResultRepo };
 }
 
 describe('RealtimeService', () => {
@@ -53,6 +62,12 @@ describe('RealtimeService', () => {
     snap.slots.forEach((s) => {
       expect(s.status).toBe('idle');
       expect(s.current_exam).toBeNull();
+      // Idle slots must explicitly mark metrics as unavailable so the UI
+      // never renders blank.
+      expect(s.metrics_status).toBe('unavailable');
+      expect(s.last_metric_timestamp).toBeNull();
+      expect(s.last_known_metric.tps).toBeNull();
+      expect(s.last_known_metric.tt100t_seconds).toBeNull();
     });
   });
 
@@ -67,11 +82,72 @@ describe('RealtimeService', () => {
     mpRepo.find.mockResolvedValue([runningExam]);
 
     const snap = await service.buildSnapshot();
-    const l40Slot = snap.slots.find((s) => s.gpu_type === 'NVIDIA-L40');
+    const l40Slot = snap.slots.find((s) => s.model === 'NVIDIA-L40');
     expect(l40Slot?.status).toBe('running');
     expect(l40Slot?.current_exam?.id).toBe(42);
     expect(l40Slot?.current_exam?.kind).toBe('mp');
     expect(l40Slot?.current_exam?.elapsed_seconds).toBeGreaterThanOrEqual(29);
+    // Running mp-exam with no result rows yet — should be 'pending', not faked
+    // and not 'unavailable'.
+    expect(l40Slot?.metrics_status).toBe('pending');
+    expect(l40Slot?.last_known_metric.tps).toBeNull();
+    expect(l40Slot?.last_known_metric.tt100t_seconds).toBeNull();
+    expect(l40Slot?.last_metric_timestamp).toBeNull();
+  });
+
+  it('buildSnapshot surfaces tps/tt100t and metric timestamp when a result row exists', async () => {
+    const runningExam: Partial<MpExam> = {
+      id: 99,
+      name: 'mlperf-llama',
+      gpu_type: 'NVIDIA-L40',
+      status: StatusEnum.RUNNING,
+      started_at: new Date(Date.now() - 5_000).toISOString(),
+    };
+    const resultRow: Partial<MpExamResult> = {
+      exam_id: 99,
+      result_perf_tps: 62.94,
+      result_tt100t: 1.588,
+      created_at: new Date('2026-04-28T08:30:00Z'),
+    };
+
+    const mpRepoLocal = {
+      find: jest.fn().mockResolvedValue([runningExam]),
+      createQueryBuilder: jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })),
+    };
+    const mmRepoLocal = mockRepo();
+    const mpResultRepoLocal = {
+      find: jest.fn().mockResolvedValue([]),
+      createQueryBuilder: jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([resultRow]),
+      })),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RealtimeService,
+        { provide: getRepositoryToken(MpExam), useValue: mpRepoLocal },
+        { provide: getRepositoryToken(MmExam), useValue: mmRepoLocal },
+        { provide: getRepositoryToken(MpExamResult), useValue: mpResultRepoLocal },
+        { provide: getRepositoryToken(NpuExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(NpuExamResult), useValue: mockRepo() },
+        { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: null },
+        { provide: DeviceRegistryService, useValue: null },
+      ],
+    }).compile();
+
+    const svc = module.get<RealtimeService>(RealtimeService);
+    const snap = await svc.buildSnapshot();
+    const l40 = snap.slots.find((s) => s.model === 'NVIDIA-L40');
+    expect(l40?.metrics_status).toBe('available');
+    expect(l40?.last_known_metric.tps).toBe(62.94);
+    expect(l40?.last_known_metric.tt100t_seconds).toBe(1.588);
+    expect(l40?.last_metric_timestamp).toBe('2026-04-28T08:30:00.000Z');
   });
 
   it('buildSnapshot maps a preparing mm-exam onto the correct GPU slot', async () => {
@@ -85,9 +161,14 @@ describe('RealtimeService', () => {
     mmRepo.find.mockResolvedValue([preparingExam]);
 
     const snap = await service.buildSnapshot();
-    const a40Slot = snap.slots.find((s) => s.gpu_type === 'NVIDIA-A40');
+    const a40Slot = snap.slots.find((s) => s.model === 'NVIDIA-A40');
     expect(a40Slot?.status).toBe('preparing');
     expect(a40Slot?.current_exam?.kind).toBe('mm');
+    // mm exams have no streaming perf metrics — surface 'unavailable' so the
+    // UI labels it explicitly instead of rendering blank cells.
+    expect(a40Slot?.metrics_status).toBe('unavailable');
+    expect(a40Slot?.last_known_metric.tps).toBeNull();
+    expect(a40Slot?.last_known_metric.tt100t_seconds).toBeNull();
   });
 
   it('sweep_progress has zero counts when GpuSweepService is not injected', async () => {
