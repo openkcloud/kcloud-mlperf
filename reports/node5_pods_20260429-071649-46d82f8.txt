@@ -1,0 +1,9 @@
+NAMESPACE        NAME                                                            READY   STATUS    RESTARTS        AGE     IP               NODE    NOMINATED NODE   READINESS GATES
+furiosa-system   furiosa-feature-discovery-node-feature-discovery-worker-jcrqf   1/1     Running   2 (5h47m ago)   5h48m   10.233.97.129    node5   <none>           <none>
+gpu-operator     gpu-operator-node-feature-discovery-worker-pxslz                1/1     Running   0               5h48m   10.233.97.130    node5   <none>           <none>
+kube-system      calico-node-gv2qp                                               1/1     Running   0               5h48m   10.254.202.111   node5   <none>           <none>
+kube-system      kube-proxy-ln7qs                                                1/1     Running   0               5h48m   10.254.202.111   node5   <none>           <none>
+kube-system      nginx-proxy-node5                                               1/1     Running   1 (5h49m ago)   5h52m   10.254.202.111   node5   <none>           <none>
+kube-system      nodelocaldns-r2fkx                                              1/1     Running   0               6h13m   10.254.202.111   node5   <none>           <none>
+llm-evaluation   playwright-qa                                                   1/1     Running   0               72m     10.233.97.134    node5   <none>           <none>
+monitoring       alloy-m96wh                                                     2/2     Running   0               5h48m   10.233.97.128    node5   <none>           <none>

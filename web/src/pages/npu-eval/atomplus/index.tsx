@@ -1,5 +1,5 @@
 import { Box, Paper, Typography, Alert, AlertTitle, Chip, Divider, Link } from '@mui/material';
-import { Warning as WarningIcon, Memory as MemoryIcon, Extension as ExtensionIcon, Science as ScienceIcon, Storage as StorageIcon } from '@mui/icons-material';
+import { CheckCircle as CheckCircleIcon, Memory as MemoryIcon, Extension as ExtensionIcon, Science as ScienceIcon, Storage as StorageIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 
 import { DevicesApi } from '@/api/domains/devices.domains';
@@ -7,24 +7,25 @@ import { DevicesQueryKeys } from '@/contexts/QueryContext/query.keys';
 
 // ----------------------------------------------------------------------
 
-const BLOCKERS = [
+// Atom+ readiness milestones (RUN_ID 20260429-071649-46d82f8 — see reports/atomplus_cluster_gap_fix_report.md).
+const READINESS_ITEMS = [
   {
     Icon: ExtensionIcon,
-    title: 'No upstream Rebellions Kubernetes device plugin',
+    title: 'rbln-npu-operator v0.3.3 deployed',
     detail:
-      'Rebellions has not released a production-grade device plugin for Kubernetes. Without it, the cluster scheduler cannot allocate RBLN-CA22 NPU resources to pods, so no inference workload can be scheduled on node5.',
+      'helm release rbln-system/rbln-npu-operator deployed. rbln-device-plugin DaemonSet running on node5; rebellions.ai/ATOM advertised as allocatable (count: 2). Host driver (kernel module rebellions 2.0.1) bypasses the in-cluster driver pod.',
   },
   {
     Icon: ScienceIcon,
-    title: 'No inference framework deployed on node5',
+    title: 'vllm-rbln + optimum-rbln runtime ready',
     detail:
-      'Unlike node4 which runs furiosa-llm, there is no RBLN-compatible inference framework (e.g. RBLN SDK serving stack) installed or containerised for node5. Benchmarks cannot execute without a functional serving layer.',
+      'node5 host has vllm 0.10.2, vllm_rbln 0.9.3.post2, optimum-rbln 0.9.3.post1, transformers 4.57.1, torch 2.8.0 (verified via pip3 list). Container image jungwooshim/etri-llm-rbln-smoke:v1 packages the same wheels for in-cluster Job execution.',
   },
   {
     Icon: StorageIcon,
-    title: 'No benchmark profiles for Atom+',
+    title: 'TT100T smoke benchmark PASSING',
     detail:
-      'MLPerf, MMLU-Pro, and custom benchmark profiles have not been configured for the Rebellions Atom+ architecture. Dataset loaders, accuracy scripts, and result schemas must be adapted before any run can be submitted.',
+      'Qwen/Qwen2.5-0.5B-Instruct, 100 output tokens, mean 0.727s (target <1.1s), throughput ~137 tok/s, no invalid runs. See reports/atomplus_tt100t_analysis.md.',
   },
 ] as const;
 
@@ -120,27 +121,28 @@ const HardwareIdentityCard = () => {
 
 // ----------------------------------------------------------------------
 
-const BlockerDiagnostic = () => (
+const ReadinessSummary = () => (
   <Alert
-    severity="warning"
-    icon={<WarningIcon />}
+    severity="success"
+    icon={<CheckCircleIcon />}
     sx={{
       mb: 3,
-      border: '1px solid rgba(234,179,8,0.4)',
-      bgcolor: 'rgba(254,252,232,0.8)',
-      '& .MuiAlert-icon': { color: '#CA8A04' },
+      border: '1px solid rgba(22,163,74,0.4)',
+      bgcolor: 'rgba(240,253,244,0.8)',
+      '& .MuiAlert-icon': { color: '#15803D' },
     }}
   >
-    <AlertTitle sx={{ fontWeight: 700, color: '#92400E', fontSize: '1rem' }}>
-      Awaiting upstream Rebellions Kubernetes device plugin
+    <AlertTitle sx={{ fontWeight: 700, color: '#14532D', fontSize: '1rem' }}>
+      Atom+ ready — runtime, scheduler, and TT100T benchmark all green
     </AlertTitle>
-    <Typography variant="body2" sx={{ color: '#78350F', mb: 2 }}>
-      The Rebellions Atom+ NPU hardware is physically present and verified on node5, but three blockers must be
-      resolved before any benchmark run can be scheduled or executed.
+    <Typography variant="body2" sx={{ color: '#166534', mb: 2 }}>
+      As of RUN_ID 20260429-071649-46d82f8, node5 Rebellions Atom+ is end-to-end operational: cluster scheduling
+      works, the vllm-rbln runtime is in place, and the first measured TT100T smoke benchmark cleared the &lt;1.1s
+      target.
     </Typography>
 
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {BLOCKERS.map(({ Icon, title, detail }, idx) => (
+      {READINESS_ITEMS.map(({ Icon, title, detail }, idx) => (
         <Box key={title} sx={{ display: 'flex', gap: 1.5 }}>
           <Box
             sx={{
@@ -148,23 +150,23 @@ const BlockerDiagnostic = () => (
               width: 28,
               height: 28,
               borderRadius: '50%',
-              bgcolor: 'rgba(234,179,8,0.15)',
+              bgcolor: 'rgba(22,163,74,0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
             }}
           >
-            <Typography sx={{ fontWeight: 800, fontSize: '0.75rem', color: '#92400E' }}>{idx + 1}</Typography>
+            <Typography sx={{ fontWeight: 800, fontSize: '0.75rem', color: '#14532D' }}>{idx + 1}</Typography>
           </Box>
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.25 }}>
-              <Icon sx={{ fontSize: 16, color: '#B45309' }} />
-              <Typography variant="body2" fontWeight={700} sx={{ color: '#78350F' }}>
+              <Icon sx={{ fontSize: 16, color: '#15803D' }} />
+              <Typography variant="body2" fontWeight={700} sx={{ color: '#14532D' }}>
                 {title}
               </Typography>
             </Box>
-            <Typography variant="caption" sx={{ color: '#92400E', lineHeight: 1.5 }}>
+            <Typography variant="caption" sx={{ color: '#166534', lineHeight: 1.5 }}>
               {detail}
             </Typography>
           </Box>
@@ -172,19 +174,19 @@ const BlockerDiagnostic = () => (
       ))}
     </Box>
 
-    <Divider sx={{ my: 2, borderColor: 'rgba(234,179,8,0.3)' }} />
+    <Divider sx={{ my: 2, borderColor: 'rgba(22,163,74,0.3)' }} />
 
-    <Typography variant="caption" sx={{ color: '#78350F' }}>
-      See the{' '}
+    <Typography variant="caption" sx={{ color: '#166534' }}>
+      Cluster gap fix report:{' '}
       <Link
         href="/docs/node5_atomplus_runbook.md"
         target="_blank"
         rel="noopener noreferrer"
-        sx={{ color: '#B45309', fontWeight: 600 }}
+        sx={{ color: '#15803D', fontWeight: 600 }}
       >
         node5 Atom+ runbook
       </Link>
-      {' '}for the full integration plan and resolution steps.
+      {' '}— rerun + rollback recipes are recorded in reports/atomplus_cluster_gap_fix_report.md.
     </Typography>
   </Alert>
 );
@@ -213,6 +215,30 @@ const EmptyRunList = () => (
 
 // ----------------------------------------------------------------------
 
+const LiveBenchDashboard = () => (
+  <Paper sx={{ p: 2, mt: 3 }}>
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+      <Typography variant="h6">Live Bench Dashboard (node5 — Atom+)</Typography>
+      <Typography variant="caption">
+        <a
+          href="http://10.254.177.41:30891/metrics"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#3aa3ff', textDecoration: 'none' }}
+        >
+          open Prometheus metrics in new tab ↗
+        </a>
+      </Typography>
+    </Box>
+    <Box
+      component="iframe"
+      src="http://10.254.177.41:30891/metrics"
+      title="node5 Atom+ rbln-metrics-exporter"
+      sx={{ width: '100%', height: 900, border: 0, borderRadius: 1, bgcolor: '#0e1117', display: 'block' }}
+    />
+  </Paper>
+);
+
 const AtomPlusPage = () => (
   <Box>
     <Box sx={{ mb: 3 }}>
@@ -220,13 +246,14 @@ const AtomPlusPage = () => (
         Rebellions Atom+ NPU Eval
       </Typography>
       <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
-        node5 &mdash; RBLN-CA22 &times; 2 &mdash; Hardware present, runtime pending
+        node5 &mdash; RBLN-CA22 &times; 2 &mdash; Ready, scheduler-allocatable, TT100T PASS
       </Typography>
     </Box>
 
     <HardwareIdentityCard />
-    <BlockerDiagnostic />
+    <ReadinessSummary />
     <EmptyRunList />
+    <LiveBenchDashboard />
   </Box>
 );
 

@@ -1,0 +1,22 @@
+NAME                                                                  READY   STATUS    RESTARTS        AGE
+pod/furiosa-device-plugin-wmrgj                                       1/1     Running   1 (7d23h ago)   8d
+pod/furiosa-feature-discovery-7mfhq                                   1/1     Running   1 (7d23h ago)   8d
+pod/furiosa-feature-discovery-node-feature-discovery-gc-57fdb6vpk5x   1/1     Running   1 (7d23h ago)   8d
+pod/furiosa-feature-discovery-node-feature-discovery-master-7dwgjlm   1/1     Running   0               8d
+pod/furiosa-feature-discovery-node-feature-discovery-worker-76pv7     1/1     Running   5 (4d20h ago)   8d
+pod/furiosa-feature-discovery-node-feature-discovery-worker-98c5v     1/1     Running   3 (6d20h ago)   8d
+pod/furiosa-feature-discovery-node-feature-discovery-worker-jcrqf     1/1     Running   2 (5h47m ago)   5h48m
+pod/furiosa-feature-discovery-node-feature-discovery-worker-mw4kn     1/1     Running   1 (7d23h ago)   8d
+
+NAME                                                                     DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+daemonset.apps/furiosa-device-plugin                                     1         1         1       1            1           <none>          8d
+daemonset.apps/furiosa-feature-discovery                                 1         1         1       1            1           <none>          8d
+daemonset.apps/furiosa-feature-discovery-node-feature-discovery-worker   4         4         4       4            4           <none>          8d
+
+NAME                                                                      READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/furiosa-feature-discovery-node-feature-discovery-gc       1/1     1            1           8d
+deployment.apps/furiosa-feature-discovery-node-feature-discovery-master   1/1     1            1           8d
+
+NAME                                                                                 DESIRED   CURRENT   READY   AGE
+replicaset.apps/furiosa-feature-discovery-node-feature-discovery-gc-57fdb658d7       1         1         1       8d
+replicaset.apps/furiosa-feature-discovery-node-feature-discovery-master-7d458d575f   1         1         1       8d

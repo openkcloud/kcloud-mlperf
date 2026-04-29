@@ -68,5 +68,6 @@ export interface ClusterYaml {
 export const RESOURCE_NAMES = {
   nvidia: 'nvidia.com/gpu',
   furiosa: 'furiosa.ai/npu',
-  rebellions: 'rebellions.ai/atomplus',
+  // Resource advertised by rbln-npu-operator v0.3.3+ device plugin (config selectorList resourceName=ATOM).
+  rebellions: 'rebellions.ai/ATOM',
 } as const;

@@ -1,0 +1,207 @@
+Name:               node5
+Roles:              <none>
+Labels:             accelerator-count=2
+                    accelerator-type=npu
+                    benchmark.openkcloud.io/role=benchmark-worker
+                    beta.kubernetes.io/arch=amd64
+                    beta.kubernetes.io/os=linux
+                    feature.node.kubernetes.io/cpu-cpuid.ADX=true
+                    feature.node.kubernetes.io/cpu-cpuid.AESNI=true
+                    feature.node.kubernetes.io/cpu-cpuid.AMXFP8=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX2=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512BF16=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512BITALG=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512BW=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512CD=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512DQ=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512F=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512IFMA=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512VBMI=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512VBMI2=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512VL=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512VNNI=true
+                    feature.node.kubernetes.io/cpu-cpuid.AVX512VPOPCNTDQ=true
+                    feature.node.kubernetes.io/cpu-cpuid.CETSS=true
+                    feature.node.kubernetes.io/cpu-cpuid.CLZERO=true
+                    feature.node.kubernetes.io/cpu-cpuid.CMPXCHG8=true
+                    feature.node.kubernetes.io/cpu-cpuid.CPBOOST=true
+                    feature.node.kubernetes.io/cpu-cpuid.CPPC=true
+                    feature.node.kubernetes.io/cpu-cpuid.EFER_LMSLE_UNS=true
+                    feature.node.kubernetes.io/cpu-cpuid.FLUSH_L1D=true
+                    feature.node.kubernetes.io/cpu-cpuid.FMA3=true
+                    feature.node.kubernetes.io/cpu-cpuid.FP256=true
+                    feature.node.kubernetes.io/cpu-cpuid.FSRM=true
+                    feature.node.kubernetes.io/cpu-cpuid.FXSR=true
+                    feature.node.kubernetes.io/cpu-cpuid.FXSROPT=true
+                    feature.node.kubernetes.io/cpu-cpuid.GFNI=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBPB=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBRS=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBRS_PREFERRED=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBRS_PROVIDES_SMP=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBS=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSBRNTRGT=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSFETCHSAM=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSFFV=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSOPCNT=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSOPCNTEXT=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSOPSAM=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSRDWROPCNT=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBSRIPINVALIDCHK=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBS_FETCH_CTLX=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBS_OPFUSE=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBS_PREVENTHOST=true
+                    feature.node.kubernetes.io/cpu-cpuid.IBS_ZEN4=true
+                    feature.node.kubernetes.io/cpu-cpuid.INT_WBINVD=true
+                    feature.node.kubernetes.io/cpu-cpuid.INVLPGB=true
+                    feature.node.kubernetes.io/cpu-cpuid.LAHF=true
+                    feature.node.kubernetes.io/cpu-cpuid.LBRVIRT=true
+                    feature.node.kubernetes.io/cpu-cpuid.MCAOVERFLOW=true
+                    feature.node.kubernetes.io/cpu-cpuid.MOVBE=true
+                    feature.node.kubernetes.io/cpu-cpuid.MOVU=true
+                    feature.node.kubernetes.io/cpu-cpuid.MSRIRC=true
+                    feature.node.kubernetes.io/cpu-cpuid.NRIPS=true
+                    feature.node.kubernetes.io/cpu-cpuid.OSXSAVE=true
+                    feature.node.kubernetes.io/cpu-cpuid.PPIN=true
+                    feature.node.kubernetes.io/cpu-cpuid.PSFD=true
+                    feature.node.kubernetes.io/cpu-cpuid.RDPRU=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV_64BIT=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV_ALTERNATIVE=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV_DEBUGSWAP=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV_ES=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV_RESTRICTED=true
+                    feature.node.kubernetes.io/cpu-cpuid.SEV_SNP=true
+                    feature.node.kubernetes.io/cpu-cpuid.SHA=true
+                    feature.node.kubernetes.io/cpu-cpuid.SME=true
+                    feature.node.kubernetes.io/cpu-cpuid.SME_COHERENT=true
+                    feature.node.kubernetes.io/cpu-cpuid.SPEC_CTRL_SSBD=true
+                    feature.node.kubernetes.io/cpu-cpuid.SSE4A=true
+                    feature.node.kubernetes.io/cpu-cpuid.STIBP=true
+                    feature.node.kubernetes.io/cpu-cpuid.STIBP_ALWAYSON=true
+                    feature.node.kubernetes.io/cpu-cpuid.SUCCOR=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVM=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVMDA=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVMFBASID=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVML=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVMNP=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVMPF=true
+                    feature.node.kubernetes.io/cpu-cpuid.SVMPFT=true
+                    feature.node.kubernetes.io/cpu-cpuid.SYSCALL=true
+                    feature.node.kubernetes.io/cpu-cpuid.SYSEE=true
+                    feature.node.kubernetes.io/cpu-cpuid.TLB_FLUSH_NESTED=true
+                    feature.node.kubernetes.io/cpu-cpuid.TOPEXT=true
+                    feature.node.kubernetes.io/cpu-cpuid.TSCRATEMSR=true
+                    feature.node.kubernetes.io/cpu-cpuid.VAES=true
+                    feature.node.kubernetes.io/cpu-cpuid.VMCBCLEAN=true
+                    feature.node.kubernetes.io/cpu-cpuid.VMPL=true
+                    feature.node.kubernetes.io/cpu-cpuid.VMSA_REGPROT=true
+                    feature.node.kubernetes.io/cpu-cpuid.VPCLMULQDQ=true
+                    feature.node.kubernetes.io/cpu-cpuid.VTE=true
+                    feature.node.kubernetes.io/cpu-cpuid.WBNOINVD=true
+                    feature.node.kubernetes.io/cpu-cpuid.X87=true
+                    feature.node.kubernetes.io/cpu-cpuid.XGETBV1=true
+                    feature.node.kubernetes.io/cpu-cpuid.XSAVE=true
+                    feature.node.kubernetes.io/cpu-cpuid.XSAVEC=true
+                    feature.node.kubernetes.io/cpu-cpuid.XSAVEOPT=true
+                    feature.node.kubernetes.io/cpu-cpuid.XSAVES=true
+                    feature.node.kubernetes.io/cpu-hardware_multithreading=true
+                    feature.node.kubernetes.io/cpu-model.family=25
+                    feature.node.kubernetes.io/cpu-model.id=17
+                    feature.node.kubernetes.io/cpu-model.vendor_id=AMD
+                    feature.node.kubernetes.io/kernel-config.NO_HZ=true
+                    feature.node.kubernetes.io/kernel-config.NO_HZ_FULL=true
+                    feature.node.kubernetes.io/kernel-version.full=6.8.0-40-generic
+                    feature.node.kubernetes.io/kernel-version.major=6
+                    feature.node.kubernetes.io/kernel-version.minor=8
+                    feature.node.kubernetes.io/kernel-version.revision=0
+                    feature.node.kubernetes.io/memory-numa=true
+                    feature.node.kubernetes.io/network-sriov.capable=true
+                    feature.node.kubernetes.io/pci-0300_1a03.present=true
+                    feature.node.kubernetes.io/pci-1200_1eff.present=true
+                    feature.node.kubernetes.io/pci-1200_1eff.sriov.capable=true
+                    feature.node.kubernetes.io/pci-1a03.present=true
+                    feature.node.kubernetes.io/pci-8086.present=true
+                    feature.node.kubernetes.io/pci-8086.sriov.capable=true
+                    feature.node.kubernetes.io/storage-nonrotationaldisk=true
+                    feature.node.kubernetes.io/system-os_release.ID=ubuntu
+                    feature.node.kubernetes.io/system-os_release.VERSION_ID=22.04
+                    feature.node.kubernetes.io/system-os_release.VERSION_ID.major=22
+                    feature.node.kubernetes.io/system-os_release.VERSION_ID.minor=04
+                    feature.node.kubernetes.io/usb-ef_0b1f_03ee.present=true
+                    kubernetes.io/arch=amd64
+                    kubernetes.io/hostname=node5
+                    kubernetes.io/os=linux
+                    npu-model=atomplus
+                    npu-vendor=rebellions
+Annotations:        kubeadm.alpha.kubernetes.io/cri-socket: unix:///var/run/containerd/containerd.sock
+                    nfd.node.kubernetes.io/feature-labels:
+                      cpu-cpuid.ADX,cpu-cpuid.AESNI,cpu-cpuid.AMXFP8,cpu-cpuid.AVX,cpu-cpuid.AVX2,cpu-cpuid.AVX512BF16,cpu-cpuid.AVX512BITALG,cpu-cpuid.AVX512BW...
+                    node.alpha.kubernetes.io/ttl: 0
+                    projectcalico.org/IPv4Address: 10.254.202.111/24
+                    projectcalico.org/IPv4VXLANTunnelAddr: 10.233.97.131
+                    volumes.kubernetes.io/controller-managed-attach-detach: true
+CreationTimestamp:  Wed, 29 Apr 2026 01:06:27 +0000
+Taints:             node.kubernetes.io/unschedulable:NoSchedule
+Unschedulable:      true
+Lease:
+  HolderIdentity:  node5
+  AcquireTime:     <unset>
+  RenewTime:       Wed, 29 Apr 2026 07:19:36 +0000
+Conditions:
+  Type                 Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----                 ------  -----------------                 ------------------                ------                       -------
+  NetworkUnavailable   False   Wed, 29 Apr 2026 01:31:59 +0000   Wed, 29 Apr 2026 01:31:59 +0000   CalicoIsUp                   Calico is running on this node
+  MemoryPressure       False   Wed, 29 Apr 2026 07:18:21 +0000   Wed, 29 Apr 2026 01:06:27 +0000   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure         False   Wed, 29 Apr 2026 07:18:21 +0000   Wed, 29 Apr 2026 01:06:27 +0000   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure          False   Wed, 29 Apr 2026 07:18:21 +0000   Wed, 29 Apr 2026 01:06:27 +0000   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready                True    Wed, 29 Apr 2026 07:18:21 +0000   Wed, 29 Apr 2026 01:31:37 +0000   KubeletReady                 kubelet is posting ready status. AppArmor enabled
+Addresses:
+  InternalIP:  10.254.202.111
+  Hostname:    node5
+Capacity:
+  cpu:                96
+  ephemeral-storage:  918175684Ki
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             1585000264Ki
+  pods:               110
+Allocatable:
+  cpu:                96
+  ephemeral-storage:  846190708974
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             1584897864Ki
+  pods:               110
+System Info:
+  Machine ID:                 01546a16be5d42d0bd62325ef9b9d80e
+  System UUID:                9d95b600-9bf2-11ef-8000-7cc25560b135
+  Boot ID:                    177165b4-6b40-4649-9132-9903b7a6ce46
+  Kernel Version:             6.8.0-40-generic
+  OS Image:                   Ubuntu 22.04.5 LTS
+  Operating System:           linux
+  Architecture:               amd64
+  Container Runtime Version:  containerd://1.7.22
+  Kubelet Version:            v1.28.0
+  Kube-Proxy Version:         v1.28.0
+Non-terminated Pods:          (8 in total)
+  Namespace                   Name                                                             CPU Requests  CPU Limits  Memory Requests  Memory Limits  Age
+  ---------                   ----                                                             ------------  ----------  ---------------  -------------  ---
+  furiosa-system              furiosa-feature-discovery-node-feature-discovery-worker-jcrqf    5m (0%)       0 (0%)      64Mi (0%)        512Mi (0%)     5h48m
+  gpu-operator                gpu-operator-node-feature-discovery-worker-pxslz                 5m (0%)       0 (0%)      64Mi (0%)        512Mi (0%)     5h48m
+  kube-system                 calico-node-gv2qp                                                150m (0%)     300m (0%)   64M (0%)         500M (0%)      5h48m
+  kube-system                 kube-proxy-ln7qs                                                 0 (0%)        0 (0%)      0 (0%)           0 (0%)         5h48m
+  kube-system                 nginx-proxy-node5                                                25m (0%)      0 (0%)      32M (0%)         0 (0%)         5h52m
+  kube-system                 nodelocaldns-r2fkx                                               100m (0%)     0 (0%)      70Mi (0%)        200Mi (0%)     6h13m
+  llm-evaluation              playwright-qa                                                    500m (0%)     2 (2%)      1Gi (0%)         4Gi (0%)       72m
+  monitoring                  alloy-m96wh                                                      10m (0%)      0 (0%)      50Mi (0%)        0 (0%)         5h48m
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests        Limits
+  --------           --------        ------
+  cpu                795m (0%)       2300m (2%)
+  memory             1396278Ki (0%)  6078424320 (0%)
+  ephemeral-storage  0 (0%)          0 (0%)
+  hugepages-1Gi      0 (0%)          0 (0%)
+  hugepages-2Mi      0 (0%)          0 (0%)
+Events:              <none>

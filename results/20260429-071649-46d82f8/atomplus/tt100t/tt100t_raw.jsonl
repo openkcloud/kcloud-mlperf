@@ -1,0 +1,5 @@
+{"label": "measured-1", "elapsed_s": 0.6407838719896972, "output_tokens": 100, "tokens_per_second": 156.05885911187204, "timestamp": "2026-04-29T08:33:03.590617+00:00"}
+{"label": "measured-2", "elapsed_s": 0.6733529821503907, "output_tokens": 100, "tokens_per_second": 148.51051773862255, "timestamp": "2026-04-29T08:33:04.264084+00:00"}
+{"label": "measured-3", "elapsed_s": 0.7868241048417985, "output_tokens": 100, "tokens_per_second": 127.09320848794576, "timestamp": "2026-04-29T08:33:05.051068+00:00"}
+{"label": "measured-4", "elapsed_s": 0.777607613010332, "output_tokens": 100, "tokens_per_second": 128.59956400487468, "timestamp": "2026-04-29T08:33:05.828835+00:00"}
+{"label": "measured-5", "elapsed_s": 0.7583864480257034, "output_tokens": 100, "tokens_per_second": 131.85889629268635, "timestamp": "2026-04-29T08:33:06.587379+00:00"}
