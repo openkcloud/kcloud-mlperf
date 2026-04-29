@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mirror-mondrianai-to-jungwooshim
+  namespace: llm-evaluation
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: image-mirror
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: node2
+      containers:
+      - name: crane
+        image: gcr.io/go-containerregistry/crane:debug
+        env:
+        - name: DOCKER_CONFIG_JSON
+          valueFrom:
+            secretKeyRef:
+              name: image-pull-secret
+              key: .dockerconfigjson
+        command: ["/busybox/sh","-c"]
+        args:
+        - |
+          set -ex
+          mkdir -p /root/.docker
+          printf '%s' "$DOCKER_CONFIG_JSON" > /root/.docker/config.json
+          for pair in \
+            "mondrianai/etri-llm-k8s-api:v1.0.0       jungwooshim/etri-llm-k8s-api:v1.0.0" \
+            "mondrianai/etri-llm-k8s-operator:v1.0.1  jungwooshim/etri-llm-k8s-operator:v1.0.1" \
+            "mondrianai/etri-llm-mlperf:v0.2          jungwooshim/etri-llm-mlperf:v0.2" \
+            "mondrianai/etri-llm-mmlu-pro:v0.2        jungwooshim/etri-llm-mmlu-pro:v0.2" ; do
+            src=$(echo "$pair" | awk '{print $1}')
+            dst=$(echo "$pair" | awk '{print $2}')
+            echo "=== mirror $src -> $dst ==="
+            crane copy "$src" "$dst"
+          done
+          echo "=== done ==="

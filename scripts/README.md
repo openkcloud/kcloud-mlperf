@@ -27,6 +27,35 @@ If you also need to build images on this host:
 
 ---
 
+## Recipe 0: mirror upstream images into jungwooshim (one-time per cluster)
+
+The chart pulls k8s-api/operator/mlperf/mmlu images from `jungwooshim/*` so a
+fresh cluster only needs ONE Docker Hub account. If you bring up a brand-new
+cluster, run this once:
+
+```bash
+./scripts/mirror-images.sh
+```
+
+This applies a short-lived in-cluster Job that uses
+`gcr.io/go-containerregistry/crane` to copy:
+
+| Source (mondrianai)                  | Destination (jungwooshim)               |
+|--------------------------------------|------------------------------------------|
+| `mondrianai/etri-llm-k8s-api:v1.0.0` | `jungwooshim/etri-llm-k8s-api:v1.0.0`    |
+| `mondrianai/etri-llm-k8s-operator:v1.0.1` | `jungwooshim/etri-llm-k8s-operator:v1.0.1` |
+| `mondrianai/etri-llm-mlperf:v0.2`    | `jungwooshim/etri-llm-mlperf:v0.2`       |
+| `mondrianai/etri-llm-mmlu-pro:v0.2`  | `jungwooshim/etri-llm-mmlu-pro:v0.2`     |
+
+Idempotent — re-running detects existing manifests and skips uploads. The Job
+reuses `secret/image-pull-secret` for the destination push, so no Docker Hub
+token is touched on the operator workstation.
+
+If you add a new mondrianai image to the chart, append it to the `for pair in`
+list inside `mirror-images.sh` and re-run the script.
+
+---
+
 ## Recipe 1: rebuild + redeploy the app (most common)
 
 ```bash
