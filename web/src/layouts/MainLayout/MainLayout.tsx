@@ -10,7 +10,7 @@ import CloudSVG from '@/assets/icons/cloud.svg?react';
 import HexagonSVG from '@/assets/icons/hexagon.svg?react';
 import { AppLoader } from '@/components/AppLoader';
 
-import { DashboardPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks } from '@/contexts/RouterContext/router.links.ts';
+import { DashboardPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks } from '@/contexts/RouterContext/router.links.ts';
 
 // ----------------------------------------------------------------------
 
@@ -120,6 +120,13 @@ const BENCHMARK_NAV_ITEMS = [
     sublabel: 'Accelerator evaluation',
     Icon: HexagonSVG,
     segment: 'npu-eval'
+  },
+  {
+    to: NpuEvalRngdPageLinks.main,
+    label: 'RNGD NPU Eval',
+    sublabel: 'FuriosaAI RNGD only',
+    Icon: HexagonSVG,
+    segment: 'npu-eval/rngd'
   }
 ] as const;
 
@@ -384,27 +391,32 @@ export const MainLayout = (props: MainLayoutProps) => {
   }, [pathname]);
 
   const isMMlu = pathname.startsWith('/mmlu');
+  const isNpuRngd = pathname.startsWith('/npu-eval/rngd');
   const isNpu = pathname.startsWith('/npu-eval');
   const isNpuRealtime = pathname.startsWith('/dashboard/npu-realtime');
   const isDashboard = pathname.startsWith('/dashboard');
-  const pageTitle = isNpu
-    ? 'NPU Evaluation'
-    : isMMlu
-      ? 'MMLU-Pro Benchmark'
-      : isNpuRealtime
-        ? 'NPU Realtime Dashboard'
-        : isDashboard
-          ? 'GPU Realtime Dashboard'
-          : 'MLPerf Benchmark';
-  const pageBadge = isNpu
+  const pageTitle = isNpuRngd
+    ? 'RNGD NPU Evaluation'
+    : isNpu
+      ? 'NPU Evaluation'
+      : isMMlu
+        ? 'MMLU-Pro Benchmark'
+        : isNpuRealtime
+          ? 'NPU Realtime Dashboard'
+          : isDashboard
+            ? 'GPU Realtime Dashboard'
+            : 'MLPerf Benchmark';
+  const pageBadge = isNpuRngd
     ? 'FuriosaAI RNGD'
-    : isMMlu
-      ? 'MMLU-Pro'
-      : isNpuRealtime
-        ? 'Live'
-        : isDashboard
+    : isNpu
+      ? 'FuriosaAI RNGD'
+      : isMMlu
+        ? 'MMLU-Pro'
+        : isNpuRealtime
           ? 'Live'
-          : 'MLPerf v5.1';
+          : isDashboard
+            ? 'Live'
+            : 'MLPerf v5.1';
 
   return (
     <StyledWrapper>

@@ -11,6 +11,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Drawer,
   Paper,
   Stack,
   Table,
@@ -22,11 +23,13 @@ import {
   Typography,
   useTheme
 } from '@mui/material';
+import { ArrowBack } from '@mui/icons-material';
 
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/DeviceDashboardHeader';
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
+import { ComparisonCandidatePicker } from '@/components/ComparisonCandidatePicker';
 import { ComparisonApi } from '@/api/domains/comparison';
-import type { ComparisonRunRow, ComparisonDiagnosticReason } from '@/api/domains/comparison';
+import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate } from '@/api/domains/comparison';
 
 // ----------------------------------------------------------------------
 
@@ -34,10 +37,11 @@ const NpuDeviceComparisonPage = () => {
   const theme = useTheme();
   const navigate = useNavigate();
 
-  const [selectedNpu, setSelectedNpu] = useState<ComparisonRunRow | null>(null);
-  const [selectedGpu, setSelectedGpu] = useState<ComparisonRunRow | null>(null);
+  const [selectedA, setSelectedA] = useState<ComparisonRunRow | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [compareData, setCompareData] = useState<Record<string, { a: number | null; b: number | null }> | null>(null);
+  const [selectedB, setSelectedB] = useState<ComparisonRunRow | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
 
@@ -53,19 +57,25 @@ const NpuDeviceComparisonPage = () => {
   });
 
   const runs = data?.runs ?? [];
-  const npuRuns = runs.filter((r) => r.hardware.type === 'npu');
-  const gpuRuns = runs.filter((r) => r.hardware.type === 'gpu');
 
   const diagnosticReason: ComparisonDiagnosticReason =
     data?.diagnostic?.reason ?? 'no_runs_exist';
 
-  const handleCompare = async () => {
-    if (!selectedNpu || !selectedGpu) return;
+  const handleSelectA = (run: ComparisonRunRow) => {
+    setSelectedA(run);
+    setSelectedB(null);
+    setPickerOpen(true);
+  };
+
+  const handleSelectB = async (candidate: ComparisonCandidate) => {
+    setPickerOpen(false);
+    const runB = candidate.run;
+    setSelectedB(runB);
     setCompareLoading(true);
     setCompareError(null);
     setCompareData(null);
     try {
-      const result = await ComparisonApi.compare('all', selectedNpu.id, selectedGpu.id);
+      const result = await ComparisonApi.compare('all', selectedA!.id, runB.id);
       setCompareData(result.metrics);
       setDialogOpen(true);
     } catch {
@@ -76,14 +86,13 @@ const NpuDeviceComparisonPage = () => {
     }
   };
 
-  const canCompare = selectedNpu !== null && selectedGpu !== null;
   const isEmpty = !isLoading && !error && runs.length === 0;
 
   return (
     <Box>
       <DeviceDashboardHeader
         title="NPU vs GPU — Historical Cross-Device Comparison"
-        description="Select one completed NPU run and one MLPerf GPU run, then click Compare to see a metric-by-metric breakdown."
+        description="Select run A from the list below — comparable candidates will appear instantly for run B."
         chipLabel="Historical"
         chipColor={theme.palette.primary.main}
       />
@@ -114,135 +123,101 @@ const NpuDeviceComparisonPage = () => {
 
       {!isLoading && !error && runs.length > 0 && (
         <>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              {selectedNpu ? `NPU: #${selectedNpu.id} ${selectedNpu.name}` : 'No NPU run selected'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">&amp;</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {selectedGpu ? `GPU: #${selectedGpu.id} ${selectedGpu.name}` : 'No GPU run selected'}
-            </Typography>
-            <Button
-              variant="contained"
-              disabled={!canCompare || compareLoading}
-              onClick={handleCompare}
-              sx={{ ml: 'auto' }}
-            >
-              {compareLoading ? 'Loading…' : 'Compare'}
-            </Button>
-          </Box>
-
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
-            <Paper sx={{ flex: 1, p: 2, overflow: 'auto', maxHeight: 520 }}>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-                NPU Runs
+          {selectedA && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Button
+                size="small"
+                startIcon={<ArrowBack />}
+                onClick={() => { setSelectedA(null); setSelectedB(null); setPickerOpen(false); }}
+              >
+                Change Run A
+              </Button>
+              <Typography variant="body2" color="text.secondary">
+                Run A: <strong>#{selectedA.id} {selectedA.name}</strong>
               </Typography>
-              {npuRuns.length === 0 ? (
-                <ComparisonDiagnosticPanel
-                  reason="hardware_not_ready"
-                  message="No completed NPU runs found."
-                  onAction={() => navigate('/npu-eval')}
-                />
-              ) : (
-                <TableContainer>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ID</TableCell>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Hardware</TableCell>
-                        <TableCell>Benchmark</TableCell>
-                        <TableCell>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {npuRuns.map((run) => {
-                        const selected = selectedNpu?.id === run.id;
-                        return (
-                          <TableRow
-                            key={run.id}
-                            hover
-                            selected={selected}
-                            onClick={() => setSelectedNpu(selected ? null : run)}
-                            sx={{ cursor: 'pointer' }}
-                          >
-                            <TableCell>{run.id}</TableCell>
-                            <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {run.name}
-                            </TableCell>
-                            <TableCell>
-                              <Chip label={run.hardware.model} size="small" variant="outlined" />
-                            </TableCell>
-                            <TableCell>
-                              <Chip label={run.benchmark.toUpperCase()} size="small" variant="outlined" />
-                            </TableCell>
-                            <TableCell>
-                              {run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+              {selectedB && (
+                <Typography variant="body2" color="text.secondary">
+                  &nbsp;vs Run B: <strong>#{selectedB.id} {selectedB.name}</strong>
+                </Typography>
               )}
-            </Paper>
+              {compareLoading && <CircularProgress size={16} sx={{ ml: 1 }} />}
+            </Box>
+          )}
 
-            <Paper sx={{ flex: 1, p: 2, overflow: 'auto', maxHeight: 520 }}>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-                MLPerf GPU Runs
-              </Typography>
-              {gpuRuns.length === 0 ? (
-                <ComparisonDiagnosticPanel
-                  reason="hardware_not_ready"
-                  message="No completed MLPerf GPU runs found."
-                  onAction={() => navigate('/ml-perf')}
-                />
-              ) : (
-                <TableContainer>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ID</TableCell>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Hardware</TableCell>
-                        <TableCell>TPS</TableCell>
-                        <TableCell>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {gpuRuns.map((run) => {
-                        const selected = selectedGpu?.id === run.id;
-                        return (
-                          <TableRow
-                            key={run.id}
-                            hover
-                            selected={selected}
-                            onClick={() => setSelectedGpu(selected ? null : run)}
-                            sx={{ cursor: 'pointer' }}
-                          >
-                            <TableCell>{run.id}</TableCell>
-                            <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {run.name}
-                            </TableCell>
-                            <TableCell>
-                              <Chip label={run.hardware.model} size="small" variant="outlined" />
-                            </TableCell>
-                            <TableCell>{run.metrics.tps?.toFixed(1) ?? '—'}</TableCell>
-                            <TableCell>
-                              {run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Paper>
-          </Stack>
+          <TableContainer component={Paper} sx={{ maxHeight: 520 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>ID</TableCell>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Hardware</TableCell>
+                  <TableCell>Benchmark</TableCell>
+                  <TableCell>Date</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {runs.map((run) => {
+                  const isSelected = selectedA?.id === run.id;
+                  return (
+                    <TableRow
+                      key={run.id}
+                      hover
+                      selected={isSelected}
+                      onClick={() => handleSelectA(run)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell>{run.id}</TableCell>
+                      <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {run.name}
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5}>
+                          <Chip label={run.hardware.type.toUpperCase()} size="small" />
+                          <Chip label={run.hardware.model} size="small" variant="outlined" />
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={run.benchmark.toUpperCase()} size="small" variant="outlined" />
+                      </TableCell>
+                      <TableCell>
+                        {run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Button size="small" variant={isSelected ? 'contained' : 'outlined'}>
+                          {isSelected ? 'Selected' : 'Pick'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </>
       )}
+
+      <Drawer
+        anchor="right"
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        PaperProps={{ sx: { width: 400, p: 3 } }}
+      >
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
+          Pick Run B
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Comparable runs for #{selectedA?.id} {selectedA?.name}
+        </Typography>
+        {selectedA && (
+          <ComparisonCandidatePicker
+            runId={selectedA.id}
+            benchmark={selectedA.benchmark}
+            onSelect={handleSelectB}
+            data-testid="npu-candidate-picker"
+          />
+        )}
+      </Drawer>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>NPU vs GPU — Side-by-Side Comparison</DialogTitle>
@@ -254,12 +229,12 @@ const NpuDeviceComparisonPage = () => {
             <Box>
               <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
                 <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.primary.main}` }}>
-                  <Typography variant="subtitle2" fontWeight={700}>NPU: {selectedNpu?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedNpu?.hardware.model}</Typography>
+                  <Typography variant="subtitle2" fontWeight={700}>Run A: {selectedA?.name}</Typography>
+                  <Typography variant="body2" color="text.secondary">{selectedA?.hardware.model}</Typography>
                 </Paper>
                 <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.secondary.main}` }}>
-                  <Typography variant="subtitle2" fontWeight={700}>GPU: {selectedGpu?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedGpu?.hardware.model}</Typography>
+                  <Typography variant="subtitle2" fontWeight={700}>Run B: {selectedB?.name}</Typography>
+                  <Typography variant="body2" color="text.secondary">{selectedB?.hardware.model}</Typography>
                 </Paper>
               </Stack>
               <TableContainer component={Paper} variant="outlined">
@@ -267,8 +242,8 @@ const NpuDeviceComparisonPage = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>Metric</TableCell>
-                      <TableCell>NPU</TableCell>
-                      <TableCell>GPU</TableCell>
+                      <TableCell>Run A</TableCell>
+                      <TableCell>Run B</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

@@ -1,7 +1,7 @@
 import { generatePath } from 'react-router-dom';
 
 import { join } from '@/contexts/RouterContext/router.helpers';
-import { AdminPaths, DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths } from '@/contexts/RouterContext/router.paths';
+import { AdminPaths, DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths } from '@/contexts/RouterContext/router.paths';
 
 export const HomePageLinks = {
   main: HomePaths.ROOT_PATH
@@ -51,8 +51,21 @@ export const NpuEvalPageLinks = {
 
 // ----------------------------------------------------------------------
 
+export const NpuEvalRngdPageLinks = {
+  main: NpuEvalRngdPaths.ROOT_PATH,
+  deviceComparison: join(NpuEvalRngdPaths.ROOT_PATH, NpuEvalRngdPaths.DEVICE_COMPARISON_PATH)
+} as const;
+
+// ----------------------------------------------------------------------
+
 export const DashboardPageLinks = {
   gpuRealtime: join(DashboardPaths.ROOT_PATH, DashboardPaths.GPU_REALTIME_PATH),
   npuRealtime: join(DashboardPaths.ROOT_PATH, DashboardPaths.NPU_REALTIME_PATH),
   sweepControl: join(DashboardPaths.ROOT_PATH, DashboardPaths.SWEEP_CONTROL_PATH)
+} as const;
+
+// ----------------------------------------------------------------------
+
+export const AdminPageLinks = {
+  sweepControl: join(AdminPaths.ROOT_PATH, AdminPaths.SWEEP_CONTROL_PATH)
 } as const;

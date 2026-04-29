@@ -12,6 +12,12 @@ import { MmExamResult } from '../entities/mm-exam-result.entity';
 import { NpuExam } from '../entities/npu-exam.entity';
 import { NpuExamResult } from '../entities/npu-exam-result.entity';
 import { StatusEnum } from '../enums/status.enum';
+import {
+  CandidateRun,
+  CandidatesEmptyEnvelope,
+  CandidatesResponse,
+  ComparabilityClass,
+} from './comparison.types';
 
 // ----------------------------------------------------------------------
 // Types — public contract for the unified comparison API.
@@ -482,6 +488,13 @@ export class ComparisonService {
         throughput: latest?.result_sps ?? null,
       },
       artifacts: [],
+      precision: exam.precision ?? null,
+      scenario: null,
+      batch_size: exam.batch_size ?? null,
+      dataset: exam.dataset ?? null,
+      data_number: exam.data_number ?? null,
+      max_output_tokens: exam.max_output_tokens ?? null,
+      source_table: 'npu_exam',
     };
   }
 
@@ -577,6 +590,291 @@ export class ComparisonService {
     const msg = err instanceof Error ? err.message : String(err);
     this.lastIngestionError = msg;
     this.logger.warn(`Comparison ingestion error: ${msg}`);
+  }
+
+  // ---------------------------------------------------------------------
+  // GET /api/comparison/candidates
+  // ---------------------------------------------------------------------
+
+  async findCandidates(
+    runId: number,
+    opts?: { benchmark?: BenchmarkFilter; hardware?: HardwareFilter },
+  ): Promise<CandidatesResponse | CandidatesEmptyEnvelope> {
+    let mpExams: MpExam[] = [];
+    let mmExams: MmExam[] = [];
+    let npuExams: NpuExam[] = [];
+
+    try {
+      [mpExams, mmExams, npuExams] = await Promise.all([
+        this.mpExamRepo.find({ relations: ['results'] }),
+        this.mmExamRepo.find({ relations: ['results'] }),
+        this.npuExamRepo.find({ relations: ['results'] }),
+      ]);
+    } catch (err) {
+      this.recordIngestionError(err);
+      return {
+        empty: true,
+        reason: 'ingestion_failed',
+        message:
+          (err as Error)?.message ||
+          'Failed to read benchmark records from the database.',
+        source: { run_id: runId, benchmark: null, model: null, hardware: null },
+        totals: {
+          siblings_considered: 0,
+          strict: 0,
+          hardware_optimized: 0,
+          related: 0,
+        },
+      };
+    }
+
+    const all: NormalizedRun[] = [
+      ...mpExams.map((e) => this.normalizeMpExam(e)),
+      ...mmExams.map((e) => this.normalizeMmExam(e)),
+      ...npuExams.map((e) => this.normalizeNpuExam(e)),
+    ];
+
+    const source = this.findSourceRun(all, runId);
+    if (!source) {
+      return {
+        empty: true,
+        reason: 'source_run_not_found',
+        message: `No run found with id=${runId} across mp_exam, mm_exam, or npu_exam.`,
+        source: { run_id: runId, benchmark: null, model: null, hardware: null },
+        totals: {
+          siblings_considered: 0,
+          strict: 0,
+          hardware_optimized: 0,
+          related: 0,
+        },
+      };
+    }
+
+    const benchmarkFilter = opts?.benchmark ?? 'all';
+    const hardwareFilter = opts?.hardware ?? 'all';
+
+    const siblings = all.filter((r) => {
+      if (r.id === source.id && r.source_table === source.source_table) {
+        return false;
+      }
+      if (r.benchmark !== source.benchmark) return false;
+      if (benchmarkFilter !== 'all' && r.benchmark !== benchmarkFilter) {
+        return false;
+      }
+      if (hardwareFilter !== 'all' && r.hardware.type !== hardwareFilter) {
+        return false;
+      }
+      // Comparability requires at least matching model.
+      if (this.normalizeModel(r.model) !== this.normalizeModel(source.model)) {
+        return false;
+      }
+      return true;
+    });
+
+    const classified: CandidateRun[] = siblings.map((r) =>
+      this.classifyComparability(source, r),
+    );
+
+    const strict = classified.filter((c) => c.comparability_class === 'strict');
+    const hardwareOptimized = classified.filter(
+      (c) => c.comparability_class === 'hardware-optimized',
+    );
+    const related = classified.filter(
+      (c) => c.comparability_class === 'related',
+    );
+
+    const sortByScoreThenStarted = (a: CandidateRun, b: CandidateRun) => {
+      if (b.comparability_score !== a.comparability_score) {
+        return b.comparability_score - a.comparability_score;
+      }
+      const aTs = a.started_at ? Date.parse(a.started_at) : 0;
+      const bTs = b.started_at ? Date.parse(b.started_at) : 0;
+      return bTs - aTs;
+    };
+    strict.sort(sortByScoreThenStarted);
+    hardwareOptimized.sort(sortByScoreThenStarted);
+    related.sort(sortByScoreThenStarted);
+
+    if (classified.length === 0) {
+      return {
+        empty: true,
+        reason: 'no_siblings_found',
+        message: `Run #${runId} (${source.benchmark}/${source.model}) has no comparable siblings on this cluster.`,
+        source: {
+          run_id: runId,
+          benchmark: source.benchmark,
+          model: source.model,
+          hardware: source.hardware.model,
+        },
+        totals: {
+          siblings_considered: 0,
+          strict: 0,
+          hardware_optimized: 0,
+          related: 0,
+        },
+      };
+    }
+
+    return {
+      empty: false,
+      source: this.toCandidateRow(source, source),
+      totals: {
+        siblings_considered: classified.length,
+        strict: strict.length,
+        hardware_optimized: hardwareOptimized.length,
+        related: related.length,
+      },
+      candidates: {
+        strict,
+        hardware_optimized: hardwareOptimized,
+        related,
+      },
+    };
+  }
+
+  private findSourceRun(
+    all: NormalizedRun[],
+    runId: number,
+  ): NormalizedRun | null {
+    // Disambiguate by id within each source table — ids may collide across
+    // mp_exam/mm_exam/npu_exam sequences. Prefer mp first, then npu (mlperf),
+    // then mm, then npu (mmlu).
+    const candidates = all.filter((r) => r.id === runId);
+    if (candidates.length === 0) return null;
+    const order: Array<NormalizedRun['source_table']> = [
+      'mp_exam',
+      'mm_exam',
+      'npu_exam',
+    ];
+    for (const tbl of order) {
+      const hit = candidates.find((c) => c.source_table === tbl);
+      if (hit) return hit;
+    }
+    return candidates[0];
+  }
+
+  private classifyComparability(
+    source: NormalizedRun,
+    candidate: NormalizedRun,
+  ): CandidateRun {
+    const sameBenchmark = source.benchmark === candidate.benchmark;
+    const sameModel =
+      this.normalizeModel(source.model) ===
+      this.normalizeModel(candidate.model);
+    const sameDataset =
+      this.normalizeStr(source.dataset) ===
+      this.normalizeStr(candidate.dataset);
+    const samePrecision =
+      this.normalizeStr(source.precision) ===
+      this.normalizeStr(candidate.precision);
+    const sameScenario =
+      this.normalizeStr(source.scenario) ===
+      this.normalizeStr(candidate.scenario);
+    const sameBatch = source.batch_size === candidate.batch_size;
+    const sameDataNumber = source.data_number === candidate.data_number;
+    const sameMaxOutput =
+      source.max_output_tokens === candidate.max_output_tokens;
+    const differentHardwareType =
+      source.hardware.type !== candidate.hardware.type;
+
+    let cls: ComparabilityClass = 'related';
+    const reasons: string[] = [];
+
+    if (
+      sameBenchmark &&
+      sameModel &&
+      sameDataset &&
+      samePrecision &&
+      sameScenario &&
+      sameBatch &&
+      sameDataNumber &&
+      sameMaxOutput
+    ) {
+      cls = 'strict';
+      reasons.push(
+        'identical benchmark/model/dataset/precision/scenario/batch_size/data_number/max_output_tokens',
+      );
+    } else if (
+      sameBenchmark &&
+      sameModel &&
+      sameDataset &&
+      differentHardwareType &&
+      !samePrecision
+    ) {
+      cls = 'hardware-optimized';
+      reasons.push(
+        `same benchmark/model/dataset; precision differs (${source.precision ?? '∅'} vs ${candidate.precision ?? '∅'}) due to ${source.hardware.type.toUpperCase()} vs ${candidate.hardware.type.toUpperCase()} hardware`,
+      );
+    } else {
+      cls = 'related';
+      const diffs: string[] = [];
+      if (!sameDataset)
+        diffs.push(`dataset (${source.dataset} vs ${candidate.dataset})`);
+      if (!samePrecision)
+        diffs.push(
+          `precision (${source.precision ?? '∅'} vs ${candidate.precision ?? '∅'})`,
+        );
+      if (!sameScenario)
+        diffs.push(`scenario (${source.scenario} vs ${candidate.scenario})`);
+      if (!sameBatch)
+        diffs.push(
+          `batch_size (${source.batch_size} vs ${candidate.batch_size})`,
+        );
+      if (!sameDataNumber)
+        diffs.push(
+          `data_number (${source.data_number} vs ${candidate.data_number})`,
+        );
+      if (!sameMaxOutput)
+        diffs.push(
+          `max_output_tokens (${source.max_output_tokens} vs ${candidate.max_output_tokens})`,
+        );
+      reasons.push(
+        `same benchmark/model; differs on ${diffs.join(', ') || 'other settings'}`,
+      );
+    }
+
+    const score =
+      (sameBenchmark ? 1 : 0) +
+      (sameModel ? 2 : 0) +
+      (sameDataset ? 1 : 0) +
+      (samePrecision ? 1 : 0) +
+      (sameScenario ? 1 : 0) +
+      (sameBatch ? 1 : 0) +
+      (sameDataNumber ? 1 : 0) +
+      (sameMaxOutput ? 1 : 0);
+
+    const row: CandidateRun = {
+      ...candidate,
+      comparability_class: cls,
+      comparability_reason: reasons.join('; '),
+      comparability_score: score,
+    };
+    return row;
+  }
+
+  private toCandidateRow(
+    source: NormalizedRun,
+    run: NormalizedRun,
+  ): CandidateRun {
+    if (run === source) {
+      return {
+        ...run,
+        comparability_class: 'strict',
+        comparability_reason: 'source run',
+        comparability_score: Number.MAX_SAFE_INTEGER,
+      };
+    }
+    return this.classifyComparability(source, run);
+  }
+
+  private normalizeModel(model: string | null | undefined): string {
+    if (!model) return '';
+    return model.trim().toLowerCase();
+  }
+
+  private normalizeStr(s: string | null | undefined): string {
+    if (s == null) return '';
+    return String(s).trim().toLowerCase();
   }
 
   // Test-only helper exposed via DI in unit tests.

@@ -1,16 +1,18 @@
-import { lazy } from 'react';
+import { lazy, Suspense } from 'react';
 import { Link, Navigate, useRoutes } from 'react-router-dom';
 
-import { Button, Container, Typography } from '@mui/material';
+import { Alert, Button, Container, Typography } from '@mui/material';
 
 import {
+  AdminPageLinks,
   DashboardPageLinks,
   HomePageLinks,
   MmluPageLinks,
   MpExamPageLinks,
-  NpuEvalPageLinks
+  NpuEvalPageLinks,
+  NpuEvalRngdPageLinks
 } from '@/contexts/RouterContext/router.links.ts';
-import { MlPerfPaths, MmluPaths, NpuEvalPaths } from '@/contexts/RouterContext/router.paths.ts';
+import { MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths } from '@/contexts/RouterContext/router.paths.ts';
 
 // ----------------------------------------------------------------------
 
@@ -27,11 +29,28 @@ const NpuTestResultPage = lazy(() => import('@/pages/npu/test-result'));
 const NpuComparisonPage = lazy(() => import('@/pages/npu/test-comparison'));
 const DeviceComparisonPage = lazy(() => import('@/pages/npu/device-comparison'));
 
+const RngdNpuEvalPage = lazy(() => import('@/pages/npu-eval/rngd'));
+const RngdDeviceComparisonPage = lazy(() => import('@/pages/npu-eval/rngd/device-comparison'));
+
 const GpuRealtimePage = lazy(() => import('@/pages/dashboard/gpu-realtime'));
 const NpuRealtimePage = lazy(() => import('@/pages/dashboard/npu-realtime'));
 const SweepControlPage = lazy(() => import('@/pages/dashboard/sweep-control'));
 const MlperfDeviceComparisonPage = lazy(() => import('@/pages/mlperf/device-comparison'));
 const MmluDeviceComparisonPage = lazy(() => import('@/pages/mmlu/device-comparison'));
+
+// ----------------------------------------------------------------------
+
+const AdminSweepControlPage = () => (
+  <>
+    <Alert severity="info" sx={{ mb: 3 }}>
+      <Typography fontWeight={700} component="span">Admin-only page.</Typography>{' '}
+      Sweep Control is not accessible from the main navigation. This page is intended for operators only.
+    </Alert>
+    <Suspense>
+      <SweepControlPage />
+    </Suspense>
+  </>
+);
 
 // ----------------------------------------------------------------------
 
@@ -122,6 +141,21 @@ export const Routes = () => {
       ]
     },
 
+    // npu-eval/rngd pages
+    {
+      path: NpuEvalRngdPageLinks.main,
+      children: [
+        {
+          index: true,
+          element: <RngdNpuEvalPage />
+        },
+        {
+          path: NpuEvalRngdPaths.DEVICE_COMPARISON_PATH,
+          element: <RngdDeviceComparisonPage />
+        }
+      ]
+    },
+
     // dashboard pages
     {
       path: DashboardPageLinks.gpuRealtime,
@@ -133,7 +167,13 @@ export const Routes = () => {
     },
     {
       path: DashboardPageLinks.sweepControl,
-      element: <SweepControlPage />
+      element: <Navigate to={AdminPageLinks.sweepControl} replace />
+    },
+
+    // admin pages
+    {
+      path: AdminPageLinks.sweepControl,
+      element: <AdminSweepControlPage />
     },
 
     // not found pages

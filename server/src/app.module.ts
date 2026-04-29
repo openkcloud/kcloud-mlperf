@@ -27,6 +27,7 @@ import { ComparisonModule } from './comparison/comparison.module';
 import { DeviceRegistryModule } from './device-registry/device-registry.module';
 import { GpuSweep } from './gpu-sweep/entities/gpu-sweep.entity';
 import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
+import { RunReconcilerModule } from './run-reconciler/run-reconciler.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
     VersionModule,
     ComparisonModule,
     DeviceRegistryModule,
+    RunReconcilerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

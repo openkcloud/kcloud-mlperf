@@ -2,8 +2,8 @@ import { Box, Paper, Typography, Alert, AlertTitle, Chip, Divider, Link } from '
 import { Warning as WarningIcon, Memory as MemoryIcon, Extension as ExtensionIcon, Science as ScienceIcon, Storage as StorageIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 
-import { DeviceRegistryApi } from '@/api/domains/device-registry.domain';
-import { DeviceRegistryQueryKeys } from '@/contexts/QueryContext/query.keys';
+import { DevicesApi } from '@/api/domains/devices.domains';
+import { DevicesQueryKeys } from '@/contexts/QueryContext/query.keys';
 
 // ----------------------------------------------------------------------
 
@@ -32,13 +32,13 @@ const BLOCKERS = [
 
 const HardwareIdentityCard = () => {
   const { data: deviceData } = useQuery({
-    queryKey: DeviceRegistryQueryKeys.list(),
-    queryFn: DeviceRegistryApi.list,
+    queryKey: DevicesQueryKeys.list(),
+    queryFn: DevicesApi.list,
   });
 
-  const rebellionsDevices = deviceData?.devices?.filter(
+  const rebellionsDevices = (Array.isArray(deviceData) ? deviceData : []).filter(
     (d: { vendor?: string }) => d.vendor?.toLowerCase() === 'rebellions'
-  ) ?? [];
+  );
 
   return (
     <Paper

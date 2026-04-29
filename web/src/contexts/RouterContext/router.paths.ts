@@ -47,3 +47,11 @@ export const NpuEvalPaths = {
   COMPARISON_PATH: 'test-comparison/:firstId/:secondId',
   DEVICE_COMPARISON_PATH: 'device-comparison'
 } as const;
+
+// ----------------------------------------------------------------------
+
+export const NpuEvalRngdPaths = {
+  ROOT_PATH: '/npu-eval/rngd',
+
+  DEVICE_COMPARISON_PATH: 'device-comparison'
+} as const;
