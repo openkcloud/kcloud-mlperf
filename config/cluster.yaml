@@ -49,17 +49,19 @@ workers:
       npu-vendor: furiosa
       npu-model: rngd
 
-  # node5 is the planned addition: 2 Atom+ NPUs.
+  # node5 is the planned addition: 2 Rebellions Atom+ NPUs.
   # NOT YET joined to the cluster. Scripts MUST tolerate this and warn cleanly.
+  # Hardware: rebellion-atom-1, PCI 1eff:1220, /dev/rsd0, tools at /usr/local/bin/rbln-stat rbln-smi
   - name: node5
     role: worker
     state: pending_join          # explicit flag — scripts skip with warning
-    accelerator: { type: npu, vendor: furiosa, model: "Atom+", count: 2 }
+    accelerator: { type: npu, vendor: rebellions, model: "Atom+", count: 2 }
     ssh: { host: 10.254.202.111, port: 22 }
     labels:
       accelerator-type: npu
-      npu-vendor: furiosa
+      npu-vendor: rebellions
       npu-model: atomplus
+      accelerator-count: "2"
 
 # Benchmark namespaces
 namespaces:
