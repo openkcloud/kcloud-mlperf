@@ -1,0 +1,128 @@
+# Canonical cluster inventory for the ETRI LLM benchmark cluster.
+#
+# Single source of truth — all numbered scripts (00_preflight_master.sh ...
+# 17_rollback_last_change.sh) read this file, never hard-code node names.
+#
+# DO NOT put passwords or PATs here. Credentials live in `.env` (gitignored)
+# referenced by `config/credentials.example.env`. Public-key SSH is preferred;
+# password fallback is read from $SUDO_PASS env var only.
+
+cluster_name: etri-llm-bench
+kubeconfig: ~/.kube/config
+
+ssh:
+  user: kcloud
+  password_env: SUDO_PASS    # never embedded; sourced from .env / secret store
+  default_port: 122           # node4 listens on 22; see node-specific override
+
+control_plane:
+  - name: node1
+    role: master
+    accelerator: { type: cpu, vendor: intel, count: 0 }
+    ssh: { host: 10.254.177.41, port: 122 }
+
+workers:
+  - name: node2
+    role: worker
+    accelerator: { type: gpu, vendor: nvidia, model: "L40 + A40", count: 2 }
+    ssh: { host: 10.254.184.195, port: 122 }
+    labels:
+      accelerator-type: gpu
+      gpu-vendor: nvidia
+      gpu-pair: l40-a40
+
+  - name: node3
+    role: worker
+    accelerator: { type: gpu, vendor: nvidia, model: "L40-44GiB + A40-44GiB", count: 2 }
+    ssh: { host: 10.254.184.196, port: 122 }
+    labels:
+      accelerator-type: gpu
+      gpu-vendor: nvidia
+      gpu-pair: l40-44-a40-44
+
+  - name: node4
+    role: worker
+    accelerator: { type: npu, vendor: furiosa, model: "RNGD", count: 1 }
+    ssh: { host: 10.254.202.114, port: 22 }
+    labels:
+      accelerator-type: npu
+      npu-vendor: furiosa
+      npu-model: rngd
+
+  # node5 — Rebellions Atom+ NPU node, JOINED 2026-04-29 (RUN_ID 20260428-083516-4b786d4).
+  # Hardware: rebellion-atom-1, PCI 1eff:1220, /dev/rsd0, tools at /usr/local/bin/rbln-stat rbln-smi
+  # Currently cordoned (SchedulingDisabled) for app workloads — benchmark-only posture
+  # until upstream Rebellions k8s device plugin ships rebellions.ai/atomplus as Allocatable.
+  - name: node5
+    role: worker
+    state: active                # joined to cluster; benchmark workloads use hostPath /dev/rsd0 + privileged
+    accelerator: { type: npu, vendor: rebellions, model: "Atom+", count: 2 }
+    ssh: { host: 10.254.202.111, port: 22 }
+    labels:
+      accelerator-type: npu
+      npu-vendor: rebellions
+      npu-model: atomplus
+      accelerator-count: "2"
+
+# Benchmark namespaces
+namespaces:
+  app: llm-evaluation
+  staging: llm-evaluation-staging
+  benchmarks: llm-bench
+  monitoring: monitoring
+  loki: loki
+
+# Image registry (immutable digests — populated by scripts/08_build_and_push_images.sh)
+images:
+  registry: docker.io
+  org: jungwooshim
+  backend:
+    repo: jungwooshim/etri-llm-backend
+    tag: v12
+    digest: ""    # filled in by build_and_push.sh
+  frontend:
+    repo: jungwooshim/etri-llm-frontend
+    tag: v12
+    digest: ""
+
+# Benchmark targets
+targets:
+  primary:
+    name: tt100-npu-fp8
+    description: "TT100 (time-to-100-output-tokens) on RNGD NPU using Llama-3.1-8B-Instruct FP8"
+    threshold_seconds: 1.1
+    model: meta-llama/Llama-3.1-8B-Instruct
+    precision: fp8
+    output_tokens: 100
+    accelerator_filter:
+      type: npu
+      vendor: furiosa
+
+  baseline:
+    name: tt100-npu-bf16
+    description: "Baseline measurement only — bf16 not the optimization target"
+    model: meta-llama/Llama-3.1-8B-Instruct
+    precision: bf16
+    output_tokens: 100
+    note: "Run for parity reference. Do NOT publish bf16 numbers as the primary KPI."
+
+  mlperf_inference:
+    version: "5.1"
+    spec_url: "https://github.com/mlcommons/inference"
+    scenarios: [offline, server]
+    workload: llama3.1-8b   # mlperf 5.1 reference task
+    requires_loadgen: true
+    requires_compliance_check: true
+
+  mmlu_pro:
+    repo: "TIGER-Lab/MMLU-Pro"
+    sample_per_subject: 100
+    accuracy_metric: pass@1
+
+# Future / 70B readiness — see config/model_profiles.yaml
+future_models:
+  - name: llama-3.1-70b
+    state: planned
+    needs:
+      rngd_devices: 4
+      gpu_alternative: "4 x L40 (192GiB total) or 4 x A100-80G"

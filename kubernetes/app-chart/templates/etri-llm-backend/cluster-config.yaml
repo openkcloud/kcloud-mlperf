@@ -1,0 +1,24 @@
+{{- with .Values }}
+# Cluster inventory ConfigMap mounted into the backend pod at
+# /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/cluster.yaml
+# DeviceRegistryService reads this as the source-of-truth fallback when the
+# Kubernetes API is unreachable, and to enrich k8s node entries with declared
+# accelerator vendor/model/count metadata.
+#
+# Operator note: when config/cluster.yaml changes, refresh this ConfigMap with:
+#   kubectl create configmap etri-llm-cluster-config \
+#     --from-file=cluster.yaml=config/cluster.yaml \
+#     -n llm-evaluation --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl rollout restart deployment etri-llm-backend -n llm-evaluation
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etri-llm-cluster-config
+  namespace: {{ .global.namespace }}
+  labels:
+    app.kubernetes.io/name: etri-llm-backend
+    app.kubernetes.io/component: cluster-config
+data:
+  cluster.yaml: |
+{{ $.Files.Get "config/cluster.yaml" | indent 4 }}
+{{- end }}

@@ -37,6 +37,9 @@ spec:
             mountPath: /usr/src/app/mnt/datasets/
           - name: results-volume
             mountPath: /usr/src/app/mnt/result/
+          - name: cluster-config
+            mountPath: /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config
+            readOnly: true
       volumes:
         - name: model-volume
           persistentVolumeClaim:
@@ -46,7 +49,10 @@ spec:
             claimName: dataset-nfs-pvc
         - name: results-volume
           persistentVolumeClaim:
-            claimName: results-nfs-pvc          
+            claimName: results-nfs-pvc
+        - name: cluster-config
+          configMap:
+            name: etri-llm-cluster-config
       imagePullSecrets:
       - name: {{ .global.imagePullSecret.metadata.name }}
 {{- end }}
