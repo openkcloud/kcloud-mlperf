@@ -85,7 +85,7 @@ export class RealtimeService implements OnModuleDestroy {
     private readonly npuResultRepo: Repository<NpuExamResult>,
     @Optional() @Inject(GPU_SWEEP_SERVICE_TOKEN)
     private readonly gpuSweepService: IGpuSweepService | null,
-    @Optional()
+    @Optional() @Inject(DeviceRegistryService)
     private readonly deviceRegistry: DeviceRegistryService | null,
   ) {}
 

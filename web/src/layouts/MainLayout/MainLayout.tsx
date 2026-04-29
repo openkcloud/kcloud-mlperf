@@ -161,13 +161,6 @@ const OPERATIONS_NAV_ITEMS = [
     sublabel: 'RNGD + Atom+ live feed',
     Icon: HexagonSVG,
     segment: 'dashboard/npu-realtime'
-  },
-  {
-    to: DashboardPageLinks.sweepControl,
-    label: 'Sweep Control',
-    sublabel: 'Start, pause, or drain',
-    Icon: CloudSVG,
-    segment: 'dashboard/sweep-control'
   }
 ] as const;
 

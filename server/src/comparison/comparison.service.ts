@@ -48,6 +48,14 @@ export interface NormalizedRun {
   completed_at: string | null;
   metrics: NormalizedMetrics;
   artifacts: string[];
+  // Settings used for candidate comparability matching.
+  precision: string | null;
+  scenario: string | null;
+  batch_size: number | null;
+  dataset: string | null;
+  data_number: number | null;
+  max_output_tokens: number | null;
+  source_table: 'mp_exam' | 'mm_exam' | 'npu_exam';
 }
 
 export type EmptyReason =
@@ -402,6 +410,13 @@ export class ComparisonService {
         throughput: sps,
       },
       artifacts: this.mlperfArtifacts(exam.id, exam.retry_num),
+      precision: exam.precision ?? null,
+      scenario: exam.scenario ?? null,
+      batch_size: exam.batch_size ?? null,
+      dataset: exam.dataset ?? null,
+      data_number: exam.data_number ?? null,
+      max_output_tokens: null,
+      source_table: 'mp_exam',
     };
   }
 
@@ -433,6 +448,13 @@ export class ComparisonService {
         throughput: null,
       },
       artifacts: [],
+      precision: exam.precision ?? null,
+      scenario: null,
+      batch_size: exam.batch_size ?? null,
+      dataset: exam.dataset ?? null,
+      data_number: exam.data_number ?? null,
+      max_output_tokens: null,
+      source_table: 'mm_exam',
     };
   }
 

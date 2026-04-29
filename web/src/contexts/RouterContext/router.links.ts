@@ -1,7 +1,7 @@
 import { generatePath } from 'react-router-dom';
 
 import { join } from '@/contexts/RouterContext/router.helpers';
-import { DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths } from '@/contexts/RouterContext/router.paths';
+import { AdminPaths, DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths } from '@/contexts/RouterContext/router.paths';
 
 export const HomePageLinks = {
   main: HomePaths.ROOT_PATH

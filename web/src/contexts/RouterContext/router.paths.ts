@@ -4,6 +4,13 @@ export const HomePaths = {
 
 // ----------------------------------------------------------------------
 
+export const AdminPaths = {
+  ROOT_PATH: '/admin',
+  SWEEP_CONTROL_PATH: 'sweep-control'
+} as const;
+
+// ----------------------------------------------------------------------
+
 export const DashboardPaths = {
   ROOT_PATH: '/dashboard',
   GPU_REALTIME_PATH: 'gpu-realtime',

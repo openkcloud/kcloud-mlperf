@@ -70,6 +70,38 @@ export type ComparisonPairResponse = {
 
 // ----------------------------------------------------------------------
 
+// ----------------------------------------------------------------------
+
+export type CandidateCategory = 'strict' | 'hardware_optimized' | 'related';
+
+export type ComparisonCandidate = {
+  run: ComparisonRunRow;
+  category: CandidateCategory;
+  comparability_reason: string;
+};
+
+export type CandidatesResponse = {
+  candidates: ComparisonCandidate[];
+  diagnostic?: ComparisonDiagnostic;
+};
+
+export type CandidatesParams = {
+  benchmark?: string;
+};
+
+// ----------------------------------------------------------------------
+
+export const CandidatesApi = {
+  getCandidates: async (runId: number | string, opts?: CandidatesParams): Promise<CandidatesResponse> => {
+    const { data } = await httpClient.get<CandidatesResponse>(`/comparison/candidates/${runId}`, {
+      params: opts
+    });
+    return data;
+  }
+} as const;
+
+// ----------------------------------------------------------------------
+
 export const ComparisonApi = {
   list: async (params?: ComparisonListParams): Promise<ComparisonListResponse> => {
     const { data } = await httpClient.get<ComparisonListResponse>('/comparison/list', {
