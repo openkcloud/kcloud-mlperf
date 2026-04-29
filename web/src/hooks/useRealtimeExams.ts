@@ -187,19 +187,33 @@ export function useRealtimeExams({ pollIntervalMs = FALLBACK_POLL_MS }: UseRealt
     const onSnapshot = (ev: MessageEvent) => {
       try {
         const parsed = JSON.parse(ev.data) as unknown;
-        // Validate the snapshot shape BEFORE adapting. Keepalive `ping` frames
-        // (and any other non-snapshot payload) arrive on the default 'message'
-        // channel when proxies strip event names; quietly ignore them instead
-        // of surfacing a misleading "Malformed realtime frame" error.
+        if (!parsed || typeof parsed !== 'object') return;
+
+        // Unwrap NestJS Sse() envelope:
+        //   wire shape (verified live):  { "type": "snapshot" | "ping",
+        //                                  "data": <snapshot> | { timestamp } }
+        // The backend Sse() controller emits MessageEvent objects whose `type`
+        // is NOT promoted to the SSE event-name on the wire (NestJS serializes
+        // the whole MessageEvent into the `data:` line). So we always receive
+        // the wrapper here and must extract `data`. Ignore `ping` frames.
+        const wrapper = parsed as { type?: string; data?: unknown };
+        if (wrapper.type === 'ping') return;
+        const candidate =
+          wrapper.type === 'snapshot' && wrapper.data !== undefined
+            ? wrapper.data
+            : parsed;
+
         if (
-          !parsed ||
-          typeof parsed !== 'object' ||
-          !Array.isArray((parsed as { slots?: unknown }).slots) ||
-          !(parsed as { sweep_progress?: unknown }).sweep_progress
+          !candidate ||
+          typeof candidate !== 'object' ||
+          !Array.isArray((candidate as { slots?: unknown }).slots) ||
+          !(candidate as { sweep_progress?: unknown }).sweep_progress
         ) {
+          // Not a snapshot — silently ignore (e.g. unknown keepalive variants).
           return;
         }
-        setSnapshot(adaptSnapshot(parsed as WireRealtimeSnapshot));
+
+        setSnapshot(adaptSnapshot(candidate as WireRealtimeSnapshot));
         setConnected(true);
         setError(null);
       } catch {
