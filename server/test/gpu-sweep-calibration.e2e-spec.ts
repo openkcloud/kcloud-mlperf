@@ -3,9 +3,24 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { GpuSweep, GpuSweepMode, GpuSweepStatus } from '../src/gpu-sweep/entities/gpu-sweep.entity';
-import { GpuSweepCell, GpuSweepCellKind, GpuSweepCellStatus } from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
+import {
+  GpuSweep,
+  GpuSweepMode,
+  GpuSweepStatus,
+} from '../src/gpu-sweep/entities/gpu-sweep.entity';
+import {
+  GpuSweepCell,
+  GpuSweepCellKind,
+  GpuSweepCellStatus,
+} from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
 import { GpuSweepModule } from '../src/gpu-sweep/gpu-sweep.module';
+import { MpExam } from '../src/entities/mp-exam.entity';
+import { MpExamResult } from '../src/entities/mp-exam-result.entity';
+import { MmExam } from '../src/entities/mm-exam.entity';
+import { MmExamResult } from '../src/entities/mm-exam-result.entity';
+import { ConfigModule } from '@nestjs/config';
+import { MpExamService } from '../src/mp-exam/mp-exam.service';
+import { MmExamService } from '../src/mm-exam/mm-exam.service';
 
 function makeCanonicalCell(id: number, node: 'node2' | 'node3'): GpuSweepCell {
   const gpuType = node === 'node2' ? 'NVIDIA-L40' : 'NVIDIA-L40-44GiB';
@@ -68,15 +83,28 @@ describe('GpuSweep Calibration (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [GpuSweepModule],
+      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), GpuSweepModule],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(sweepRepoMock)
       .overrideProvider(getRepositoryToken(GpuSweepCell))
       .useValue(cellRepoMock)
+      .overrideProvider(getRepositoryToken(MpExam))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(MpExamResult))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(MmExam))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(MmExamResult))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(MpExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .overrideProvider(MmExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
       .compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
     await app.init();
   });
 
@@ -206,8 +234,12 @@ describe('GpuSweep Calibration (e2e)', () => {
         .expect(200);
 
       expect(res.body.runs).toHaveLength(2);
-      expect(res.body.runs.map((r: { node: string }) => r.node)).toContain('node2');
-      expect(res.body.runs.map((r: { node: string }) => r.node)).toContain('node3');
+      expect(res.body.runs.map((r: { node: string }) => r.node)).toContain(
+        'node2',
+      );
+      expect(res.body.runs.map((r: { node: string }) => r.node)).toContain(
+        'node3',
+      );
       expect(res.body.passed).toBeDefined();
       expect(res.body.variance_pct).toBeDefined();
     });

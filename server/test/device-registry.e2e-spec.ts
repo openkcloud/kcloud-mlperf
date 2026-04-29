@@ -56,33 +56,33 @@ workers:
 
 function k8sClientWithAllNodesReady(): K8sClient {
   return {
-    listNodes: async () => ([
-        {
-          name: 'node1',
-          status: 'Ready' as const,
-          labels: {} as Record<string, string>,
-          allocatable: { cpu: '8', memory: '32Gi' } as Record<string, string>,
-        },
-        {
-          name: 'node2',
-          status: 'Ready',
-          labels: { 'accelerator-type': 'gpu' },
-          allocatable: { 'nvidia.com/gpu': '2', cpu: '32' },
-        },
-        {
-          name: 'node3',
-          status: 'Ready',
-          labels: { 'accelerator-type': 'gpu' },
-          allocatable: { 'nvidia.com/gpu': '2', cpu: '32' },
-        },
-        {
-          name: 'node4',
-          status: 'Ready',
-          labels: { 'accelerator-type': 'npu', 'npu-vendor': 'furiosa' },
-          allocatable: { 'furiosa.ai/npu': '1', cpu: '16' },
-        },
-        // node5 NOT in k8s — pending_join
-      ]),
+    listNodes: async () => [
+      {
+        name: 'node1',
+        status: 'Ready' as const,
+        labels: {} as Record<string, string>,
+        allocatable: { cpu: '8', memory: '32Gi' } as Record<string, string>,
+      },
+      {
+        name: 'node2',
+        status: 'Ready',
+        labels: { 'accelerator-type': 'gpu' },
+        allocatable: { 'nvidia.com/gpu': '2', cpu: '32' },
+      },
+      {
+        name: 'node3',
+        status: 'Ready',
+        labels: { 'accelerator-type': 'gpu' },
+        allocatable: { 'nvidia.com/gpu': '2', cpu: '32' },
+      },
+      {
+        name: 'node4',
+        status: 'Ready',
+        labels: { 'accelerator-type': 'npu', 'npu-vendor': 'furiosa' },
+        allocatable: { 'furiosa.ai/npu': '1', cpu: '16' },
+      },
+      // node5 NOT in k8s — pending_join
+    ],
   };
 }
 

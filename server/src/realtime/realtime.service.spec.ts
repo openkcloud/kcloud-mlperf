@@ -24,7 +24,10 @@ const mockRepo = () => ({
 });
 
 // Null deviceRegistry → falls back to 4 hardcoded GPU slots
-async function buildModule(gpuSweepService: IGpuSweepService | null = null, deviceRegistry: Partial<DeviceRegistryService> | null = null) {
+async function buildModule(
+  gpuSweepService: IGpuSweepService | null = null,
+  deviceRegistry: Partial<DeviceRegistryService> | null = null,
+) {
   const mpRepo = mockRepo();
   const mmRepo = mockRepo();
   const mpResultRepo = mockRepo();
@@ -44,7 +47,13 @@ async function buildModule(gpuSweepService: IGpuSweepService | null = null, devi
     ],
   }).compile();
 
-  return { service: module.get<RealtimeService>(RealtimeService), mpRepo, mmRepo, npuExamRepo, npuResultRepo };
+  return {
+    service: module.get<RealtimeService>(RealtimeService),
+    mpRepo,
+    mmRepo,
+    npuExamRepo,
+    npuResultRepo,
+  };
 }
 
 describe('RealtimeService', () => {
@@ -133,7 +142,10 @@ describe('RealtimeService', () => {
         RealtimeService,
         { provide: getRepositoryToken(MpExam), useValue: mpRepoLocal },
         { provide: getRepositoryToken(MmExam), useValue: mmRepoLocal },
-        { provide: getRepositoryToken(MpExamResult), useValue: mpResultRepoLocal },
+        {
+          provide: getRepositoryToken(MpExamResult),
+          useValue: mpResultRepoLocal,
+        },
         { provide: getRepositoryToken(NpuExam), useValue: mockRepo() },
         { provide: getRepositoryToken(NpuExamResult), useValue: mockRepo() },
         { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: null },

@@ -186,19 +186,31 @@ export function useRealtimeExams({ pollIntervalMs = FALLBACK_POLL_MS }: UseRealt
 
     const onSnapshot = (ev: MessageEvent) => {
       try {
-        const data = JSON.parse(ev.data) as WireRealtimeSnapshot;
-        setSnapshot(adaptSnapshot(data));
+        const parsed = JSON.parse(ev.data) as unknown;
+        // Validate the snapshot shape BEFORE adapting. Keepalive `ping` frames
+        // (and any other non-snapshot payload) arrive on the default 'message'
+        // channel when proxies strip event names; quietly ignore them instead
+        // of surfacing a misleading "Malformed realtime frame" error.
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          !Array.isArray((parsed as { slots?: unknown }).slots) ||
+          !(parsed as { sweep_progress?: unknown }).sweep_progress
+        ) {
+          return;
+        }
+        setSnapshot(adaptSnapshot(parsed as WireRealtimeSnapshot));
         setConnected(true);
         setError(null);
       } catch {
-        // malformed frame — keep last known snapshot, surface the error
+        // JSON.parse failed → genuine malformed frame; keep last snapshot.
         setError('Malformed realtime frame — keeping last snapshot');
       }
     };
 
     es.addEventListener('snapshot', onSnapshot);
     // Also accept default 'message' events for tolerance with proxies that
-    // strip event names. ping events are ignored.
+    // strip event names. The shape check above filters out ping keepalives.
     es.onmessage = onSnapshot;
 
     es.onerror = () => {

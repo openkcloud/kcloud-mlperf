@@ -14,7 +14,13 @@ import { DeviceRegistryModule } from '../device-registry/device-registry.module'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MpExam, MmExam, MpExamResult, NpuExam, NpuExamResult]),
+    TypeOrmModule.forFeature([
+      MpExam,
+      MmExam,
+      MpExamResult,
+      NpuExam,
+      NpuExamResult,
+    ]),
     GpuSweepModule,
     DeviceRegistryModule,
   ],

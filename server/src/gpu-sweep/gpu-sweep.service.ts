@@ -143,10 +143,20 @@ export class GpuSweepService {
     ];
 
     const benchmarks: SweepOptionFlag[] = [
-      this.flag('mlperf-perf', 'MLPerf performance', featureOn, featureFlagReason),
+      this.flag(
+        'mlperf-perf',
+        'MLPerf performance',
+        featureOn,
+        featureFlagReason,
+      ),
       this.flag('mlperf-acc', 'MLPerf accuracy', featureOn, featureFlagReason),
       this.flag('mmlu-pro', 'MMLU-Pro', featureOn, featureFlagReason),
-      this.flag('tt100', 'TT100 (time-to-100-tokens)', featureOn, featureFlagReason),
+      this.flag(
+        'tt100',
+        'TT100 (time-to-100-tokens)',
+        featureOn,
+        featureFlagReason,
+      ),
     ];
 
     // Hardware list. npu-rebellions-atomplus is labelled Rebellions Atom+
@@ -244,13 +254,17 @@ export class GpuSweepService {
   })
   handleQuietWindowOpen(): void {
     this.quietWindowActive = true;
-    this.logger.warn('[sweep:quiet_window] Demo quiet window OPEN — new sweeps blocked.');
+    this.logger.warn(
+      '[sweep:quiet_window] Demo quiet window OPEN — new sweeps blocked.',
+    );
   }
 
   @Cron('0 18 * * 1-5', { timeZone: 'Asia/Seoul', name: 'quiet_window_close' })
   handleQuietWindowClose(): void {
     this.quietWindowActive = false;
-    this.logger.log('[sweep:quiet_window] Demo quiet window CLOSED — sweeps allowed.');
+    this.logger.log(
+      '[sweep:quiet_window] Demo quiet window CLOSED — sweeps allowed.',
+    );
   }
 
   isDemoQuietWindow(): boolean {
@@ -314,8 +328,7 @@ export class GpuSweepService {
     }
 
     const sweep = this.sweepRepo.create({
-      name:
-        body.name ?? `sweep-${dayjs().tz(TZ).format('YYYYMMDD-HHmmss')}`,
+      name: body.name ?? `sweep-${dayjs().tz(TZ).format('YYYYMMDD-HHmmss')}`,
       mode,
       status: GpuSweepStatus.RUNNING,
       total_cells: cells.length,
@@ -325,7 +338,12 @@ export class GpuSweepService {
     });
     const saved = await this.sweepRepo.save(sweep);
     this.logger.log(
-      JSON.stringify({ event: 'sweep_started', sweep_id: saved.id, mode, total_cells: cells.length }),
+      JSON.stringify({
+        event: 'sweep_started',
+        sweep_id: saved.id,
+        mode,
+        total_cells: cells.length,
+      }),
     );
 
     const cellRows = cells.map((c) =>
@@ -518,7 +536,8 @@ export class GpuSweepService {
           sweep_id: sweep.id,
           cell_id: cell.id,
           gpu_type: cell.gpu_type,
-          mp_exam_id: cell.kind === GpuSweepCellKind.MLPERF ? exam_id : undefined,
+          mp_exam_id:
+            cell.kind === GpuSweepCellKind.MLPERF ? exam_id : undefined,
           mm_exam_id: cell.kind === GpuSweepCellKind.MMLU ? exam_id : undefined,
         }),
       );
@@ -565,11 +584,7 @@ export class GpuSweepService {
     this.nodeMutex[node].busy = false;
     this.nodeMutex[node].current_cell_key = null;
 
-    await this.sweepRepo.increment(
-      { id: cell.sweep_id },
-      'completed_cells',
-      1,
-    );
+    await this.sweepRepo.increment({ id: cell.sweep_id }, 'completed_cells', 1);
 
     this.logger.log(
       JSON.stringify({
@@ -677,7 +692,11 @@ export class GpuSweepService {
     await this.sweepRepo.update(id, { status: GpuSweepStatus.DRAINED });
     if (this.activeSweepId === id) this.activeSweepId = null;
     this.logger.log(
-      JSON.stringify({ event: 'sweep_drained', sweep_id: id, inflight_stopped: inflight.length }),
+      JSON.stringify({
+        event: 'sweep_drained',
+        sweep_id: id,
+        inflight_stopped: inflight.length,
+      }),
     );
 
     // Reset mutex regardless — drained means free.
@@ -741,7 +760,10 @@ export class GpuSweepService {
     const paused = this.quietWindowActive;
     const quiet_window = {
       active: this.quietWindowActive,
-      start_hour: parseInt(process.env.GPU_SWEEP_QUIET_WINDOW_START ?? '10', 10),
+      start_hour: parseInt(
+        process.env.GPU_SWEEP_QUIET_WINDOW_START ?? '10',
+        10,
+      ),
       end_hour: parseInt(process.env.GPU_SWEEP_QUIET_WINDOW_END ?? '18', 10),
       tz: 'Asia/Seoul',
     };
@@ -761,7 +783,10 @@ export class GpuSweepService {
   async listCells(sweepId: number): Promise<GpuSweepCell[]> {
     const sweep = await this.sweepRepo.findOne({ where: { id: sweepId } });
     if (!sweep) throw new NotFoundException(`Sweep ${sweepId} not found`);
-    return this.cellRepo.find({ where: { sweep_id: sweepId }, order: { id: 'ASC' } });
+    return this.cellRepo.find({
+      where: { sweep_id: sweepId },
+      order: { id: 'ASC' },
+    });
   }
 
   // ---------------------- test-only helpers (internal) -------------------

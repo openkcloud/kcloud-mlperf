@@ -32,8 +32,7 @@ const NPU_INFERENCE_URL =
 
 // Dataset base path inside the backend pod (NFS mount)
 const DATASET_BASE_PATH =
-  process.env.DATASET_PATH ||
-  path.join(process.cwd(), 'mnt', 'datasets');
+  process.env.DATASET_PATH || path.join(process.cwd(), 'mnt', 'datasets');
 
 // Default prompts used when dataset files are not available
 const DEFAULT_PROMPTS = [
@@ -69,10 +68,7 @@ export class NpuEvalService implements OnModuleInit {
   async onModuleInit() {
     // Resume any pending/preparing exams on server restart
     const pendingExams = await this.npuExamRepo.find({
-      where: [
-        { status: StatusEnum.PENDING },
-        { status: StatusEnum.PREPARING },
-      ],
+      where: [{ status: StatusEnum.PENDING }, { status: StatusEnum.PREPARING }],
     });
 
     for (const exam of pendingExams) {
@@ -330,9 +326,7 @@ export class NpuEvalService implements OnModuleInit {
     }, delay);
 
     this.schedulerRegistry.addTimeout(scheduleId, timeout);
-    this.logger.log(
-      `NPU exam ${exam.id} scheduled to start in ${delay}ms`,
-    );
+    this.logger.log(`NPU exam ${exam.id} scheduled to start in ${delay}ms`);
   }
 
   private async executeBenchmark(examId: number) {
@@ -543,9 +537,7 @@ export class NpuEvalService implements OnModuleInit {
       } catch (err) {
         if (signal.aborted) break;
         errors++;
-        this.logger.warn(
-          `  Sample ${idx + 1}: ERROR — ${err.message}`,
-        );
+        this.logger.warn(`  Sample ${idx + 1}: ERROR — ${err.message}`);
       }
     }
 
@@ -553,8 +545,7 @@ export class NpuEvalService implements OnModuleInit {
     const runTime = (runEnd - runStart) / 1000;
 
     return {
-      avgTtft:
-        samplesCompleted > 0 ? totalTtft / samplesCompleted : null,
+      avgTtft: samplesCompleted > 0 ? totalTtft / samplesCompleted : null,
       avgTt100t:
         tt100tValues.length > 0
           ? tt100tValues.reduce((a, b) => a + b, 0) / tt100tValues.length
@@ -562,12 +553,10 @@ export class NpuEvalService implements OnModuleInit {
       tps: runTime > 0 ? totalTokens / runTime : 0,
       sps: runTime > 0 ? samplesCompleted / runTime : 0,
       latency: runTime,
-      avgTpot:
-        samplesCompleted > 0 ? totalTpotSum / samplesCompleted : null,
+      avgTpot: samplesCompleted > 0 ? totalTpotSum / samplesCompleted : null,
       samplesCompleted,
       errors,
-      bestTt100t:
-        tt100tValues.length > 0 ? Math.min(...tt100tValues) : null,
+      bestTt100t: tt100tValues.length > 0 ? Math.min(...tt100tValues) : null,
     };
   }
 
@@ -629,11 +618,7 @@ export class NpuEvalService implements OnModuleInit {
       const req = http.request(options, (res) => {
         if (res.statusCode !== 200) {
           signal.removeEventListener('abort', onAbort);
-          reject(
-            new Error(
-              `Server returned status ${res.statusCode}`,
-            ),
-          );
+          reject(new Error(`Server returned status ${res.statusCode}`));
           return;
         }
 
@@ -646,10 +631,7 @@ export class NpuEvalService implements OnModuleInit {
 
           for (const line of lines) {
             const trimmed = line.trim();
-            if (
-              trimmed.startsWith('data: ') &&
-              trimmed !== 'data: [DONE]'
-            ) {
+            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
               tokenCount++;
               if (firstTokenTime === null) {
                 firstTokenTime = performance.now();
@@ -682,9 +664,7 @@ export class NpuEvalService implements OnModuleInit {
         signal.removeEventListener('abort', onAbort);
         if (err.message.includes('ECONNREFUSED')) {
           reject(
-            new Error(
-              `Cannot connect to inference server at ${serverUrl}`,
-            ),
+            new Error(`Cannot connect to inference server at ${serverUrl}`),
           );
         } else {
           reject(err);
@@ -747,8 +727,7 @@ export class NpuEvalService implements OnModuleInit {
 
           if (Array.isArray(data)) {
             for (const item of data) {
-              const text =
-                item.article || item.text || item.input || '';
+              const text = item.article || item.text || item.input || '';
               if (text) {
                 samples.push(
                   `Summarize the following article:\n\n${text.slice(0, 2000)}`,
@@ -773,7 +752,10 @@ export class NpuEvalService implements OnModuleInit {
       } else if (benchmark === 'mmlu') {
         // MMLU-Pro dataset
         const datasetDir = path.join(DATASET_BASE_PATH, 'mmlu-pro');
-        if (fs.existsSync(datasetDir) && fs.statSync(datasetDir).isDirectory()) {
+        if (
+          fs.existsSync(datasetDir) &&
+          fs.statSync(datasetDir).isDirectory()
+        ) {
           const files = fs.readdirSync(datasetDir).sort();
           for (const fname of files) {
             const fpath = path.join(datasetDir, fname);

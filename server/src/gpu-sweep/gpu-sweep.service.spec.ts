@@ -3,8 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { GpuSweepService } from './gpu-sweep.service';
-import { GpuSweep, GpuSweepMode, GpuSweepStatus } from './entities/gpu-sweep.entity';
-import { GpuSweepCell, GpuSweepCellStatus } from './entities/gpu-sweep-cell.entity';
+import {
+  GpuSweep,
+  GpuSweepMode,
+  GpuSweepStatus,
+} from './entities/gpu-sweep.entity';
+import {
+  GpuSweepCell,
+  GpuSweepCellStatus,
+} from './entities/gpu-sweep-cell.entity';
 import { MpExamService } from '../mp-exam/mp-exam.service';
 import { MmExamService } from '../mm-exam/mm-exam.service';
 import { FIXTURE_CELL_COUNT } from './matrix.fixture';
@@ -54,7 +61,8 @@ describe('GpuSweepService', () => {
     configService = {
       get: jest.fn((key: string) => {
         if (key === 'GPU_SWEEP_ENABLED') return enabled ? 'true' : 'false';
-        if (key === 'GPU_SWEEP_MIN_STAGGER_SECONDS') return String(staggerSeconds);
+        if (key === 'GPU_SWEEP_MIN_STAGGER_SECONDS')
+          return String(staggerSeconds);
         return undefined;
       }),
     };
@@ -235,13 +243,11 @@ describe('GpuSweepService', () => {
 
       await service.drain(1);
 
-      const stopCalls = (cellRepo.update as jest.Mock).mock.calls.filter(
+      const stopCalls = cellRepo.update.mock.calls.filter(
         (args: [number, { status: GpuSweepCellStatus }]) =>
           args[1].status === GpuSweepCellStatus.STOPPED,
       );
-      const stoppedIds = stopCalls.map(
-        (args: [number, unknown]) => args[0],
-      );
+      const stoppedIds = stopCalls.map((args: [number, unknown]) => args[0]);
       expect(stoppedIds).toContain(10);
       expect(stoppedIds).toContain(11);
       expect(stoppedIds).toContain(12);
@@ -254,16 +260,25 @@ describe('GpuSweepService', () => {
       });
       sweepRepo.findOne.mockResolvedValue(sweep);
       cellRepo.find.mockResolvedValue([]);
-      sweepRepo.findOne.mockResolvedValue({ ...sweep, status: GpuSweepStatus.DRAINED });
+      sweepRepo.findOne.mockResolvedValue({
+        ...sweep,
+        status: GpuSweepStatus.DRAINED,
+      });
 
       await expect(service.drain(1)).resolves.not.toThrow();
     });
 
     it('resets node mutex after drain', async () => {
-      const sweep = Object.assign(new GpuSweep(), { id: 1, status: GpuSweepStatus.RUNNING });
+      const sweep = Object.assign(new GpuSweep(), {
+        id: 1,
+        status: GpuSweepStatus.RUNNING,
+      });
       sweepRepo.findOne.mockResolvedValue(sweep);
       cellRepo.find.mockResolvedValue([]);
-      sweepRepo.findOne.mockResolvedValue({ ...sweep, status: GpuSweepStatus.DRAINED });
+      sweepRepo.findOne.mockResolvedValue({
+        ...sweep,
+        status: GpuSweepStatus.DRAINED,
+      });
 
       service._testGetMutex().node2.busy = true;
       service._testGetMutex().node2.current_cell_key = 'some-key';
@@ -350,7 +365,7 @@ describe('GpuSweepService', () => {
 
       await service.markCellComplete(5, { tt100t_seconds: 1.588, tps: 62.94 });
 
-      const updateCall = (cellRepo.update as jest.Mock).mock.calls[0];
+      const updateCall = cellRepo.update.mock.calls[0];
       expect(updateCall[1].tt100t_seconds).toBe(1.588);
       expect(updateCall[1].tps).toBe(62.94);
       expect(updateCall[1].status).toBe(GpuSweepCellStatus.COMPLETED);

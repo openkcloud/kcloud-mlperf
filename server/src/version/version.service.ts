@@ -9,8 +9,8 @@ import * as path from 'path';
 function loadPkgVersion(): string {
   const candidates = [
     path.resolve(__dirname, '../../../package.json'), // dist/src/version → repo root
-    path.resolve(__dirname, '../../package.json'),    // src/version (dev / ts-node)
-    path.resolve(process.cwd(), 'package.json'),      // last-resort
+    path.resolve(__dirname, '../../package.json'), // src/version (dev / ts-node)
+    path.resolve(process.cwd(), 'package.json'), // last-resort
   ];
   for (const p of candidates) {
     try {
@@ -34,7 +34,9 @@ export class VersionService {
   constructor() {
     this.appVersion = loadPkgVersion();
     if (this.appVersion === 'unknown') {
-      this.logger.warn('Could not locate package.json; reporting app_version as "unknown"');
+      this.logger.warn(
+        'Could not locate package.json; reporting app_version as "unknown"',
+      );
     }
   }
 

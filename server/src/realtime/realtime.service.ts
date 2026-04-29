@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  Optional,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { MpExam } from '../entities/mp-exam.entity';
@@ -83,9 +89,11 @@ export class RealtimeService implements OnModuleDestroy {
     private readonly npuExamRepo: Repository<NpuExam>,
     @InjectRepository(NpuExamResult)
     private readonly npuResultRepo: Repository<NpuExamResult>,
-    @Optional() @Inject(GPU_SWEEP_SERVICE_TOKEN)
+    @Optional()
+    @Inject(GPU_SWEEP_SERVICE_TOKEN)
     private readonly gpuSweepService: IGpuSweepService | null,
-    @Optional() @Inject(DeviceRegistryService)
+    @Optional()
+    @Inject(DeviceRegistryService)
     private readonly deviceRegistry: DeviceRegistryService | null,
   ) {}
 
@@ -99,9 +107,7 @@ export class RealtimeService implements OnModuleDestroy {
       count: (existing?.count ?? 0) + 1,
       since,
     });
-    this.logger.log(
-      JSON.stringify({ event: 'OperatorRaceFailed', since }),
-    );
+    this.logger.log(JSON.stringify({ event: 'OperatorRaceFailed', since }));
   }
 
   async buildSnapshot(): Promise<RealtimeSnapshot> {
@@ -233,17 +239,62 @@ export class RealtimeService implements OnModuleDestroy {
         return devices.filter((d) => d.type === 'gpu' || d.type === 'npu');
       } catch (err) {
         this.logger.warn(
-          'DeviceRegistryService.getDevices() failed, falling back: ' + String(err),
+          'DeviceRegistryService.getDevices() failed, falling back: ' +
+            String(err),
         );
       }
     }
 
     // Fallback: hardcoded 4 NVIDIA GPU slots (pre-NPU behaviour)
     return [
-      { node: 'node2', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-L40', slot_id: 0, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'cluster_yaml' },
-      { node: 'node2', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-A40', slot_id: 1, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'cluster_yaml' },
-      { node: 'node3', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-L40-44GiB', slot_id: 0, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'cluster_yaml' },
-      { node: 'node3', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-A40-44GiB', slot_id: 1, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'cluster_yaml' },
+      {
+        node: 'node2',
+        type: 'gpu',
+        vendor: 'nvidia',
+        model: 'NVIDIA-L40',
+        slot_id: 0,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'nvidia.com/gpu',
+        allocatable_count: 1,
+        source: 'cluster_yaml',
+      },
+      {
+        node: 'node2',
+        type: 'gpu',
+        vendor: 'nvidia',
+        model: 'NVIDIA-A40',
+        slot_id: 1,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'nvidia.com/gpu',
+        allocatable_count: 1,
+        source: 'cluster_yaml',
+      },
+      {
+        node: 'node3',
+        type: 'gpu',
+        vendor: 'nvidia',
+        model: 'NVIDIA-L40-44GiB',
+        slot_id: 0,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'nvidia.com/gpu',
+        allocatable_count: 1,
+        source: 'cluster_yaml',
+      },
+      {
+        node: 'node3',
+        type: 'gpu',
+        vendor: 'nvidia',
+        model: 'NVIDIA-A40-44GiB',
+        slot_id: 1,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'nvidia.com/gpu',
+        allocatable_count: 1,
+        source: 'cluster_yaml',
+      },
     ];
   }
 
@@ -255,7 +306,9 @@ export class RealtimeService implements OnModuleDestroy {
   ): RealtimeSlot {
     const sku = device.model;
     const mpExam = mpActives.find((e) => e.gpu_type === sku);
-    const mmExam = !mpExam ? mmActives.find((e) => e.gpu_type === sku) : undefined;
+    const mmExam = !mpExam
+      ? mmActives.find((e) => e.gpu_type === sku)
+      : undefined;
     const activeExam = mpExam ?? mmExam;
 
     if (!activeExam) {
@@ -285,7 +338,9 @@ export class RealtimeService implements OnModuleDestroy {
     const elapsedSeconds = activeExam.started_at
       ? Math.max(
           0,
-          Math.floor((Date.now() - new Date(activeExam.started_at).getTime()) / 1000),
+          Math.floor(
+            (Date.now() - new Date(activeExam.started_at).getTime()) / 1000,
+          ),
         )
       : 0;
 
@@ -327,7 +382,12 @@ export class RealtimeService implements OnModuleDestroy {
       node: device.node,
       slot_id: device.slot_id,
       status,
-      current_exam: { id: activeExam.id, kind, exam_name, elapsed_seconds: elapsedSeconds },
+      current_exam: {
+        id: activeExam.id,
+        kind,
+        exam_name,
+        elapsed_seconds: elapsedSeconds,
+      },
       last_known_metric: { tps, tt100t_seconds },
       last_metric_timestamp,
       metrics_status,
@@ -368,7 +428,9 @@ export class RealtimeService implements OnModuleDestroy {
     const elapsedSeconds = activeExam.started_at
       ? Math.max(
           0,
-          Math.floor((Date.now() - new Date(activeExam.started_at).getTime()) / 1000),
+          Math.floor(
+            (Date.now() - new Date(activeExam.started_at).getTime()) / 1000,
+          ),
         )
       : 0;
 

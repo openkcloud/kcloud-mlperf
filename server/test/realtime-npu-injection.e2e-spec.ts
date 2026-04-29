@@ -11,11 +11,15 @@ import { GpuSweepCell } from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
 import { MpExam } from '../src/entities/mp-exam.entity';
 import { MmExam } from '../src/entities/mm-exam.entity';
 import { MpExamResult } from '../src/entities/mp-exam-result.entity';
+import { MmExamResult } from '../src/entities/mm-exam-result.entity';
 import { NpuExam } from '../src/entities/npu-exam.entity';
 import { NpuExamResult } from '../src/entities/npu-exam-result.entity';
 import { DeviceRegistryService } from '../src/device-registry/device-registry.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { DeviceEntry } from '../src/device-registry/device-registry.types';
+import { ConfigModule } from '@nestjs/config';
+import { MpExamService } from '../src/mp-exam/mp-exam.service';
+import { MmExamService } from '../src/mm-exam/mm-exam.service';
 
 // ---------------------------------------------------------------------------
 // Regression test: @Inject(DeviceRegistryService) wiring in RealtimeService
@@ -88,7 +92,7 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [RealtimeModule, GpuSweepModule],
+      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), RealtimeModule, GpuSweepModule],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(makeRepoMock())
@@ -100,12 +104,18 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
       .useValue(makeRepoMock())
       .overrideProvider(getRepositoryToken(MpExamResult))
       .useValue(makeRepoMock())
+      .overrideProvider(getRepositoryToken(MmExamResult))
+      .useValue(makeRepoMock())
       .overrideProvider(getRepositoryToken(NpuExam))
       .useValue(makeRepoMock())
       .overrideProvider(getRepositoryToken(NpuExamResult))
       .useValue(makeRepoMock())
       .overrideProvider(DeviceRegistryService)
       .useValue(deviceRegistryMock)
+      .overrideProvider(MpExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .overrideProvider(MmExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -146,8 +156,12 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
       .get('/realtime/exams/snapshot')
       .expect(200);
 
-    const slots: Array<{ device_type: string; vendor: string; model: string; node: string }> =
-      res.body.slots;
+    const slots: Array<{
+      device_type: string;
+      vendor: string;
+      model: string;
+      node: string;
+    }> = res.body.slots;
 
     // Registry returns 1 GPU (NVIDIA-L40 on node2) + 1 NPU (RNGD on node4).
     // The hardcoded fallback returns 4 GPUs on node2+node3 with no NPU.
@@ -168,7 +182,8 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
       .get('/realtime/exams/snapshot')
       .expect(200);
 
-    const slots: Array<{ device_type: string; model: string; node: string }> = res.body.slots;
+    const slots: Array<{ device_type: string; model: string; node: string }> =
+      res.body.slots;
 
     // Hardcoded fallback uses node3 (NVIDIA-L40-44GiB, NVIDIA-A40-44GiB).
     // Our mock registry does NOT include node3, so these should be absent.
@@ -182,7 +197,9 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
 
   it('falls back to 4 hardcoded GPU slots when DeviceRegistryService.getDevices() throws', async () => {
     await bootApp();
-    deviceRegistryMock.getDevices.mockRejectedValueOnce(new Error('registry down'));
+    deviceRegistryMock.getDevices.mockRejectedValueOnce(
+      new Error('registry down'),
+    );
 
     const res = await request(app.getHttpServer())
       .get('/realtime/exams/snapshot')

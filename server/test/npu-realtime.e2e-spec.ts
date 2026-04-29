@@ -12,8 +12,12 @@ import { NpuExamResult } from '../src/entities/npu-exam-result.entity';
 import { MpExam } from '../src/entities/mp-exam.entity';
 import { MmExam } from '../src/entities/mm-exam.entity';
 import { MpExamResult } from '../src/entities/mp-exam-result.entity';
+import { MmExamResult } from '../src/entities/mm-exam-result.entity';
 import { DeviceRegistryService } from '../src/device-registry/device-registry.service';
 import { DeviceEntry } from '../src/device-registry/device-registry.types';
+import { ConfigModule } from '@nestjs/config';
+import { MpExamService } from '../src/mp-exam/mp-exam.service';
+import { MmExamService } from '../src/mm-exam/mm-exam.service';
 import { StatusEnum } from '../src/enums/status.enum';
 
 // ---------------------------------------------------------------------------
@@ -35,14 +39,80 @@ function makeRepoMock(rows: unknown[] = []) {
 // Devices returned by a registry that has both GPU and NPU nodes (nominal)
 const NOMINAL_DEVICES: DeviceEntry[] = [
   // GPU slots — node2, node3
-  { node: 'node2', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-L40',       slot_id: 0, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'k8s' },
-  { node: 'node2', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-A40',       slot_id: 1, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'k8s' },
-  { node: 'node3', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-L40-44GiB', slot_id: 0, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'k8s' },
-  { node: 'node3', type: 'gpu', vendor: 'nvidia', model: 'NVIDIA-A40-44GiB', slot_id: 1, state: 'ready', k8s_node_status: 'Ready', allocatable_resource_name: 'nvidia.com/gpu', allocatable_count: 1, source: 'k8s' },
+  {
+    node: 'node2',
+    type: 'gpu',
+    vendor: 'nvidia',
+    model: 'NVIDIA-L40',
+    slot_id: 0,
+    state: 'ready',
+    k8s_node_status: 'Ready',
+    allocatable_resource_name: 'nvidia.com/gpu',
+    allocatable_count: 1,
+    source: 'k8s',
+  },
+  {
+    node: 'node2',
+    type: 'gpu',
+    vendor: 'nvidia',
+    model: 'NVIDIA-A40',
+    slot_id: 1,
+    state: 'ready',
+    k8s_node_status: 'Ready',
+    allocatable_resource_name: 'nvidia.com/gpu',
+    allocatable_count: 1,
+    source: 'k8s',
+  },
+  {
+    node: 'node3',
+    type: 'gpu',
+    vendor: 'nvidia',
+    model: 'NVIDIA-L40-44GiB',
+    slot_id: 0,
+    state: 'ready',
+    k8s_node_status: 'Ready',
+    allocatable_resource_name: 'nvidia.com/gpu',
+    allocatable_count: 1,
+    source: 'k8s',
+  },
+  {
+    node: 'node3',
+    type: 'gpu',
+    vendor: 'nvidia',
+    model: 'NVIDIA-A40-44GiB',
+    slot_id: 1,
+    state: 'ready',
+    k8s_node_status: 'Ready',
+    allocatable_resource_name: 'nvidia.com/gpu',
+    allocatable_count: 1,
+    source: 'k8s',
+  },
   // NPU slot — node4, FuriosaAI RNGD
-  { node: 'node4', type: 'npu', vendor: 'furiosa',    model: 'RNGD',  slot_id: 0, state: 'ready',       k8s_node_status: 'Ready',  allocatable_resource_name: 'furiosa.ai/npu',        allocatable_count: 1, source: 'k8s' },
+  {
+    node: 'node4',
+    type: 'npu',
+    vendor: 'furiosa',
+    model: 'RNGD',
+    slot_id: 0,
+    state: 'ready',
+    k8s_node_status: 'Ready',
+    allocatable_resource_name: 'furiosa.ai/npu',
+    allocatable_count: 1,
+    source: 'k8s',
+  },
   // NPU slot — node5, Rebellions Atom+ (pending_join until kubelet active)
-  { node: 'node5', type: 'npu', vendor: 'rebellions', model: 'Atom+', slot_id: 0, state: 'pending_join', k8s_node_status: 'Absent', allocatable_resource_name: 'rebellions.ai/atomplus', allocatable_count: null, source: 'cluster_yaml' },
+  {
+    node: 'node5',
+    type: 'npu',
+    vendor: 'rebellions',
+    model: 'Atom+',
+    slot_id: 0,
+    state: 'pending_join',
+    k8s_node_status: 'Absent',
+    allocatable_resource_name: 'rebellions.ai/atomplus',
+    allocatable_count: null,
+    source: 'cluster_yaml',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -52,19 +122,24 @@ const NOMINAL_DEVICES: DeviceEntry[] = [
 describe('NPU Realtime slots (e2e)', () => {
   let app: INestApplication<App>;
 
-  const sweepRepoMock = { findOne: jest.fn().mockResolvedValue(null), find: jest.fn().mockResolvedValue([]) };
-  const cellRepoMock  = { find: jest.fn().mockResolvedValue([]) };
-  const mpExamMock    = makeRepoMock();
-  const mmExamMock    = makeRepoMock();
-  const mpResultMock  = makeRepoMock();
-  const npuExamMock   = makeRepoMock();
+  const sweepRepoMock = {
+    findOne: jest.fn().mockResolvedValue(null),
+    find: jest.fn().mockResolvedValue([]),
+  };
+  const cellRepoMock = { find: jest.fn().mockResolvedValue([]) };
+  const mpExamMock = makeRepoMock();
+  const mmExamMock = makeRepoMock();
+  const mpResultMock = makeRepoMock();
+  const npuExamMock = makeRepoMock();
   const npuResultMock = makeRepoMock();
 
   const deviceRegistryMock = {
     getDevices: jest.fn().mockResolvedValue(NOMINAL_DEVICES),
-    getNodes:   jest.fn().mockResolvedValue([]),
-    getHealth:  jest.fn().mockResolvedValue({}),
-    refresh:    jest.fn().mockResolvedValue({ devices: NOMINAL_DEVICES, nodes: [], health: {} }),
+    getNodes: jest.fn().mockResolvedValue([]),
+    getHealth: jest.fn().mockResolvedValue({}),
+    refresh: jest
+      .fn()
+      .mockResolvedValue({ devices: NOMINAL_DEVICES, nodes: [], health: {} }),
     onModuleInit: jest.fn(),
   };
 
@@ -73,16 +148,30 @@ describe('NPU Realtime slots (e2e)', () => {
     deviceRegistryMock.getDevices.mockResolvedValue(NOMINAL_DEVICES);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [RealtimeModule, GpuSweepModule],
+      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), RealtimeModule, GpuSweepModule],
     })
-      .overrideProvider(getRepositoryToken(GpuSweep))     .useValue(sweepRepoMock)
-      .overrideProvider(getRepositoryToken(GpuSweepCell)) .useValue(cellRepoMock)
-      .overrideProvider(getRepositoryToken(MpExam))       .useValue(mpExamMock)
-      .overrideProvider(getRepositoryToken(MmExam))       .useValue(mmExamMock)
-      .overrideProvider(getRepositoryToken(MpExamResult)) .useValue(mpResultMock)
-      .overrideProvider(getRepositoryToken(NpuExam))      .useValue(npuExamMock)
-      .overrideProvider(getRepositoryToken(NpuExamResult)).useValue(npuResultMock)
-      .overrideProvider(DeviceRegistryService)            .useValue(deviceRegistryMock)
+      .overrideProvider(getRepositoryToken(GpuSweep))
+      .useValue(sweepRepoMock)
+      .overrideProvider(getRepositoryToken(GpuSweepCell))
+      .useValue(cellRepoMock)
+      .overrideProvider(getRepositoryToken(MpExam))
+      .useValue(mpExamMock)
+      .overrideProvider(getRepositoryToken(MmExam))
+      .useValue(mmExamMock)
+      .overrideProvider(getRepositoryToken(MpExamResult))
+      .useValue(mpResultMock)
+      .overrideProvider(getRepositoryToken(MmExamResult))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(NpuExam))
+      .useValue(npuExamMock)
+      .overrideProvider(getRepositoryToken(NpuExamResult))
+      .useValue(npuResultMock)
+      .overrideProvider(DeviceRegistryService)
+      .useValue(deviceRegistryMock)
+      .overrideProvider(MpExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .overrideProvider(MmExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -127,7 +216,10 @@ describe('NPU Realtime slots (e2e)', () => {
       expect(rngdSlot.node).toBe('node4');
       expect(rngdSlot.status).toBe('idle');
       expect(rngdSlot.current_exam).toBeNull();
-      expect(rngdSlot.last_known_metric).toEqual({ tps: null, tt100t_seconds: null });
+      expect(rngdSlot.last_known_metric).toEqual({
+        tps: null,
+        tt100t_seconds: null,
+      });
     });
 
     it('RNGD slot reflects running NpuExam with metrics', async () => {
@@ -185,7 +277,10 @@ describe('NPU Realtime slots (e2e)', () => {
       expect(atomSlot.status).toBe('pending_join');
       expect(atomSlot.pending_join_reason).toMatch(/node5/i);
       expect(atomSlot.current_exam).toBeNull();
-      expect(atomSlot.last_known_metric).toEqual({ tps: null, tt100t_seconds: null });
+      expect(atomSlot.last_known_metric).toEqual({
+        tps: null,
+        tt100t_seconds: null,
+      });
     });
 
     it('each slot has required shape fields', async () => {
@@ -210,7 +305,9 @@ describe('NPU Realtime slots (e2e)', () => {
         .get('/realtime/exams/snapshot')
         .expect(200);
 
-      const types: string[] = res.body.slots.map((s: { device_type: string }) => s.device_type);
+      const types: string[] = res.body.slots.map(
+        (s: { device_type: string }) => s.device_type,
+      );
       expect(types).toContain('gpu');
       expect(types).toContain('npu');
     });
@@ -222,7 +319,9 @@ describe('NPU Realtime slots (e2e)', () => {
 
   describe('registry fallback', () => {
     it('falls back to 4 NVIDIA GPU slots when registry throws', async () => {
-      deviceRegistryMock.getDevices.mockRejectedValue(new Error('registry unavailable'));
+      deviceRegistryMock.getDevices.mockRejectedValue(
+        new Error('registry unavailable'),
+      );
 
       const res = await request(app.getHttpServer())
         .get('/realtime/exams/snapshot')

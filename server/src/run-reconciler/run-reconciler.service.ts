@@ -30,8 +30,7 @@ export class RunReconcilerService {
       .getMany();
 
     for (const exam of stuck) {
-      const auditMsg =
-        `Auto-reconciled by RunReconcilerService: status=Running with started_at=end_at, no live workload detected.`;
+      const auditMsg = `Auto-reconciled by RunReconcilerService: status=Running with started_at=end_at, no live workload detected.`;
       await this.npuExamRepo.update(exam.id, {
         status: StatusEnum.ERROR,
         error_log: auditMsg,
@@ -52,8 +51,7 @@ export class RunReconcilerService {
       .getMany();
 
     for (const exam of stale) {
-      const auditMsg =
-        `Auto-reconciled by RunReconcilerService: status=Idle for >4h, considered stale and abandoned.`;
+      const auditMsg = `Auto-reconciled by RunReconcilerService: status=Idle for >4h, considered stale and abandoned.`;
       await this.npuExamRepo.update(exam.id, {
         status: StatusEnum.ERROR,
         error_log: auditMsg,

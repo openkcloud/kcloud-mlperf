@@ -77,7 +77,9 @@ export class GpuSweep1714276800000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "idx_gpu_sweep_cell_sweep_kind_exam"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "idx_gpu_sweep_cell_sweep_kind_exam"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "gpu_sweep_cell"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "gpu_sweep"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "gpu_sweep_cell_status_enum"`);

@@ -20,7 +20,9 @@ export class RealtimeGateway {
   private lastEmitAt = 0;
   private lastKeepaliveAt = 0;
 
-  constructor(@Optional() private readonly realtimeService: RealtimeService | null) {}
+  constructor(
+    @Optional() private readonly realtimeService: RealtimeService | null,
+  ) {}
 
   get subscriberCount(): number {
     return this._subscriberCount;
@@ -39,7 +41,12 @@ export class RealtimeGateway {
       return {
         timestamp: new Date().toISOString(),
         slots: [],
-        sweep_progress: { completed: 0, total: 0, active_sweep_id: null, paused: false },
+        sweep_progress: {
+          completed: 0,
+          total: 0,
+          active_sweep_id: null,
+          paused: false,
+        },
         operator_race_alerts: 0,
       };
     }

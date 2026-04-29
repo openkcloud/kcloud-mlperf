@@ -3,15 +3,34 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { GpuSweep, GpuSweepMode, GpuSweepStatus } from '../src/gpu-sweep/entities/gpu-sweep.entity';
-import { GpuSweepCell, GpuSweepCellKind, GpuSweepCellStatus } from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
+import {
+  GpuSweep,
+  GpuSweepMode,
+  GpuSweepStatus,
+} from '../src/gpu-sweep/entities/gpu-sweep.entity';
+import {
+  GpuSweepCell,
+  GpuSweepCellKind,
+  GpuSweepCellStatus,
+} from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
 import { GpuSweepModule } from '../src/gpu-sweep/gpu-sweep.module';
+import { MpExam } from '../src/entities/mp-exam.entity';
+import { MpExamResult } from '../src/entities/mp-exam-result.entity';
+import { MmExam } from '../src/entities/mm-exam.entity';
+import { MmExamResult } from '../src/entities/mm-exam-result.entity';
+import { ConfigModule } from '@nestjs/config';
+import { MpExamService } from '../src/mp-exam/mp-exam.service';
+import { MmExamService } from '../src/mm-exam/mm-exam.service';
 
 // ---------------------------------------------------------------------------
 // Stub helpers
 // ---------------------------------------------------------------------------
 
-function makeCell(id: number, node: 'node2' | 'node3', overrides: Partial<GpuSweepCell> = {}): GpuSweepCell {
+function makeCell(
+  id: number,
+  node: 'node2' | 'node3',
+  overrides: Partial<GpuSweepCell> = {},
+): GpuSweepCell {
   return Object.assign(new GpuSweepCell(), {
     id,
     sweep_id: 1,
@@ -76,15 +95,28 @@ describe('GpuSweep (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [GpuSweepModule],
+      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), GpuSweepModule],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(sweepRepoMock)
       .overrideProvider(getRepositoryToken(GpuSweepCell))
       .useValue(cellRepoMock)
+      .overrideProvider(getRepositoryToken(MpExam))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(MpExamResult))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(MmExam))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(getRepositoryToken(MmExamResult))
+      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .overrideProvider(MpExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .overrideProvider(MmExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
       .compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
     await app.init();
   });
 
@@ -240,7 +272,10 @@ describe('GpuSweep (e2e)', () => {
         makeCell(11, 'node3', { status: GpuSweepCellStatus.DISPATCHED }),
         makeCell(12, 'node2', { status: GpuSweepCellStatus.COMPLETED }),
       ]);
-      sweepRepoMock.save.mockResolvedValue({ ...sweep, status: GpuSweepStatus.DRAINED });
+      sweepRepoMock.save.mockResolvedValue({
+        ...sweep,
+        status: GpuSweepStatus.DRAINED,
+      });
 
       const res = await request(app.getHttpServer())
         .patch('/api/gpu-sweep/drain/1')
@@ -269,8 +304,16 @@ describe('GpuSweep (e2e)', () => {
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
         cells: [
-          makeCell(20, 'node2', { tt100t_seconds: 1.588, tps: 62.94, status: GpuSweepCellStatus.COMPLETED }),
-          makeCell(21, 'node3', { tt100t_seconds: 1.622, tps: 61.72, status: GpuSweepCellStatus.COMPLETED }),
+          makeCell(20, 'node2', {
+            tt100t_seconds: 1.588,
+            tps: 62.94,
+            status: GpuSweepCellStatus.COMPLETED,
+          }),
+          makeCell(21, 'node3', {
+            tt100t_seconds: 1.622,
+            tps: 61.72,
+            status: GpuSweepCellStatus.COMPLETED,
+          }),
         ],
       });
       sweepRepoMock.findOne.mockResolvedValue(sweep);
@@ -280,7 +323,10 @@ describe('GpuSweep (e2e)', () => {
         .expect(200);
 
       // Calibration fields should be present on a completed calibration sweep
-      if (res.body.mode === GpuSweepMode.CALIBRATION && res.body.status === GpuSweepStatus.COMPLETED) {
+      if (
+        res.body.mode === GpuSweepMode.CALIBRATION &&
+        res.body.status === GpuSweepStatus.COMPLETED
+      ) {
         expect(res.body).toHaveProperty('variance_pct');
         expect(res.body).toHaveProperty('passed');
         expect(typeof res.body.variance_pct).toBe('number');

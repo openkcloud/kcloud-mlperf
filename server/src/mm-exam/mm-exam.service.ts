@@ -266,7 +266,7 @@ export class MmExamService implements OnModuleInit {
       // Check if started_at is in the past and replace with current time
       const currentTime = dayjs().tz(this.timezone);
       const startTime = dayjs(createMmExamDto.started_at).tz(this.timezone);
-      
+
       if (startTime.isBefore(currentTime)) {
         createMmExamDto.started_at = currentTime.format(this.timestampFormat);
       }
@@ -449,11 +449,12 @@ export class MmExamService implements OnModuleInit {
   // Ensure result_acc_math column exists in mm_exam_result table
   private async ensureResultAccMathColumn(): Promise<void> {
     try {
-      const queryRunner = this.mmExamRepo.manager.connection.createQueryRunner();
-      
+      const queryRunner =
+        this.mmExamRepo.manager.connection.createQueryRunner();
+
       // Check if column exists
       const tableExists = await queryRunner.hasTable('mm_exam_result');
-      
+
       if (tableExists) {
         const columnExists = await queryRunner.query(`
           SELECT EXISTS (
@@ -462,9 +463,11 @@ export class MmExamService implements OnModuleInit {
             AND column_name = 'result_acc_math'
           );
         `);
-        
+
         if (!columnExists[0].exists) {
-          console.log('Adding result_acc_math column to mm_exam_result table...');
+          console.log(
+            'Adding result_acc_math column to mm_exam_result table...',
+          );
           await queryRunner.query(`
             ALTER TABLE mm_exam_result
             ADD COLUMN result_acc_math float8 DEFAULT 0
@@ -474,7 +477,7 @@ export class MmExamService implements OnModuleInit {
           console.log('result_acc_math column already exists');
         }
       }
-      
+
       await queryRunner.release();
     } catch (error) {
       console.error('Error ensuring result_acc_math column:', error);

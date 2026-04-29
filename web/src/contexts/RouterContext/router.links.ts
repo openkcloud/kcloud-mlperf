@@ -1,7 +1,7 @@
 import { generatePath } from 'react-router-dom';
 
 import { join } from '@/contexts/RouterContext/router.helpers';
-import { AdminPaths, DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths } from '@/contexts/RouterContext/router.paths';
+import { AdminPaths, DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths, NpuEvalAtomPlusPaths } from '@/contexts/RouterContext/router.paths';
 
 export const HomePageLinks = {
   main: HomePaths.ROOT_PATH
@@ -54,6 +54,13 @@ export const NpuEvalPageLinks = {
 export const NpuEvalRngdPageLinks = {
   main: NpuEvalRngdPaths.ROOT_PATH,
   deviceComparison: join(NpuEvalRngdPaths.ROOT_PATH, NpuEvalRngdPaths.DEVICE_COMPARISON_PATH)
+} as const;
+
+// ----------------------------------------------------------------------
+
+export const NpuEvalAtomPlusPageLinks = {
+  main: NpuEvalAtomPlusPaths.ROOT_PATH,
+  deviceComparison: join(NpuEvalAtomPlusPaths.ROOT_PATH, NpuEvalAtomPlusPaths.DEVICE_COMPARISON_PATH)
 } as const;
 
 // ----------------------------------------------------------------------

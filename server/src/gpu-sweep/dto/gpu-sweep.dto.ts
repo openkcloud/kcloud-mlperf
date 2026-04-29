@@ -161,8 +161,16 @@ export interface SweepStatusResponse {
     started_at: string | null;
   } | null;
   node_state: {
-    node2: { busy: boolean; last_dispatch_at: string | null; current_cell_key: string | null };
-    node3: { busy: boolean; last_dispatch_at: string | null; current_cell_key: string | null };
+    node2: {
+      busy: boolean;
+      last_dispatch_at: string | null;
+      current_cell_key: string | null;
+    };
+    node3: {
+      busy: boolean;
+      last_dispatch_at: string | null;
+      current_cell_key: string | null;
+    };
   };
   quiet_window?: {
     active: boolean;

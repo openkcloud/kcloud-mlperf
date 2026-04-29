@@ -55,3 +55,11 @@ export const NpuEvalRngdPaths = {
 
   DEVICE_COMPARISON_PATH: 'device-comparison'
 } as const;
+
+// ----------------------------------------------------------------------
+
+export const NpuEvalAtomPlusPaths = {
+  ROOT_PATH: '/npu-eval/atomplus',
+
+  DEVICE_COMPARISON_PATH: 'device-comparison'
+} as const;

@@ -50,59 +50,69 @@ export const DEDUP_KEYS = (() => {
   for (const sku of SKU_PLACEMENTS) {
     // Group 1 (×4 SKU): mlperf bf16 bs=1 n=500 server
     //   dominated by bf16 bs=1 n=13368 server (warm-up dominates n=500 server)
-    keys.push(buildCellKey({
-      kind: GpuSweepCellKind.MLPERF,
-      gpu_type: sku.gpu_type,
-      precision: 'bf16',
-      batch_size: 1,
-      data_number: 500,
-      tensor_parallel_size: 1,
-      scenario: 'server',
-    }));
+    keys.push(
+      buildCellKey({
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: sku.gpu_type,
+        precision: 'bf16',
+        batch_size: 1,
+        data_number: 500,
+        tensor_parallel_size: 1,
+        scenario: 'server',
+      }),
+    );
     // Group 2 (×4 SKU): mlperf bf16 bs=4 n=500 offline
     //   dominated by bs=4 n=13368 offline (sub-full bs=4 noise)
-    keys.push(buildCellKey({
-      kind: GpuSweepCellKind.MLPERF,
-      gpu_type: sku.gpu_type,
-      precision: 'bf16',
-      batch_size: 4,
-      data_number: 500,
-      tensor_parallel_size: 1,
-      scenario: 'offline',
-    }));
+    keys.push(
+      buildCellKey({
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: sku.gpu_type,
+        precision: 'bf16',
+        batch_size: 4,
+        data_number: 500,
+        tensor_parallel_size: 1,
+        scenario: 'offline',
+      }),
+    );
     // Group 3 (×4 SKU): mlperf bf16 bs=4 n=100 offline
     //   dominated by bs=4 n=13368 offline (warm-up dominates small-bs=4)
-    keys.push(buildCellKey({
-      kind: GpuSweepCellKind.MLPERF,
-      gpu_type: sku.gpu_type,
-      precision: 'bf16',
-      batch_size: 4,
-      data_number: 100,
-      tensor_parallel_size: 1,
-      scenario: 'offline',
-    }));
+    keys.push(
+      buildCellKey({
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: sku.gpu_type,
+        precision: 'bf16',
+        batch_size: 4,
+        data_number: 100,
+        tensor_parallel_size: 1,
+        scenario: 'offline',
+      }),
+    );
     // Group 4 (×4 SKU): mlperf fp8 bs=1 n=100 offline
     //   dominated by fp8 bs=1 n=13368 offline (small-sample fp8 == warm-up)
-    keys.push(buildCellKey({
-      kind: GpuSweepCellKind.MLPERF,
-      gpu_type: sku.gpu_type,
-      precision: 'fp8',
-      batch_size: 1,
-      data_number: 100,
-      tensor_parallel_size: 1,
-      scenario: 'offline',
-    }));
+    keys.push(
+      buildCellKey({
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: sku.gpu_type,
+        precision: 'fp8',
+        batch_size: 1,
+        data_number: 100,
+        tensor_parallel_size: 1,
+        scenario: 'offline',
+      }),
+    );
     // Group 5 (×4 SKU): mlperf bf16 bs=1 n=1338 server
     //   dominated by bf16 bs=1 n=13368 server (mid-sample server bandwidth-bound)
-    keys.push(buildCellKey({
-      kind: GpuSweepCellKind.MLPERF,
-      gpu_type: sku.gpu_type,
-      precision: 'bf16',
-      batch_size: 1,
-      data_number: 1338,
-      tensor_parallel_size: 1,
-      scenario: 'server',
-    }));
+    keys.push(
+      buildCellKey({
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: sku.gpu_type,
+        precision: 'bf16',
+        batch_size: 1,
+        data_number: 1338,
+        tensor_parallel_size: 1,
+        scenario: 'server',
+      }),
+    );
   }
   return keys;
 })();
@@ -188,11 +198,9 @@ function shouldDropByTrimRule(cell: SweepCellSpec): boolean {
 }
 
 export function expandMatrix(options: MatrixOptions = {}): SweepCellSpec[] {
-  const skuFilter = options.gpu_skus
-    ? new Set(options.gpu_skus)
-    : null;
+  const skuFilter = options.gpu_skus ? new Set(options.gpu_skus) : null;
   const benchmarks = new Set(options.benchmarks ?? ['mlperf', 'mmlu']);
-  const precisions = (options.precisions ?? ['bf16', 'fp8']) as ('bf16' | 'fp8')[];
+  const precisions = options.precisions ?? ['bf16', 'fp8'];
 
   const skus = SKU_PLACEMENTS.filter((s) =>
     skuFilter ? skuFilter.has(s.gpu_type) : true,
@@ -281,13 +289,16 @@ export function expandMatrix(options: MatrixOptions = {}): SweepCellSpec[] {
 // preview. Calibrated from existing cluster measurements: TT100T ~1.6s on L40
 // fp8 n=500, scaled by data_number.
 function estimateDurationSeconds(cell: SweepCellSpec): number {
-  const baseSecondsPerSample =
-    cell.precision === 'fp8' ? 0.018 : 0.024;
-  const samples = cell.kind === GpuSweepCellKind.MLPERF
-    ? cell.data_number
-    : cell.data_number * 57; // MMLU: per-subject × 57 subjects
+  const baseSecondsPerSample = cell.precision === 'fp8' ? 0.018 : 0.024;
+  const samples =
+    cell.kind === GpuSweepCellKind.MLPERF
+      ? cell.data_number
+      : cell.data_number * 57; // MMLU: per-subject × 57 subjects
   const setupOverhead = 90; // operator preroll + image pull
-  return setupOverhead + Math.max(60, samples * baseSecondsPerSample) * cell.retry_num;
+  return (
+    setupOverhead +
+    Math.max(60, samples * baseSecondsPerSample) * cell.retry_num
+  );
 }
 
 const STAGGER_SECONDS = 60;

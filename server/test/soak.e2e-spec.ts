@@ -52,28 +52,45 @@ function fetchJson(url: string): Promise<{ status: number; body: string }> {
   });
 }
 
-function openSseConnection(url: string, onMessage: () => void, onDisconnect: () => void): () => void {
+function openSseConnection(
+  url: string,
+  onMessage: () => void,
+  onDisconnect: () => void,
+): () => void {
   let closed = false;
   const mod = url.startsWith('https') ? https : http;
 
   function connect() {
     if (closed) return;
     const req = mod.get(url, (res) => {
-      res.on('data', () => { onMessage(); });
+      res.on('data', () => {
+        onMessage();
+      });
       res.on('end', () => {
-        if (!closed) { onDisconnect(); connect(); }
+        if (!closed) {
+          onDisconnect();
+          connect();
+        }
       });
       res.on('error', () => {
-        if (!closed) { onDisconnect(); connect(); }
+        if (!closed) {
+          onDisconnect();
+          connect();
+        }
       });
     });
     req.on('error', () => {
-      if (!closed) { onDisconnect(); connect(); }
+      if (!closed) {
+        onDisconnect();
+        connect();
+      }
     });
   }
 
   connect();
-  return () => { closed = true; };
+  return () => {
+    closed = true;
+  };
 }
 
 describe('30-minute soak test (A8)', () => {
@@ -95,15 +112,23 @@ describe('30-minute soak test (A8)', () => {
     const startTime = Date.now();
 
     // Probe SSE endpoint — skip if not deployed (404)
-    const sseProbe = await fetchJson(`${BASE_URL}/realtime/exams`).catch(() => ({ status: 0, body: '' }));
+    const sseProbe = await fetchJson(`${BASE_URL}/realtime/exams`).catch(
+      () => ({ status: 0, body: '' }),
+    );
     const sseAvailable = sseProbe.status !== 404;
     const closeSse = sseAvailable
       ? openSseConnection(
           `${BASE_URL}/realtime/exams`,
-          () => { metrics.sseMessagesReceived++; },
-          () => { metrics.sseDisconnects++; },
+          () => {
+            metrics.sseMessagesReceived++;
+          },
+          () => {
+            metrics.sseDisconnects++;
+          },
         )
-      : () => { /* SSE not deployed on this staging build */ };
+      : () => {
+          /* SSE not deployed on this staging build */
+        };
 
     // Poll endpoints every 5s
     const intervalId = setInterval(async () => {
@@ -130,12 +155,20 @@ describe('30-minute soak test (A8)', () => {
 
     // Emit structured report for CI artifact collection
     const report = {
-      passed: metrics.errors5xx === 0 && (!sseAvailable || metrics.sseDisconnects === 0),
+      passed:
+        metrics.errors5xx === 0 &&
+        (!sseAvailable || metrics.sseDisconnects === 0),
       sseAvailable,
       ...metrics,
       memoryGrowthMb: metrics.endMemoryMb - metrics.startMemoryMb,
-      sseMessagesPerMinute: (metrics.sseMessagesReceived / (metrics.durationMs / 60_000)).toFixed(1),
-      requestsPerMinute: (metrics.totalRequests / (metrics.durationMs / 60_000)).toFixed(1),
+      sseMessagesPerMinute: (
+        metrics.sseMessagesReceived /
+        (metrics.durationMs / 60_000)
+      ).toFixed(1),
+      requestsPerMinute: (
+        metrics.totalRequests /
+        (metrics.durationMs / 60_000)
+      ).toFixed(1),
     };
 
     console.log('\n=== 30-MINUTE SOAK REPORT ===');

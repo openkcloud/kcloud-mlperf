@@ -6,9 +6,7 @@ import { NpuEvalController } from './npu-eval.controller';
 import { NpuEvalService } from './npu-eval.service';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([NpuExam, NpuExamResult]),
-  ],
+  imports: [TypeOrmModule.forFeature([NpuExam, NpuExamResult])],
   controllers: [NpuEvalController],
   providers: [NpuEvalService],
   exports: [NpuEvalService],

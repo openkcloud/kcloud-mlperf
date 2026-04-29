@@ -278,7 +278,7 @@ export class MpExamService implements OnModuleInit {
       // Check if started_at is in the past and replace with current time
       const currentTime = dayjs().tz(this.timezone);
       const startTime = dayjs(createMpExamDto.started_at).tz(this.timezone);
-      
+
       if (startTime.isBefore(currentTime)) {
         createMpExamDto.started_at = currentTime.format(this.timestampFormat);
       }

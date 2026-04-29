@@ -1,8 +1,14 @@
-import { BadRequestException, Controller, Get, ParseIntPipe, Param } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  ParseIntPipe,
+  Param,
+} from '@nestjs/common';
 import { LokiService } from './loki.service';
 
 const ALLOWED_BENCHMARKS = ['mmlu', 'mlperf'] as const;
-type AllowedBenchmark = typeof ALLOWED_BENCHMARKS[number];
+type AllowedBenchmark = (typeof ALLOWED_BENCHMARKS)[number];
 
 @Controller('loki')
 export class LokiController {

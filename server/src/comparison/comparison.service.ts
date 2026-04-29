@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { MpExam } from '../entities/mp-exam.entity';
@@ -208,7 +204,10 @@ export class ComparisonService {
       if (filters.benchmark !== 'all' && run.benchmark !== filters.benchmark) {
         return false;
       }
-      if (filters.hardware !== 'all' && run.hardware.type !== filters.hardware) {
+      if (
+        filters.hardware !== 'all' &&
+        run.hardware.type !== filters.hardware
+      ) {
         return false;
       }
       if (filters.node && run.hardware.node !== filters.node) {
@@ -311,20 +310,14 @@ export class ComparisonService {
       ...mmExams.map((e) =>
         this.classifyHardware(e.device_type, e.gpu_type, null),
       ),
-      ...npuExams.map((e) =>
-        this.classifyHardware('NPU', e.npu_type, null),
-      ),
+      ...npuExams.map((e) => this.classifyHardware('NPU', e.npu_type, null)),
     ];
 
     const vendorsSeen = Array.from(
       new Set(allHardware.map((h) => h.vendor).filter((v) => v !== 'unknown')),
     );
     const nodesSeen = Array.from(
-      new Set(
-        allHardware
-          .map((h) => h.node)
-          .filter((n): n is string => !!n),
-      ),
+      new Set(allHardware.map((h) => h.node).filter((n): n is string => !!n)),
     );
 
     return {
@@ -388,9 +381,7 @@ export class ComparisonService {
   }
 
   private normalizeMpExam(exam: MpExam): NormalizedRun {
-    const latest = this.latestResult(
-      (exam.results || []) as MpExamResult[],
-    );
+    const latest = this.latestResult(exam.results || []);
 
     const tt100t = latest?.result_tt100t ?? null;
     const tps = latest?.result_perf_tps ?? null;
@@ -401,11 +392,7 @@ export class ComparisonService {
       benchmark: 'mlperf',
       name: exam.name,
       model: exam.model,
-      hardware: this.classifyHardware(
-        exam.device_type,
-        exam.gpu_type,
-        null,
-      ),
+      hardware: this.classifyHardware(exam.device_type, exam.gpu_type, null),
       status: this.coerceStatus(exam.status),
       started_at: exam.started_at ?? null,
       completed_at: exam.end_at ?? null,
@@ -427,9 +414,7 @@ export class ComparisonService {
   }
 
   private normalizeMmExam(exam: MmExam): NormalizedRun {
-    const latest = this.latestResult(
-      (exam.results || []) as MmExamResult[],
-    );
+    const latest = this.latestResult(exam.results || []);
 
     const accuracy =
       latest?.result_acc_total != null ? latest.result_acc_total : null;
@@ -439,11 +424,7 @@ export class ComparisonService {
       benchmark: 'mmlu',
       name: exam.name,
       model: exam.model,
-      hardware: this.classifyHardware(
-        exam.device_type,
-        exam.gpu_type,
-        null,
-      ),
+      hardware: this.classifyHardware(exam.device_type, exam.gpu_type, null),
       status: this.coerceStatus(exam.status),
       started_at: exam.started_at ?? null,
       completed_at: exam.end_at ?? null,
@@ -465,12 +446,8 @@ export class ComparisonService {
   }
 
   private normalizeNpuExam(exam: NpuExam): NormalizedRun {
-    const latest = this.latestResult(
-      (exam.results || []) as NpuExamResult[],
-    );
-    const benchmark = (exam.benchmark === 'mmlu' ? 'mmlu' : 'mlperf') as
-      | 'mlperf'
-      | 'mmlu';
+    const latest = this.latestResult(exam.results || []);
+    const benchmark = exam.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
 
     return {
       id: exam.id,

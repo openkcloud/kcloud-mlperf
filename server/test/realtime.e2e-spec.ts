@@ -15,6 +15,9 @@ import { MmExamResult } from '../src/entities/mm-exam-result.entity';
 import { NpuExam } from '../src/entities/npu-exam.entity';
 import { NpuExamResult } from '../src/entities/npu-exam-result.entity';
 import { DeviceRegistryService } from '../src/device-registry/device-registry.service';
+import { ConfigModule } from '@nestjs/config';
+import { MpExamService } from '../src/mp-exam/mp-exam.service';
+import { MmExamService } from '../src/mm-exam/mm-exam.service';
 
 const REQUIRED_SLOT_FIELDS = [
   'device_type',
@@ -44,7 +47,7 @@ describe('Realtime SSE (e2e)', () => {
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [RealtimeModule, GpuSweepModule],
+      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), RealtimeModule, GpuSweepModule],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(repoMock())
@@ -64,6 +67,10 @@ describe('Realtime SSE (e2e)', () => {
       .useValue(repoMock())
       .overrideProvider(DeviceRegistryService)
       .useValue({ getDevices: jest.fn().mockResolvedValue([]) })
+      .overrideProvider(MpExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .overrideProvider(MmExamService)
+      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
       .compile();
 
     app = moduleFixture.createNestApplication();

@@ -10,9 +10,10 @@ import {
   MmluPageLinks,
   MpExamPageLinks,
   NpuEvalPageLinks,
-  NpuEvalRngdPageLinks
+  NpuEvalRngdPageLinks,
+  NpuEvalAtomPlusPageLinks
 } from '@/contexts/RouterContext/router.links.ts';
-import { MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths } from '@/contexts/RouterContext/router.paths.ts';
+import { MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths, NpuEvalAtomPlusPaths } from '@/contexts/RouterContext/router.paths.ts';
 
 // ----------------------------------------------------------------------
 
@@ -31,6 +32,9 @@ const DeviceComparisonPage = lazy(() => import('@/pages/npu/device-comparison'))
 
 const RngdNpuEvalPage = lazy(() => import('@/pages/npu-eval/rngd'));
 const RngdDeviceComparisonPage = lazy(() => import('@/pages/npu-eval/rngd/device-comparison'));
+
+const AtomPlusNpuEvalPage = lazy(() => import('@/pages/npu-eval/atomplus'));
+const AtomPlusDeviceComparisonPage = lazy(() => import('@/pages/npu-eval/atomplus/device-comparison'));
 
 const GpuRealtimePage = lazy(() => import('@/pages/dashboard/gpu-realtime'));
 const NpuRealtimePage = lazy(() => import('@/pages/dashboard/npu-realtime'));
@@ -152,6 +156,21 @@ export const Routes = () => {
         {
           path: NpuEvalRngdPaths.DEVICE_COMPARISON_PATH,
           element: <RngdDeviceComparisonPage />
+        }
+      ]
+    },
+
+    // npu-eval/atomplus pages
+    {
+      path: NpuEvalAtomPlusPageLinks.main,
+      children: [
+        {
+          index: true,
+          element: <AtomPlusNpuEvalPage />
+        },
+        {
+          path: NpuEvalAtomPlusPaths.DEVICE_COMPARISON_PATH,
+          element: <AtomPlusDeviceComparisonPage />
         }
       ]
     },

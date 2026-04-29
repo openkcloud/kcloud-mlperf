@@ -10,7 +10,7 @@ import CloudSVG from '@/assets/icons/cloud.svg?react';
 import HexagonSVG from '@/assets/icons/hexagon.svg?react';
 import { AppLoader } from '@/components/AppLoader';
 
-import { DashboardPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks } from '@/contexts/RouterContext/router.links.ts';
+import { DashboardPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks, NpuEvalAtomPlusPageLinks } from '@/contexts/RouterContext/router.links.ts';
 
 // ----------------------------------------------------------------------
 
@@ -114,19 +114,20 @@ const BENCHMARK_NAV_ITEMS = [
     Icon: HexagonSVG,
     segment: 'mmlu'
   },
-  {
-    to: NpuEvalPageLinks.main,
-    label: 'NPU Eval (FuriosaAI RNGD)',
-    sublabel: 'Accelerator evaluation',
-    Icon: HexagonSVG,
-    segment: 'npu-eval'
-  },
+  // Exactly one RNGD entry (new dedicated page; old /npu-eval is now a redirect target)
   {
     to: NpuEvalRngdPageLinks.main,
     label: 'RNGD NPU Eval',
     sublabel: 'FuriosaAI RNGD only',
     Icon: HexagonSVG,
     segment: 'npu-eval/rngd'
+  },
+  {
+    to: NpuEvalAtomPlusPageLinks.main,
+    label: 'Rebellions Atom+ NPU Eval',
+    sublabel: 'Awaiting device plugin',
+    Icon: HexagonSVG,
+    segment: 'npu-eval/atomplus'
   }
 ] as const;
 

@@ -96,7 +96,12 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
     // Benchmarks — all four canonical IDs present
     const benchmarkKeys = body.benchmarks.map((b: any) => b.key);
     expect(benchmarkKeys).toEqual(
-      expect.arrayContaining(['mlperf-perf', 'mlperf-acc', 'mmlu-pro', 'tt100']),
+      expect.arrayContaining([
+        'mlperf-perf',
+        'mlperf-acc',
+        'mmlu-pro',
+        'tt100',
+      ]),
     );
 
     // Hardware: gpu-nvidia, npu-rngd, npu-rebellions-atomplus
@@ -136,7 +141,9 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
     // Models: llama-3.1-8b-instruct with fp8/bf16
     const modelKeys = body.models.map((m: any) => m.key);
     expect(modelKeys).toContain('llama-3.1-8b-instruct');
-    const llama = body.models.find((m: any) => m.key === 'llama-3.1-8b-instruct');
+    const llama = body.models.find(
+      (m: any) => m.key === 'llama-3.1-8b-instruct',
+    );
     expect(llama.precisions).toEqual(expect.arrayContaining(['fp8', 'bf16']));
 
     // Precisions / scenarios / batch sizes / concurrencies all present
@@ -179,7 +186,9 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
     for (const h of body.hardware) {
       expect(h.enabled).toBe(false);
       // Atom+ may carry node_pending_join; others must be feature_flag_off
-      expect(['feature_flag_off', 'node_pending_join']).toContain(h.disabled_reason);
+      expect(['feature_flag_off', 'node_pending_join']).toContain(
+        h.disabled_reason,
+      );
     }
     // node5 still labelled pending_join, never silently masked
     const node5 = body.nodes.find((n: any) => n.name === 'node5');
@@ -202,7 +211,9 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
     expect(node5.enabled).toBe(true);
     expect(node5.disabled_reason).toBeNull();
 
-    const atom = body.hardware.find((h: any) => h.key === 'npu-rebellions-atomplus');
+    const atom = body.hardware.find(
+      (h: any) => h.key === 'npu-rebellions-atomplus',
+    );
     expect(atom.enabled).toBe(true);
     expect(atom.disabled_reason).toBeNull();
   });

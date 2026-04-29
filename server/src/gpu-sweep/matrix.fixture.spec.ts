@@ -1,4 +1,9 @@
-import { expandMatrix, DEDUP_KEYS, SKU_PLACEMENTS, buildTimeline } from './matrix';
+import {
+  expandMatrix,
+  DEDUP_KEYS,
+  SKU_PLACEMENTS,
+  buildTimeline,
+} from './matrix';
 import { FIXTURE_CELL_COUNT } from './matrix.fixture';
 import { GpuSweepMode } from './entities/gpu-sweep.entity';
 import { GpuSweepCellKind } from './entities/gpu-sweep-cell.entity';

@@ -93,8 +93,10 @@ export type CandidatesParams = {
 
 export const CandidatesApi = {
   getCandidates: async (runId: number | string, opts?: CandidatesParams): Promise<CandidatesResponse> => {
-    const { data } = await httpClient.get<CandidatesResponse>(`/comparison/candidates/${runId}`, {
-      params: opts
+    // Backend route is GET /api/comparison/candidates?runId=&benchmark=&hardware=
+    // (NOT a path-segment runId). Pass runId as a query parameter alongside opts.
+    const { data } = await httpClient.get<CandidatesResponse>('/comparison/candidates', {
+      params: { runId, ...opts }
     });
     return data;
   }
