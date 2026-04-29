@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
 import { NpuEvalApi } from '@/api/domains/npu-eval.domain';
+import { ComparisonApi } from '@/api/domains/comparison';
 import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { NpuEvalPageLinks } from '@/contexts/RouterContext/router.links';
 import { StatusEnum } from '@/enums/status.enum';
@@ -160,6 +161,19 @@ const RngdNpuEvalPage = () => {
     queryKey: NpuEvalQueryKeys.npuList(),
     queryFn: NpuEvalApi.npuList
   });
+
+  // tt100t lives in npu_exam_result, not npu_exam — the npu-eval/list endpoint does
+  // not currently surface it. Pull it from /comparison/list which already does the
+  // join, and key by id so the table can look up per-row TT100T for the badge.
+  const { data: comparisonList } = useQuery({
+    queryKey: ['comparison', 'list', 'rngd-tt100t'],
+    queryFn: () => ComparisonApi.list({ hardware: 'npu' }),
+    refetchInterval: 5000,
+  });
+  const tt100tById = new Map<number, number | null>();
+  for (const r of comparisonList?.runs ?? []) {
+    tt100tById.set(r.id, r.metrics?.tt100t_seconds ?? null);
+  }
 
   const rngdInfo = npuListData?.npus?.find((n) => n.npu_model?.toLowerCase().includes('rngd')) ?? npuListData?.npus?.[0];
 
@@ -356,7 +370,7 @@ const RngdNpuEvalPage = () => {
                   />
                 </TableCell>
                 <TableCell>
-                  <Tt100tBadge value={null} />
+                  <Tt100tBadge value={tt100tById.get(exam.id) ?? null} />
                 </TableCell>
                 <TableCell>
                   <Chip
