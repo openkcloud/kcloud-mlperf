@@ -1,0 +1,82 @@
+# Rebellions Atom+ TT100T smoke benchmark Job (real K8s scheduling, real NPU).
+#
+# Required env vars (substituted via envsubst):
+#   RUN_ID    — unique run identifier (e.g. 20260429-071649-46d82f8)
+#   IMAGE     — container image with vllm-rbln + optimum-rbln (default jungwooshim/etri-llm-rbln-smoke:v1)
+#   MODEL_ID  — HuggingFace model id; must compile under optimum-rbln
+#   NUM_NPUS  — 1 or 2 (matches rebellions.ai/ATOM resource request)
+#
+# Apply:
+#   envsubst < atomplus-tt100t-job.yaml.template | kubectl apply -f -
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: atomplus-tt100t-${RUN_ID}
+  namespace: llm-evaluation
+  labels:
+    app.kubernetes.io/name: atomplus-tt100t-job
+    app.kubernetes.io/managed-by: kubectl
+    etri.run-id: "${RUN_ID}"
+    etri.benchmark: tt100t
+    etri.device: atomplus
+    etri.vendor: rebellions
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: atomplus-tt100t-job
+        etri.run-id: "${RUN_ID}"
+        etri.benchmark: tt100t
+        etri.device: atomplus
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        npu-vendor: rebellions
+        npu-model: atomplus
+      imagePullSecrets:
+        - name: image-pull-secret
+      containers:
+        - name: tt100t-runner
+          image: ${IMAGE}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RUN_ID
+              value: "${RUN_ID}"
+            - name: MODEL_ID
+              value: "${MODEL_ID}"
+            - name: OUTPUT_TOKENS
+              value: "100"
+            - name: WARMUP_RUNS
+              value: "3"
+            - name: MEASURED_RUNS
+              value: "10"
+            - name: OUTPUT_DIR
+              value: "/results/${RUN_ID}/atomplus/tt100t"
+            - name: COMPILE_DIR
+              value: "/cache/rbln-compiled"
+            - name: HF_HOME
+              value: "/cache/hf-home"
+          resources:
+            requests:
+              rebellions.ai/ATOM: "${NUM_NPUS}"
+              cpu: "4"
+              memory: 16Gi
+            limits:
+              rebellions.ai/ATOM: "${NUM_NPUS}"
+              cpu: "8"
+              memory: 32Gi
+          volumeMounts:
+            - name: results-volume
+              mountPath: /results
+            - name: cache-volume
+              mountPath: /cache
+      volumes:
+        - name: results-volume
+          persistentVolumeClaim:
+            claimName: results-nfs-pvc
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: model-nfs-pvc
