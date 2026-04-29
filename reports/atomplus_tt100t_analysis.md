@@ -86,3 +86,39 @@ ssh node5 'RUN_ID=$(date -u +%Y%m%d-%H%M%S) \
   COMPILE_DIR=/home/kcloud/cache/rbln-compiled \
   python3 /tmp/tt100t_smoke.py'
 ```
+
+---
+
+## Update — second run (Qwen2.5-7B-Instruct, TP=2, fair-size comparison)
+
+**Result file**: `results/20260429-071649-46d82f8/atomplus/tt100t-qwen7b/tt100t_summary.json`
+**DB row**: `npu_exam.id = 68`
+
+| Metric | Value |
+|---|---|
+| **Verdict** | ❌ **FAIL** (target <1.1s) |
+| Output tokens per run | 100 (enforced) |
+| Invalid runs | 0 / 5 |
+| **Mean elapsed** | **3.731 s** |
+| Stddev | 0.014 s (very consistent) |
+| Min | 3.713 s |
+| Max | 3.748 s |
+| p50 | 3.738 s |
+| p99 | 3.748 s |
+| Mean throughput | ~26.8 tok/s |
+
+This is now a fair-size comparison vs. the production RNGD baseline (Llama-3.1-8B-FP8 mean 1.260s):
+
+| Device | Model | Params | Precision | TP | TT100T mean | tok/s |
+|---|---|---|---|---|---|---|
+| RNGD (node4) | Llama-3.1-8B-Instruct | 8B | **FP8** | 1 | **1.260 s** | 79.16 |
+| Atom+ (node5) | Qwen2.5-7B-Instruct | 7B | **BF16** | 2 | **3.731 s** | 26.80 |
+| Atom+ (node5) | Qwen2.5-0.5B-Instruct | 0.5B | BF16 | 1 | 0.727 s | 137.07 |
+
+**Honest interpretation** — at comparable model size:
+- Atom+ in BF16 is roughly **3× slower than RNGD in FP8** for TT100T at this prompt/decoding configuration.
+- The numbers are *not* directly comparable because precision differs (FP8 typically delivers ~2× the throughput of BF16 on the same hardware), and the model architectures (Llama vs. Qwen) have slightly different shapes.
+- Atom+'s stddev (0.014 s) is much tighter than RNGD's (~0.04 s) — extremely consistent run-to-run timing.
+- Atom+'s 0.5B run cleanly beats the 1.1s target (0.727s); the 7B run does not (3.731s). Both numbers are reported honestly without altering the target or the token count.
+
+The Atom+ benchmark path is now proven end-to-end and produces reproducible measurements. The path to closing the gap with RNGD is FP8/INT8 quantization on Atom+ (see optimum-rbln docs for `RBLNQuantizationConfig`) — that's a follow-up workstream, not a defect.
