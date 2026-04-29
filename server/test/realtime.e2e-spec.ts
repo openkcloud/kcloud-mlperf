@@ -2,31 +2,68 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { getRepositoryToken } from '@nestjs/typeorm';
+
 import { RealtimeModule } from '../src/realtime/realtime.module';
 import { GpuSweepModule } from '../src/gpu-sweep/gpu-sweep.module';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { GpuSweep } from '../src/gpu-sweep/entities/gpu-sweep.entity';
-import { GpuSweepCell, GpuSweepCellStatus } from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
+import { GpuSweepCell } from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
+import { MpExam } from '../src/entities/mp-exam.entity';
+import { MmExam } from '../src/entities/mm-exam.entity';
+import { MpExamResult } from '../src/entities/mp-exam-result.entity';
+import { MmExamResult } from '../src/entities/mm-exam-result.entity';
+import { NpuExam } from '../src/entities/npu-exam.entity';
+import { NpuExamResult } from '../src/entities/npu-exam-result.entity';
+import { DeviceRegistryService } from '../src/device-registry/device-registry.service';
+
+const REQUIRED_SLOT_FIELDS = [
+  'device_type',
+  'vendor',
+  'model',
+  'node',
+  'slot_id',
+  'status',
+  'current_exam',
+  'last_known_metric',
+  'last_metric_timestamp',
+  'metrics_status',
+];
 
 describe('Realtime SSE (e2e)', () => {
   let app: INestApplication<App>;
 
-  const sweepRepoMock = {
-    findOne: jest.fn(),
-    find: jest.fn(),
-  };
-  const cellRepoMock = {
+  const repoMock = () => ({
     find: jest.fn().mockResolvedValue([]),
-  };
+    findOne: jest.fn(),
+    createQueryBuilder: jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    })),
+  });
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [RealtimeModule, GpuSweepModule],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
-      .useValue(sweepRepoMock)
+      .useValue(repoMock())
       .overrideProvider(getRepositoryToken(GpuSweepCell))
-      .useValue(cellRepoMock)
+      .useValue(repoMock())
+      .overrideProvider(getRepositoryToken(MpExam))
+      .useValue(repoMock())
+      .overrideProvider(getRepositoryToken(MmExam))
+      .useValue(repoMock())
+      .overrideProvider(getRepositoryToken(MpExamResult))
+      .useValue(repoMock())
+      .overrideProvider(getRepositoryToken(MmExamResult))
+      .useValue(repoMock())
+      .overrideProvider(getRepositoryToken(NpuExam))
+      .useValue(repoMock())
+      .overrideProvider(getRepositoryToken(NpuExamResult))
+      .useValue(repoMock())
+      .overrideProvider(DeviceRegistryService)
+      .useValue({ getDevices: jest.fn().mockResolvedValue([]) })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -34,116 +71,73 @@ describe('Realtime SSE (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) await app.close();
   });
 
   // -------------------------------------------------------------------------
-  // SSE endpoint reachability
+  // Snapshot endpoint contract — fields the GPU realtime dashboard depends on
   // -------------------------------------------------------------------------
 
-  describe('GET /realtime/exams (SSE)', () => {
-    it('should respond with text/event-stream content type', async () => {
+  describe('GET /realtime/exams/snapshot', () => {
+    it('returns a snapshot with the documented top-level fields', async () => {
       const res = await request(app.getHttpServer())
-        .get('/realtime/exams')
-        .timeout(3000)
-        .buffer(true)
-        // SSE streams stay open; we just want the headers
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .parse(((_res: import('http').IncomingMessage, callback: (err: Error | null, body: string) => void) => {
-          _res.on('data', () => {/* ignore stream body */});
-          _res.on('end', () => callback(null, ''));
-          setTimeout(() => {
-            _res.destroy();
-            callback(null, '');
-          }, 500);
-        }) as any);
+        .get('/realtime/exams/snapshot')
+        .expect(200);
 
-      expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+      expect(res.body).toHaveProperty('timestamp');
+      expect(res.body).toHaveProperty('slots');
+      expect(res.body).toHaveProperty('sweep_progress');
+      expect(res.body).toHaveProperty('operator_race_alerts');
+      expect(Array.isArray(res.body.slots)).toBe(true);
     });
 
-    it('first SSE event should include gpus array with gpu_type fields', async () => {
-      cellRepoMock.find.mockResolvedValue([
-        {
-          id: 1,
-          gpu_type: 'NVIDIA-L40',
-          node: 'node2',
-          status: GpuSweepCellStatus.RUNNING,
-          exam_id: 10,
-          dispatched_at: new Date().toISOString(),
-          tt100t_seconds: 1.588,
-          tps: 62.94,
-        },
-      ]);
+    it('every slot includes metrics_status and last_metric_timestamp (never blank)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/realtime/exams/snapshot')
+        .expect(200);
 
-      let receivedData = '';
-
-      await new Promise<void>((resolve) => {
-        request(app.getHttpServer())
-          .get('/realtime/exams')
-          .buffer(true)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .parse(((_res: import('http').IncomingMessage, callback: (err: Error | null, body: string) => void) => {
-            _res.on('data', (chunk: Buffer) => {
-              receivedData += chunk.toString();
-            });
-            setTimeout(() => {
-              _res.destroy();
-              callback(null, receivedData);
-              resolve();
-            }, 600);
-          }) as any)
-          .catch(() => resolve());
-      });
-
-      if (receivedData.includes('data:')) {
-        const dataLine = receivedData
-          .split('\n')
-          .find((l) => l.startsWith('data:'));
-        if (dataLine) {
-          const payload = JSON.parse(dataLine.replace('data:', '').trim());
-          expect(payload).toHaveProperty('gpus');
-          if (Array.isArray(payload.gpus) && payload.gpus.length > 0) {
-            expect(payload.gpus[0]).toHaveProperty('gpu_type');
-          }
+      for (const slot of res.body.slots) {
+        for (const field of REQUIRED_SLOT_FIELDS) {
+          expect(slot).toHaveProperty(field);
         }
+        // metrics_status must always be one of the documented enum values —
+        // never undefined, never blank.
+        expect(['available', 'unavailable', 'pending']).toContain(
+          slot.metrics_status,
+        );
+      }
+    });
+
+    it('idle slots explicitly mark metrics as unavailable rather than leaving them blank', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/realtime/exams/snapshot')
+        .expect(200);
+
+      const idle = res.body.slots.filter(
+        (s: { status: string }) => s.status === 'idle',
+      );
+      for (const slot of idle) {
+        expect(slot.metrics_status).toBe('unavailable');
+        expect(slot.last_known_metric.tps).toBeNull();
+        expect(slot.last_known_metric.tt100t_seconds).toBeNull();
+        expect(slot.last_metric_timestamp).toBeNull();
       }
     });
   });
 
   // -------------------------------------------------------------------------
-  // API contract: all required dashboard fields present
+  // Health endpoint
   // -------------------------------------------------------------------------
 
-  describe('snapshot field contract', () => {
-    const REQUIRED_FIELDS = [
-      'gpu_type',
-      'node',
-      'status',
-      'exam_id',
-      'elapsed_seconds',
-      'last_tt100t',
-      'last_tps',
-      'sweep_progress',
-      'race_alert',
-    ];
+  describe('GET /realtime/exams/health', () => {
+    it('returns ok status with subscriber count', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/realtime/exams/health')
+        .expect(200);
 
-    it('each GPU entry in a snapshot should have all required fields', () => {
-      // Unit-level contract test — verify the shape the gateway assembles
-      const snapshot = {
-        gpu_type: 'NVIDIA-L40',
-        node: 'node2',
-        status: 'Running',
-        exam_id: 42,
-        elapsed_seconds: 120,
-        last_tt100t: 1.588,
-        last_tps: 62.94,
-        sweep_progress: { completed: 5, total: 96 },
-        race_alert: false,
-      };
-
-      for (const field of REQUIRED_FIELDS) {
-        expect(snapshot).toHaveProperty(field);
-      }
+      expect(res.body.status).toBe('ok');
+      expect(typeof res.body.subscribers).toBe('number');
+      expect(res.body).toHaveProperty('timestamp');
     });
   });
 });

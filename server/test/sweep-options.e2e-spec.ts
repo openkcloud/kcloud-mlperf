@@ -1,12 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
+import { GpuSweepController } from '../src/gpu-sweep/gpu-sweep.controller';
+import { GpuSweepService } from '../src/gpu-sweep/gpu-sweep.service';
 import { GpuSweep } from '../src/gpu-sweep/entities/gpu-sweep.entity';
 import { GpuSweepCell } from '../src/gpu-sweep/entities/gpu-sweep-cell.entity';
-import { GpuSweepModule } from '../src/gpu-sweep/gpu-sweep.module';
+import { MpExamService } from '../src/mp-exam/mp-exam.service';
+import { MmExamService } from '../src/mm-exam/mm-exam.service';
 import { TransformInterceptor } from '../src/interceptors/transform/transform.interceptor';
 
 // ---------------------------------------------------------------------------
@@ -16,12 +20,15 @@ import { TransformInterceptor } from '../src/interceptors/transform/transform.in
 // endpoint MUST return every category (benchmarks/hardware/nodes/models/...)
 // so the UI can render disabled options with a tooltip rather than rendering
 // an empty page.
+//
+// Constructed with a hand-rolled provider list (instead of importing
+// GpuSweepModule) so we don't pull in TypeORM's DataSource graph.
 // ---------------------------------------------------------------------------
 
 const ORIGINAL_FLAG = process.env.GPU_SWEEP_ENABLED;
 const ORIGINAL_NODE5 = process.env.NODE5_STATE;
 
-function buildApp(): Promise<INestApplication<App>> {
+async function buildApp(): Promise<INestApplication<App>> {
   const sweepRepoMock = {
     create: jest.fn(),
     save: jest.fn(),
@@ -38,22 +45,27 @@ function buildApp(): Promise<INestApplication<App>> {
     update: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
+  const mpExamServiceMock = { create: jest.fn(), stopMpExam: jest.fn() };
+  const mmExamServiceMock = { create: jest.fn(), stop: jest.fn() };
 
-  return Test.createTestingModule({
-    imports: [GpuSweepModule],
-  })
-    .overrideProvider(getRepositoryToken(GpuSweep))
-    .useValue(sweepRepoMock)
-    .overrideProvider(getRepositoryToken(GpuSweepCell))
-    .useValue(cellRepoMock)
-    .compile()
-    .then((moduleFixture: TestingModule) => {
-      const app = moduleFixture.createNestApplication();
-      app.setGlobalPrefix('api');
-      app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-      app.useGlobalInterceptors(new TransformInterceptor());
-      return app.init();
-    });
+  const moduleFixture: TestingModule = await Test.createTestingModule({
+    imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
+    controllers: [GpuSweepController],
+    providers: [
+      GpuSweepService,
+      { provide: getRepositoryToken(GpuSweep), useValue: sweepRepoMock },
+      { provide: getRepositoryToken(GpuSweepCell), useValue: cellRepoMock },
+      { provide: MpExamService, useValue: mpExamServiceMock },
+      { provide: MmExamService, useValue: mmExamServiceMock },
+    ],
+  }).compile();
+
+  const app = moduleFixture.createNestApplication();
+  app.setGlobalPrefix('api');
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalInterceptors(new TransformInterceptor());
+  await app.init();
+  return app;
 }
 
 describe('GET /api/gpu-sweep/options (e2e)', () => {
@@ -81,7 +93,7 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
     expect(body.enabled).toBe(true);
     expect(body.feature_flag_reason).toBeNull();
 
-    // Benchmarks
+    // Benchmarks — all four canonical IDs present
     const benchmarkKeys = body.benchmarks.map((b: any) => b.key);
     expect(benchmarkKeys).toEqual(
       expect.arrayContaining(['mlperf-perf', 'mlperf-acc', 'mmlu-pro', 'tt100']),
@@ -159,7 +171,7 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
     expect(body.nodes.length).toBe(4);
     expect(body.models.length).toBeGreaterThan(0);
 
-    // Every option has enabled=false and a populated disabled_reason
+    // Every benchmark disabled with feature_flag_off
     for (const b of body.benchmarks) {
       expect(b.enabled).toBe(false);
       expect(b.disabled_reason).toBe('feature_flag_off');
@@ -169,7 +181,7 @@ describe('GET /api/gpu-sweep/options (e2e)', () => {
       // Atom+ may carry node_pending_join; others must be feature_flag_off
       expect(['feature_flag_off', 'node_pending_join']).toContain(h.disabled_reason);
     }
-    // node5 still labelled pending_join, never silently active
+    // node5 still labelled pending_join, never silently masked
     const node5 = body.nodes.find((n: any) => n.name === 'node5');
     expect(node5.state).toBe('pending_join');
   });
