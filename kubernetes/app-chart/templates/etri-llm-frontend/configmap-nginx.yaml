@@ -1,0 +1,70 @@
+{{- with .Values }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .components.etriLLMFrontend.metadata.name }}-nginx-conf
+  namespace: {{ .global.namespace }}
+  labels:
+    app.kubernetes.io/name: etri-llm-frontend
+    app.kubernetes.io/managed-by: helm
+data:
+  default.conf: |
+    server {
+        listen 5173;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Correct-prefix calls: pass through.
+        location /api/ {
+            proxy_pass http://etri-llm-backend-service.llm-evaluation.svc.cluster.local:9999/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 1h;
+            proxy_send_timeout 1h;
+            chunked_transfer_encoding off;
+        }
+
+        # Frontend code calls some backend endpoints WITHOUT the /api prefix
+        # (mp-exam/list, npu-eval/list, realtime/exams, comparison/list, etc.).
+        # Rewrite those to /api/<prefix>/... so the backend's setGlobalPrefix
+        # is honored. SPA navigation requests (Accept: text/html or
+        # Sec-Fetch-Dest: document) fall through to the SPA shell so paths
+        # like /npu-eval/rngd or /mp-exam/123 still load the React app.
+        location ~* ^/(comparison|files|gpu-sweep|loki|mm-exam|mm-exam-result|mp-exam|mp-exam-result|npu-eval|realtime|version)(/.*)?$ {
+            # Stash regex captures BEFORE any if{}: nginx clears $1/$2 even
+            # on a falsy if{} (the famous "if is evil" quirk).
+            set $captured_prefix $1;
+            set $captured_suffix $2;
+
+            if ($http_sec_fetch_dest = "document") {
+                rewrite ^.*$ /index.html last;
+            }
+            if ($http_accept ~ "^text/html") {
+                rewrite ^.*$ /index.html last;
+            }
+            proxy_pass http://etri-llm-backend-service.llm-evaluation.svc.cluster.local:9999/api/$captured_prefix$captured_suffix$is_args$args;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 1h;
+            proxy_send_timeout 1h;
+            chunked_transfer_encoding off;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+{{- end }}
