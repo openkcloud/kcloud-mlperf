@@ -1,0 +1,222 @@
+{
+  "ts": "2026-04-29T23:41:42.283Z",
+  "api_baseline": {
+    "/comparison/list": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/list?hardware=npu": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ],
+      "total_npu_runs": 48,
+      "atomplus_runs": [
+        {
+          "id": 68,
+          "model": "Qwen/Qwen2.5-7B-Instruct",
+          "tt100t": 3.7134262761101127,
+          "status": "Completed"
+        },
+        {
+          "id": 67,
+          "model": "Qwen/Qwen2.5-0.5B-Instruct",
+          "tt100t": 0.7583864480257034,
+          "status": "Completed"
+        }
+      ]
+    },
+    "/comparison/candidates?runId=67": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/candidates?runId=68": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/mlperf/72/67": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/mlperf/72/68": {
+      "status": 404,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/devices": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/realtime/exams/snapshot": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    }
+  },
+  "route_audits": [
+    {
+      "route": "/",
+      "navOk": true,
+      "consoleErrorCount": 0,
+      "consoleErrors": [],
+      "networkErrorCount": 0,
+      "networkErrors": [],
+      "flags": {
+        "atom_visible": false,
+        "rebellions_visible": true,
+        "ATOMPLUS_run_name": false,
+        "data_ingestion_error": false,
+        "malformed_realtime": false,
+        "runtime_pending": false,
+        "runtime_ready": false
+      },
+      "screenshot": "/work/screenshot-_.png"
+    },
+    {
+      "route": "/dashboard/gpu-realtime",
+      "navOk": false,
+      "error": "TimeoutError: page.goto: Timeout 25000ms exceeded.\nCall log:\n  - navigating to \"http://10.254.177.41:30001/dashboard/gpu-realtime\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": []
+    },
+    {
+      "route": "/dashboard/npu-realtime",
+      "navOk": false,
+      "error": "TimeoutError: page.goto: Timeout 25000ms exceeded.\nCall log:\n  - navigating to \"http://10.254.177.41:30001/dashboard/npu-realtime\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": []
+    },
+    {
+      "route": "/npu-eval/rngd",
+      "navOk": true,
+      "consoleErrorCount": 0,
+      "consoleErrors": [],
+      "networkErrorCount": 0,
+      "networkErrors": [],
+      "flags": {
+        "atom_visible": false,
+        "rebellions_visible": true,
+        "ATOMPLUS_run_name": false,
+        "data_ingestion_error": false,
+        "malformed_realtime": false,
+        "runtime_pending": false,
+        "runtime_ready": false
+      },
+      "screenshot": "/work/screenshot-_npu_eval_rngd.png"
+    },
+    {
+      "route": "/npu-eval/atomplus",
+      "navOk": true,
+      "consoleErrorCount": 0,
+      "consoleErrors": [],
+      "networkErrorCount": 1,
+      "networkErrors": [
+        "GET http://10.254.177.41:30891/metrics : net::ERR_CONNECTION_REFUSED"
+      ],
+      "flags": {
+        "atom_visible": false,
+        "rebellions_visible": true,
+        "ATOMPLUS_run_name": false,
+        "data_ingestion_error": false,
+        "malformed_realtime": false,
+        "runtime_pending": false,
+        "runtime_ready": true
+      },
+      "screenshot": "/work/screenshot-_npu_eval_atomplus.png"
+    },
+    {
+      "route": "/mlperf/device-comparison",
+      "navOk": true,
+      "consoleErrorCount": 0,
+      "consoleErrors": [],
+      "networkErrorCount": 0,
+      "networkErrors": [],
+      "flags": {
+        "atom_visible": false,
+        "rebellions_visible": true,
+        "ATOMPLUS_run_name": false,
+        "data_ingestion_error": false,
+        "malformed_realtime": false,
+        "runtime_pending": false,
+        "runtime_ready": false
+      },
+      "screenshot": "/work/screenshot-_mlperf_device_comparison.png"
+    },
+    {
+      "route": "/mmlu/device-comparison",
+      "navOk": true,
+      "consoleErrorCount": 0,
+      "consoleErrors": [],
+      "networkErrorCount": 0,
+      "networkErrors": [],
+      "flags": {
+        "atom_visible": false,
+        "rebellions_visible": true,
+        "ATOMPLUS_run_name": false,
+        "data_ingestion_error": false,
+        "malformed_realtime": false,
+        "runtime_pending": false,
+        "runtime_ready": false
+      },
+      "screenshot": "/work/screenshot-_mmlu_device_comparison.png"
+    },
+    {
+      "route": "/npu-eval/device-comparison",
+      "navOk": true,
+      "consoleErrorCount": 0,
+      "consoleErrors": [],
+      "networkErrorCount": 0,
+      "networkErrors": [],
+      "flags": {
+        "atom_visible": false,
+        "rebellions_visible": true,
+        "ATOMPLUS_run_name": true,
+        "data_ingestion_error": false,
+        "malformed_realtime": false,
+        "runtime_pending": false,
+        "runtime_ready": false
+      },
+      "screenshot": "/work/screenshot-_npu_eval_device_comparison.png"
+    }
+  ],
+  "comparison_flow": {
+    "npu_compare_atomplus_in_picker": true,
+    "npu_compare_no_ingestion_err": true
+  }
+}
