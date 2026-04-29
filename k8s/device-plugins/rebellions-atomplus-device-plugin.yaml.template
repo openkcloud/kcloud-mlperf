@@ -1,0 +1,107 @@
+# Rebellions Atom+ Diagnostic DaemonSet TEMPLATE.
+#
+# Vendor: Rebellions (PCI vendor 1eff, NOT FuriosaAI 1ed2)
+# node5 spec: 2x Atom+ NPUs at PCI 1eff:1220, /dev/rsd0
+#             hostname: rebellion-atom-1, IP: 10.254.202.111:22
+#             tools: /usr/local/bin/rbln-stat, /usr/local/bin/rbln-smi
+#
+# State: pending_join (see config/cluster.yaml — node5.state: pending_join)
+#
+# This DaemonSet runs rbln-smi in diagnostic-only mode so the cluster can
+# observe Atom+ device health once node5 joins. It does NOT expose device
+# resources to the scheduler — that requires an official Rebellions k8s device
+# plugin once one is available.
+#
+# To activate after node5 joins:
+#   1. Run probe: scripts/07_prepare_rebellions_atomplus_npu_nodes.sh --probe
+#   2. Apply labels: kubectl label node node5 \
+#        accelerator-type=npu npu-vendor=rebellions npu-model=atomplus accelerator-count=2
+#   3. Apply: envsubst < k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template \
+#               | kubectl apply -f -
+#
+# Required env vars (never embed literals here):
+#   RBLN_PLUGIN_IMAGE  — container image with rbln-smi available (e.g. ubuntu:22.04)
+#   RBLN_PLUGIN_TAG    — image tag to pin (do not use latest in production)
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: rebellions-atomplus-diagnostic
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: rebellions-atomplus-diagnostic
+    app.kubernetes.io/component: device-diagnostic
+    app.kubernetes.io/managed-by: kubectl
+    etri/npu-vendor: rebellions
+    etri/npu-model: atomplus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rebellions-atomplus-diagnostic
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rebellions-atomplus-diagnostic
+        app.kubernetes.io/component: device-diagnostic
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: rebellions.ai/atomplus
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      nodeSelector:
+        npu-vendor: rebellions
+        npu-model: atomplus
+      containers:
+        - name: rbln-smi-diagnostic
+          image: ${RBLN_PLUGIN_IMAGE}:${RBLN_PLUGIN_TAG}
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "=== Rebellions Atom+ Diagnostic ===" && \
+              while true; do
+                echo "--- rbln-smi $(date --iso-8601=seconds) ---"
+                /usr/local/bin/rbln-smi 2>&1 || echo "[WARN] rbln-smi failed"
+                sleep 60
+              done
+          securityContext:
+            privileged: true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+            - name: rbln-tools
+              mountPath: /usr/local/bin/rbln-smi
+              subPath: rbln-smi
+              readOnly: true
+            - name: rbln-tools
+              mountPath: /usr/local/bin/rbln-stat
+              subPath: rbln-stat
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: rbln-tools
+          hostPath:
+            path: /usr/local/bin
+            type: Directory
