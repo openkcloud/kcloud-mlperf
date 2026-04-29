@@ -16,6 +16,7 @@ import type {
   CalibrationResponse,
   SweepPreviewResponse,
   SweepStatusResponse,
+  SweepOptionsResponse,
 } from './dto/gpu-sweep.dto';
 
 @Controller('gpu-sweep')
@@ -40,6 +41,14 @@ export class GpuSweepController {
   @Get('status')
   status(): Promise<SweepStatusResponse> {
     return this.service.getStatus();
+  }
+
+  // Always returns the full catalogue. When the feature is disabled or a node
+  // is not yet ready, options remain in the response with disabled=true and a
+  // machine-readable reason so the UI can render them with a tooltip.
+  @Get('options')
+  options(): SweepOptionsResponse {
+    return this.service.getOptions();
   }
 
   @Get('cells/:sweepId')

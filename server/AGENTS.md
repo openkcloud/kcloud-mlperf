@@ -72,3 +72,34 @@ NestJS 11 backend for the LLM evaluation platform. Provides REST API for managin
 - Axios, bcrypt, dayjs, zod
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+
+## Device Registry & NPU Support
+
+The backend now integrates compute devices from three distinct vendors via a centralized Device Registry:
+
+| Vendor | Device | Namespace | Implementation |
+|--------|--------|-----------|-----------------|
+| **NVIDIA** | GPU (L40, A40) | `kube-system` (NVIDIA device plugin) | Standard K8s resource: `nvidia.com/gpu` |
+| **Furiosa** | RNGD NPU | `furiosa-system` (Furiosa device plugin) | Custom K8s resource: `furiosa.ai/warboy` |
+| **Rebellions** | Atom+ NPU | `furiosa-system` (Rebellions device plugin) | Custom K8s resource: `rebellions.ai/atomplus` |
+
+**Key Location**: `src/device-registry/` — integrates Kubernetes API, cluster.yaml, and gRPC service health checks.
+
+**New Endpoints**:
+- `GET /api/devices` — List all devices; supports ?vendor=, ?status= filters
+- `POST /api/devices/sync` — Force rebuild device registry from cluster state
+- `GET /api/devices/{id}` — Get single device details
+
+See `../docs/device_registry.md` for full API docs and troubleshooting.
+
+## Operator Documentation Index
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| Node5 Join Runbook | `../docs/node5_atomplus_runbook.md` | Step-by-step Rebellions Atom+ join with rollback (LEAD-GATED) |
+| Dashboard Troubleshooting | `../docs/dashboard_troubleshooting.md` | Empty state diagnostics + reason codes for all 5 dashboards |
+| Sweep Control Usage | `../docs/sweep_control_usage.md` | GPU sweep modes, disabled reasons, API reference |
+| Device Registry | `../docs/device_registry.md` | How devices are discovered, registered, and exposed via API |
+| Operator Recovery | `../docs/operator_recovery_runbook.md` | Emergency procedures: node NotReady, plugin crash, helm rollback |
+
+See parent `AGENTS.md` "Compute Devices" section for vendor separation and key differences.

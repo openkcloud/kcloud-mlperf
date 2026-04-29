@@ -42,6 +42,9 @@ import {
   SweepPreviewResponse,
   SweepStatusResponse,
   StartSweepDto,
+  SweepOptionsResponse,
+  SweepOptionFlag,
+  SweepDisabledReason,
 } from './dto/gpu-sweep.dto';
 
 dayjs.extend(utc);
@@ -88,6 +91,141 @@ export class GpuSweepService {
   isEnabled(): boolean {
     const flag = this.config.get<string>('GPU_SWEEP_ENABLED');
     return flag === 'true' || flag === '1';
+  }
+
+  // -------------------------- options endpoint --------------------------
+  // Returns a fully-populated catalogue for the sweep-control UI. Even when
+  // the feature flag is OFF or hardware is not ready, every option is still
+  // returned with disabled=true and a machine-readable reason — the page must
+  // never render blank.
+  getOptions(): SweepOptionsResponse {
+    const featureOn = this.isEnabled();
+    const featureFlagReason: SweepDisabledReason | null = featureOn
+      ? null
+      : 'feature_flag_off';
+
+    // Node states are sourced from cluster.yaml. node5 is canonically
+    // pending_join until Lane C-mut completes; this mirrors that contract.
+    const node5State = (
+      this.config.get<string>('NODE5_STATE') ?? 'pending_join'
+    ).toLowerCase();
+    const node5Pending = node5State === 'pending_join';
+
+    const node5DisabledReason: SweepDisabledReason | null = node5Pending
+      ? 'node_pending_join'
+      : null;
+
+    const nodes: SweepOptionsResponse['nodes'] = [
+      {
+        name: 'node2',
+        state: 'active',
+        enabled: featureOn,
+        disabled_reason: featureFlagReason,
+      },
+      {
+        name: 'node3',
+        state: 'active',
+        enabled: featureOn,
+        disabled_reason: featureFlagReason,
+      },
+      {
+        name: 'node4',
+        state: 'active',
+        enabled: featureOn,
+        disabled_reason: featureFlagReason,
+      },
+      {
+        name: 'node5',
+        state: node5Pending ? 'pending_join' : 'active',
+        enabled: featureOn && !node5Pending,
+        disabled_reason: featureFlagReason ?? node5DisabledReason,
+      },
+    ];
+
+    const benchmarks: SweepOptionFlag[] = [
+      this.flag('mlperf-perf', 'MLPerf performance', featureOn, featureFlagReason),
+      this.flag('mlperf-acc', 'MLPerf accuracy', featureOn, featureFlagReason),
+      this.flag('mmlu-pro', 'MMLU-Pro', featureOn, featureFlagReason),
+      this.flag('tt100', 'TT100 (time-to-100-tokens)', featureOn, featureFlagReason),
+    ];
+
+    // Hardware list. npu-rebellions-atomplus is labelled Rebellions Atom+
+    // (NEVER Furiosa). When node5 is pending_join we emit
+    // disabled_reason='node_pending_join' so the UI renders the option
+    // greyed-out with an explanatory tooltip rather than hiding it.
+    const hardware: SweepOptionsResponse['hardware'] = [
+      {
+        key: 'gpu-nvidia',
+        label: 'NVIDIA GPU (L40 / A40 — node2 & node3)',
+        vendor: 'nvidia',
+        node: 'node2,node3',
+        enabled: featureOn,
+        disabled_reason: featureFlagReason,
+      },
+      {
+        key: 'npu-rngd',
+        label: 'Furiosa RNGD NPU (node4)',
+        vendor: 'furiosa',
+        node: 'node4',
+        enabled: featureOn,
+        disabled_reason: featureFlagReason,
+      },
+      {
+        key: 'npu-rebellions-atomplus',
+        label: 'Rebellions Atom+ NPU (node5)',
+        vendor: 'rebellions',
+        node: 'node5',
+        enabled: featureOn && !node5Pending,
+        disabled_reason: featureFlagReason ?? node5DisabledReason,
+      },
+    ];
+
+    const models: SweepOptionsResponse['models'] = [
+      {
+        key: 'llama-3.1-8b-instruct',
+        label: 'Llama-3.1-8B-Instruct',
+        precisions: ['fp8', 'bf16'],
+        enabled: featureOn,
+        disabled_reason: featureFlagReason,
+      },
+    ];
+
+    const precisions: SweepOptionFlag[] = [
+      this.flag('fp8', 'FP8', featureOn, featureFlagReason),
+      this.flag('bf16', 'BF16', featureOn, featureFlagReason),
+    ];
+
+    const scenarios: SweepOptionFlag[] = [
+      this.flag('offline', 'Offline', featureOn, featureFlagReason),
+      this.flag('server', 'Server', featureOn, featureFlagReason),
+    ];
+
+    return {
+      enabled: featureOn,
+      feature_flag_reason: featureFlagReason,
+      benchmarks,
+      hardware,
+      nodes,
+      models,
+      precisions,
+      scenarios,
+      batch_sizes: [1, 2, 4, 8],
+      concurrencies: [1, 2, 4],
+    };
+  }
+
+  private flag(
+    key: string,
+    label: string,
+    enabled: boolean,
+    reason: SweepDisabledReason | null,
+  ): SweepOptionFlag {
+    return {
+      key,
+      label,
+      enabled,
+      disabled_reason: enabled ? null : reason,
+    };
   }
 
   /** True while the cron-driven quiet window is active. */

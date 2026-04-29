@@ -7,6 +7,7 @@ export const HomePaths = {
 export const DashboardPaths = {
   ROOT_PATH: '/dashboard',
   GPU_REALTIME_PATH: 'gpu-realtime',
+  NPU_REALTIME_PATH: 'npu-realtime',
   SWEEP_CONTROL_PATH: 'sweep-control'
 } as const;
 

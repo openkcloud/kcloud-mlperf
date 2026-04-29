@@ -1,0 +1,30 @@
+# P0 Root Cause Matrix
+
+**RUN_ID**: 20260428-083516-4b786d4
+**Updated**: 2026-04-28 KST (lead initial scaffold; workers will fill in evidence + fix as they proceed)
+
+| # | Symptom | Affected route/API/file | Evidence | Root cause | Fix plan | Test plan | Owner | Status |
+|---|---|---|---|---|---|---|---|---|
+| 1 | node5 missing from cluster | `kubectl get nodes` shows only node1-4 | kubelet inactive on node5 | node5 not joined | join via kubeadm or kubespray; configure SSH; install runtime; label `accelerator-type=npu npu-vendor=rebellions npu-model=atomplus` | `kubectl get node node5 -o yaml` | worker-3 | pending |
+| 2 | Vendor mislabeled | `cluster.yaml`, `furiosa-atomplus-device-plugin.yaml.template`, `07_prepare_atomplus_npu_nodes.sh` | All say `vendor: furiosa` for Atom+ | Prior pass conflated Rebellions Atom+ with Furiosa Atom+ (Furiosa makes RNGD; Rebellions makes Atom+) | Replace `furiosa` → `rebellions` in Atom+ paths; new device plugin (rbln-driver-based) | grep verification + UI shows two vendors | worker-3, worker-10 | pending |
+| 3 | GPU realtime dashboard "not working" | `/dashboard/gpu-realtime`, `useRealtimeExams.ts`, `realtime.gateway.ts` | `/api/realtime/exams/snapshot` returns 4 GPU slots but `tps:null tt100t_seconds:null` even when `status:running` | metrics not flowing from running exams to snapshot (no DCGM/Prometheus tap or backend reads from stale source); slot statuses correct but metrics dead | wire metrics from Prometheus or pod logs; show "unavailable" instead of `null`; fix SSE reconnect | unit + e2e | worker-6 | pending |
+| 4 | NPU realtime not visible | no `/dashboard/npu-realtime` route | no NPU slots in `/api/realtime/exams/snapshot` | DeviceRealtimeDashboard hard-codes 4 NVIDIA SKUs | refactor to DeviceRegistry-driven; add NPU slot generation for node4 RNGD + node5 Atom+ | unit + e2e | worker-7, worker-8 | pending |
+| 5 | Comparison shows nothing | `/mlperf/device-comparison`, `/mmlu/device-comparison`, `/npu-eval/device-comparison` | `/api/comparison/*` returns 404; `/api/npu-eval/compare/:a/:b` returns 200 | only one comparison endpoint exists; cross-benchmark unified compare missing | add `/api/comparison/list?benchmark=&hardware=`; wire from existing mp-exam/npu-eval data | unit + e2e | worker-4, worker-5 | pending |
+| 6 | Sweep control menu empty | `/dashboard/sweep-control`, `gpu-sweep.controller.ts` | `/api/gpu-sweep/options` returns 404 | options endpoint never built; UI calls nonexistent | add GET `/api/gpu-sweep/options` returning benchmarks/hardware/nodes/models/precisions/scenarios with disabled-reason flags | unit + e2e | worker-9 | pending |
+| 7 | Hard-coded GPU SKU arrays | `DeviceRealtimeDashboard.tsx`, multiple pages | Search for `NVIDIA-L40\|NVIDIA-A40` shows literal arrays | UI components not data-driven | introduce `useDeviceRegistry()` hook → `/api/devices`; replace hard-coded arrays | unit | worker-10, worker-11 | pending |
+| 8 | No `/api/devices` endpoint | nowhere | 404 | never built | add Nest module that reads `config/cluster.yaml` + k8s API; expose nodes+slots+state | unit | worker-14 | pending |
+| 9 | Production v14 may differ from repo HEAD | helm rev 7 deployed | infra repo `values.yaml` shows v14 tag, app code on commit 4b786d4 | likely in sync but verify | diff repo vs deployed image digests | curl `/api/version` + helm get | worker-2 | pending |
+| 10 | kubespray inventory missing node5 | `kubespray/inventory/etri/hosts.yml` | only node1-4 listed | scaffold drift | add node5 entry with port 22, vendor labels (rebellions atomplus); SECURE password handling required | re-run kubespray dry-run | worker-3 | pending |
+| 11 | DB password literal in helm secret | `kubernetes/app-chart/templates/etri-llm-backend/secret.yaml` | `DATABASE_PASSWORD: <DB_PASSWORD>` | secret committed | replace with `{{ required ... .Values.secrets.dbPassword }}`; rotate | helm-lint | worker-12 | pending |
+| 12 | HF token leak in NODE4_HANDOFF.md | already redacted in file but exists in git history | `git log -p -- NODE4_HANDOFF.md` shows pre-redact commit | needs `git filter-repo --replace-text` | scrub history; force push (after user approval) | gitleaks | worker-12 | pending |
+| 13 | npm audit vulns server: 22 / web: 6 | package-lock.json | prior audits | run `npm audit fix` | `npm test` regression | worker-13 | deferred — separate PR |
+| 14 | Loki LogQL injection (mostly fixed) | `loki.controller.ts` | already validates against ALLOWED_BENCHMARKS | residual: ParseEnumPipe equivalent in place; verify | confirm 400 on bad input | smoke test | done | done |
+
+## Append-only log
+
+Workers append rows here as new symptoms surface during deepsearch.
+
+| 15 | GPU SKU hardcodes block NPU integration | `DeviceRealtimeDashboard.tsx:11`, `realtime.service.ts:18,60-63`, `gpu-sweep/matrix.ts:13-21` | 5 files with literal arrays: GPU_SKUS=['NVIDIA-L40','NVIDIA-A40',...], TP2_ALLOWED_SKUS, DEVICE_SLOTS | Early scaffold assumed 4-GPU only; no parameterization path to device registry | Refactor to useDeviceRegistry() hook; lazy-load from `/api/devices`; unblock Lanes F,G,H | ast_grep find all arrays; verify fixture tests pass | worker-1 | pending |
+| 16 | Model/benchmark profiles GPU-only | `benchmark_profiles.yaml:18,79,83,...`, `model_profiles.yaml:33,59,85` | 8+ benchmark profiles hardcoded for L40/A40; zero for RNGD/Atom+ | No parallel NPU profile definitions | Add profiles for RNGD (node4) + Atom+ (node5); update model capability matrix | schema validation + lanes D,E match profile list | worker-1 | pending |
+| 17 | Entity type hints incomplete | `mm-exam.entity.ts:66`, `mp-exam.entity.ts:95` | Comments list "A6000, L40, A40, RNGD" but omit Atom+ | Docs lag behind config | Add Atom+ to type hint comments; verify enum covers all 6 skus | grep verification | worker-1 | pending |
+| 18 | Test fixtures hardcoded 4 GPUs | ~40 test files with GPU SKU literals | `gpu-sweep.e2e-spec.ts`, `realtime.e2e-spec.ts`, `gpu-realtime.spec.ts` | Tests mock/stub GPS devices via hardcoded arrays | Parameterize fixtures to read from shared device list | jest snapshot update + all tests green | worker-13 | pending |

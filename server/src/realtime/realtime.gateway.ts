@@ -6,11 +6,19 @@ import { RealtimeService } from './realtime.service';
  * RealtimeController uses this gateway to serve SSE connections.
  * RealtimeService is optional so the gateway can be unit-tested standalone.
  */
+/**
+ * Keepalive interval — emit a `: ping\n\n` SSE comment every 15s so idle
+ * intermediaries (nginx default 60s, k8s ingress 60s) don't drop the
+ * connection between snapshot frames.
+ */
+export const SSE_KEEPALIVE_MS = 15000;
+
 @Injectable()
 export class RealtimeGateway {
   private readonly logger = new Logger(RealtimeGateway.name);
   private _subscriberCount = 0;
   private lastEmitAt = 0;
+  private lastKeepaliveAt = 0;
 
   constructor(@Optional() private readonly realtimeService: RealtimeService | null) {}
 
@@ -40,6 +48,16 @@ export class RealtimeGateway {
 
   private broadcastSnapshot(message: unknown) {
     this.logger.debug('broadcast: ' + JSON.stringify(message));
+  }
+
+  /** True when the gateway should emit a keepalive comment now. */
+  shouldEmitKeepalive(now: number = Date.now()): boolean {
+    if (this._subscriberCount === 0) return false;
+    return now - this.lastKeepaliveAt >= SSE_KEEPALIVE_MS;
+  }
+
+  markKeepaliveEmitted(now: number = Date.now()): void {
+    this.lastKeepaliveAt = now;
   }
 
   async tick() {

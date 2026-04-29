@@ -23,6 +23,8 @@ import { NpuEvalModule } from './npu-eval/npu-eval.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { GpuSweepModule } from './gpu-sweep/gpu-sweep.module';
 import { VersionModule } from './version/version.module';
+import { ComparisonModule } from './comparison/comparison.module';
+import { DeviceRegistryModule } from './device-registry/device-registry.module';
 import { GpuSweep } from './gpu-sweep/entities/gpu-sweep.entity';
 import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
 
@@ -58,6 +60,8 @@ import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
     RealtimeModule,
     GpuSweepModule,
     VersionModule,
+    ComparisonModule,
+    DeviceRegistryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

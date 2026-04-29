@@ -53,5 +53,6 @@ export const NpuEvalPageLinks = {
 
 export const DashboardPageLinks = {
   gpuRealtime: join(DashboardPaths.ROOT_PATH, DashboardPaths.GPU_REALTIME_PATH),
+  npuRealtime: join(DashboardPaths.ROOT_PATH, DashboardPaths.NPU_REALTIME_PATH),
   sweepControl: join(DashboardPaths.ROOT_PATH, DashboardPaths.SWEEP_CONTROL_PATH)
 } as const;
