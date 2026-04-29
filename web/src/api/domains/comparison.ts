@@ -98,6 +98,34 @@ export const CandidatesApi = {
     const { data } = await httpClient.get<CandidatesResponse>('/comparison/candidates', {
       params: { runId, ...opts }
     });
+
+    // Defensive normalization: the backend currently returns
+    //   data.candidates = { strict: [...], hardware_optimized: [...], related: [...] }
+    // (each entry is a flat run row carrying comparability_class on it).
+    // The picker UI expects a flat ComparisonCandidate[] with a `category`
+    // field per item — without this re-shape, picker calls
+    // `candidates.filter(...)` on an object and throws
+    // "i.filter is not a function" when a user clicks a row.
+    const raw: unknown = (data as unknown as { candidates?: unknown }).candidates;
+    if (raw && !Array.isArray(raw) && typeof raw === 'object') {
+      const flat: ComparisonCandidate[] = [];
+      const groups = raw as Record<string, ComparisonRunRow[] | undefined>;
+      for (const cat of ['strict', 'hardware_optimized', 'related'] as const) {
+        const runs = groups[cat];
+        if (!Array.isArray(runs)) continue;
+        for (const run of runs) {
+          flat.push({
+            run,
+            category: cat,
+            comparability_reason:
+              (run as ComparisonRunRow & { comparability_reason?: string }).comparability_reason ??
+              ''
+          });
+        }
+      }
+      return { ...data, candidates: flat } as CandidatesResponse;
+    }
+
     return data;
   }
 } as const;
