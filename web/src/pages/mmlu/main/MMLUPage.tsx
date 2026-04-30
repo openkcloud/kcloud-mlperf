@@ -10,6 +10,7 @@ import {
   Box,
   Chip,
   FormControlLabel,
+  Paper,
   Switch,
   Typography
 } from '@mui/material';
@@ -254,6 +255,28 @@ const MMLUPage = () => {
       </Accordion>
 
       <MmluExamConfirmationModal modalState={modalData} handleClose={handleCloseModal} />
+
+      <Paper sx={{ p: 2, mt: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="h6">Live Bench Dashboard (GPU realtime)</Typography>
+          <Typography variant="caption">
+            <a
+              href="/dashboard/gpu-realtime"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#3aa3ff', textDecoration: 'none' }}
+            >
+              open in new tab ↗
+            </a>
+          </Typography>
+        </Box>
+        <Box
+          component="iframe"
+          src="/dashboard/gpu-realtime"
+          title="GPU realtime dashboard"
+          sx={{ width: '100%', height: 700, border: 0, borderRadius: 1, bgcolor: '#0e1117', display: 'block' }}
+        />
+      </Paper>
     </Fragment>
   );
 };

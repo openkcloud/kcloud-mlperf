@@ -630,22 +630,45 @@ export class ComparisonService {
     const benchmarkFilter = opts?.benchmark ?? 'all';
     const hardwareFilter = opts?.hardware ?? 'all';
 
+    // Apples-to-apples: same model is preferred (strict). However the user's
+    // primary use case is cross-vendor TT100T comparison (Atom+ vs RNGD vs GPU)
+    // where exact model rarely matches across hardware. Relax to "same model
+    // OR both have a TT100T number we can compare directly". classifyComparability
+    // assigns a lower comparability_score when models differ, so cross-model
+    // candidates fall into the 'related' bucket — visible to the user, not
+    // promoted to strict.
+    const sourceHasTt100t =
+      source.metrics.tt100t_seconds !== null &&
+      source.metrics.tt100t_seconds !== undefined;
     const siblings = all.filter((r) => {
       if (r.id === source.id && r.source_table === source.source_table) {
         return false;
       }
-      if (r.benchmark !== source.benchmark) return false;
-      if (benchmarkFilter !== 'all' && r.benchmark !== benchmarkFilter) {
+      // Drop cross-benchmark only when the user explicitly filtered to one.
+      // Otherwise, allow tt100t-based cross-benchmark (Atom+ tt100t vs MLPerf
+      // perf runs) — the user wants TT100T apples-to-apples even across families.
+      if (
+        benchmarkFilter !== 'all' &&
+        r.benchmark !== benchmarkFilter
+      ) {
         return false;
       }
       if (hardwareFilter !== 'all' && r.hardware.type !== hardwareFilter) {
         return false;
       }
-      // Comparability requires at least matching model.
-      if (this.normalizeModel(r.model) !== this.normalizeModel(source.model)) {
-        return false;
-      }
-      return true;
+      const sameModel =
+        this.normalizeModel(r.model) === this.normalizeModel(source.model);
+      const tt100tComparable =
+        sourceHasTt100t &&
+        r.metrics.tt100t_seconds !== null &&
+        r.metrics.tt100t_seconds !== undefined;
+      const sameBenchmark = r.benchmark === source.benchmark;
+      // Keep if same model+benchmark (strict path), same model (cross-benchmark),
+      // or different model but same tt100t metric (cross-class).
+      if (sameModel && sameBenchmark) return true;
+      if (sameModel) return true;
+      if (tt100tComparable) return true;
+      return false;
     });
 
     const classified: CandidateRun[] = siblings.map((r) =>

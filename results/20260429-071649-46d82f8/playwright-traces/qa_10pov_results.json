@@ -1,0 +1,305 @@
+{
+  "ts": "2026-04-30T00:05:31.771Z",
+  "base": "http://10.254.177.41:30001",
+  "povs": {
+    "pov_1_skeptical_operator": [
+      {
+        "route": "/",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/dashboard/gpu-realtime",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/dashboard/npu-realtime",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/dashboard/sweep-control",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/ml-perf",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/mmlu",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/npu-eval/rngd",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/npu-eval/atomplus",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 1,
+        "consoleErrors": [],
+        "networkErrors": [
+          "GET http://10.254.177.41:30891/metrics net::ERR_CONNECTION_REFUSED"
+        ]
+      },
+      {
+        "route": "/mlperf/device-comparison",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/mmlu/device-comparison",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      },
+      {
+        "route": "/npu-eval/device-comparison",
+        "navOk": true,
+        "consoleErrCount": 0,
+        "networkErrCount": 0,
+        "consoleErrors": [],
+        "networkErrors": []
+      }
+    ],
+    "pov_2_demo_presenter": {
+      "route": "/npu-eval/atomplus",
+      "runtime_ready_visible": true,
+      "runtime_pending_NOT_visible": true,
+      "iframe_present": true,
+      "consoleErrCount": 0
+    },
+    "pov_3_data_accuracy": {
+      "atomplus_runs": [
+        {
+          "id": 68,
+          "model": "Qwen/Qwen2.5-7B-Instruct",
+          "tt100t": 3.7134262761101127,
+          "tps": 26.92930802028793,
+          "status": "Completed"
+        },
+        {
+          "id": 67,
+          "model": "Qwen/Qwen2.5-0.5B-Instruct",
+          "tt100t": 0.7583864480257034,
+          "tps": 131.85889629268635,
+          "status": "Completed"
+        }
+      ],
+      "no_runs_with_zero_tt100t": true
+    },
+    "pov_4_compare": {
+      "atomplus_in_picker": true,
+      "rngd_in_picker": true,
+      "consoleErrCount": 0,
+      "no_data_ingestion_error": true
+    },
+    "pov_5_gpu_realtime": {
+      "L40_running_visible": true,
+      "Llama_8B_visible": true,
+      "no_NPU_cards_on_GPU_page": false,
+      "consoleErrCount": 0
+    },
+    "pov_6_failure_state": {
+      "Error_status_visible": false,
+      "iframe_added": true,
+      "consoleErrCount": 0
+    },
+    "pov_7_narrow": {
+      "mobile_navigable": true,
+      "title_visible": true
+    },
+    "pov_8_backend_5xx": {
+      "api_calls_with_5xx": []
+    },
+    "pov_9_mlperf_iframe": {
+      "iframe_added": true,
+      "has_existing_table": true,
+      "consoleErrCount": 0
+    },
+    "pov_10_summary": {
+      "total_routes_tested": 11,
+      "total_console_errors": 0,
+      "total_network_errors": 1,
+      "clean_routes": 10
+    }
+  },
+  "api_baseline": {
+    "/comparison/list?hardware=npu": {
+      "status": 200,
+      "data_keys": [
+        "empty",
+        "total",
+        "runs"
+      ],
+      "total": 48,
+      "atomplus": [
+        {
+          "id": 68,
+          "model": "Qwen/Qwen2.5-7B-Instruct",
+          "tt100t": 3.7134262761101127
+        },
+        {
+          "id": 67,
+          "model": "Qwen/Qwen2.5-0.5B-Instruct",
+          "tt100t": 0.7583864480257034
+        }
+      ]
+    },
+    "/comparison/list?hardware=gpu": {
+      "status": 200,
+      "data_keys": [
+        "empty",
+        "total",
+        "runs"
+      ]
+    },
+    "/comparison/candidates?runId=67": {
+      "status": 200,
+      "data_keys": [
+        "empty",
+        "source",
+        "totals",
+        "candidates"
+      ]
+    },
+    "/comparison/candidates?runId=72": {
+      "status": 200,
+      "data_keys": [
+        "empty",
+        "source",
+        "totals",
+        "candidates"
+      ]
+    },
+    "/comparison/candidates?runId=134": {
+      "status": 200,
+      "data_keys": [
+        "empty",
+        "source",
+        "totals",
+        "candidates"
+      ],
+      "source": "134 nvidia/NVIDIA-L40",
+      "strict_count": 0,
+      "related_count": 0,
+      "related_atomplus": []
+    },
+    "/realtime/exams/snapshot": {
+      "status": 200,
+      "data_keys": [
+        "timestamp",
+        "slots",
+        "sweep_progress",
+        "operator_race_alerts"
+      ],
+      "slots": [
+        {
+          "device_type": "gpu",
+          "vendor": "nvidia",
+          "model": "L40",
+          "status": "running",
+          "cur_id": 134,
+          "cur_name": "Llama-3.1-8B-Instruct-cnn_eval.json"
+        },
+        {
+          "device_type": "gpu",
+          "vendor": "nvidia",
+          "model": "A40",
+          "status": "idle"
+        },
+        {
+          "device_type": "gpu",
+          "vendor": "nvidia",
+          "model": "L40-44GiB",
+          "status": "idle"
+        },
+        {
+          "device_type": "gpu",
+          "vendor": "nvidia",
+          "model": "A40-44GiB",
+          "status": "idle"
+        },
+        {
+          "device_type": "npu",
+          "vendor": "furiosa",
+          "model": "RNGD",
+          "status": "running",
+          "cur_id": 69,
+          "cur_name": "tt1"
+        },
+        {
+          "device_type": "npu",
+          "vendor": "rebellions",
+          "model": "Atom+",
+          "status": "idle"
+        },
+        {
+          "device_type": "npu",
+          "vendor": "rebellions",
+          "model": "Atom+",
+          "status": "idle"
+        }
+      ]
+    },
+    "/devices": {
+      "status": 200,
+      "data_keys": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7"
+      ]
+    },
+    "/devices/health": {
+      "status": 200,
+      "data_keys": [
+        "cluster_yaml_readable",
+        "cluster_yaml_path",
+        "k8s_api_reachable",
+        "k8s_api_error",
+        "source_used",
+        "device_plugins",
+        "last_refresh"
+      ]
+    }
+  },
+  "user_complaints": {},
+  "defects": []
+}

@@ -305,9 +305,16 @@ export class RealtimeService implements OnModuleDestroy {
     resultByExamId: Map<number, MpExamResult>,
   ): RealtimeSlot {
     const sku = device.model;
-    const mpExam = mpActives.find((e) => e.gpu_type === sku);
+    // SKU comparison must be robust: device-registry can return either bare
+    // ('L40', 'A40-44GiB') or fully-qualified ('NVIDIA-L40') labels, while
+    // mp_exam.gpu_type is consistently fully-qualified ('NVIDIA-L40'). Normalize
+    // both sides so we don't miss a Running exam (the L40 idle-when-running bug).
+    const norm = (s: string | null | undefined): string =>
+      (s ?? '').replace(/^NVIDIA-/i, '').toLowerCase();
+    const skuN = norm(sku);
+    const mpExam = mpActives.find((e) => norm(e.gpu_type) === skuN);
     const mmExam = !mpExam
-      ? mmActives.find((e) => e.gpu_type === sku)
+      ? mmActives.find((e) => norm(e.gpu_type) === skuN)
       : undefined;
     const activeExam = mpExam ?? mmExam;
 
