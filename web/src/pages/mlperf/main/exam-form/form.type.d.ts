@@ -20,6 +20,7 @@ export type MpExamFormInput = {
   numOfWorkers: number;
   minDuration: number;
   tensorParallelSize: number;
+  maxOutputTokens: number;
   gpuType: SelectValue;
   gpuNumber: SelectValue;
   cpuCore: { value: number; label: string };

@@ -14,7 +14,7 @@ import {
   Typography
 } from '@mui/material';
 
-import { PrometheusIframeDashboard } from '@/components/benchmark-page';
+import { LiveBenchDashboard, getGpuPrometheusUrl } from '@/components/benchmark-page';
 
 // ----------------------------------------------------------------------
 
@@ -70,6 +70,7 @@ const MMLUPage = () => {
       gpuNumber,
       gpuType,
       gpuUtil,
+      maxTokens,
       dataNumber,
       precision,
       time,
@@ -90,6 +91,7 @@ const MMLUPage = () => {
       gpu_num: Number(gpuNumber.value),
       gpu_type: gpuType.value as string,
       model: model.value as string,
+      max_tokens: Number(maxTokens),
       retry_num: Number(repetitionCount),
       precision: precision.value as string,
       ram_capacity: Number(ramSize),
@@ -257,7 +259,11 @@ const MMLUPage = () => {
 
       <MmluExamConfirmationModal modalState={modalData} handleClose={handleCloseModal} />
 
-      <PrometheusIframeDashboard title="Live GPU Dashboard (MMLU-Pro)" />
+      <LiveBenchDashboard
+        title="Live GPU Dashboard (MMLU-Pro — L40)"
+        src={getGpuPrometheusUrl()}
+        height={900}
+      />
     </Fragment>
   );
 };

@@ -9,9 +9,11 @@
  */
 
 export const MLPERF_DATASET_MAP: Record<string, string[]> = {
-  'Llama-3.1-8B-Instruct': ['cnn_eval.json']
+  'Llama-3.1-8B-Instruct': ['cnn_eval.json'],
+  'Llama-3.1-8B-Instruct-FP8': ['cnn_eval.json']
 };
 
 export const MMLU_DATASET_MAP: Record<string, string[]> = {
-  'Llama-3.1-8B-Instruct': ['mmlu-pro']
+  'Llama-3.1-8B-Instruct': ['mmlu-pro'],
+  'Llama-3.1-8B-Instruct-FP8': ['mmlu-pro']
 };

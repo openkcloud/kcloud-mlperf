@@ -6,19 +6,7 @@ import {
   Box,
   Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Drawer,
-  Paper,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Typography,
   useTheme
 } from '@mui/material';
@@ -28,6 +16,7 @@ import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/Device
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
 import { ComparisonCandidatePicker } from '@/components/ComparisonCandidatePicker';
 import { ComparisonRunTable } from '@/components/ComparisonRunTable';
+import { ComparisonDetailDialog } from '@/components/ComparisonDetailDialog';
 import { ComparisonApi } from '@/api/domains/comparison';
 import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate } from '@/api/domains/comparison';
 
@@ -67,13 +56,29 @@ const NpuDeviceComparisonPage = () => {
     setCompareLoading(true);
     setCompareError(null);
     setCompareData(null);
+    setDialogOpen(true);
     try {
-      const result = await ComparisonApi.compare('all', selectedA!.id, runB.id);
+      const bench = selectedA!.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+      const result = await ComparisonApi.compare(bench, selectedA!.id, runB.id);
       setCompareData(result.metrics);
-      setDialogOpen(true);
     } catch {
       setCompareError('Failed to load comparison data from server.');
-      setDialogOpen(true);
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    if (!selectedA || !selectedB) return;
+    setCompareLoading(true);
+    setCompareError(null);
+    setCompareData(null);
+    try {
+      const bench = selectedA.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+      const result = await ComparisonApi.compare(bench, selectedA.id, selectedB.id);
+      setCompareData(result.metrics);
+    } catch {
+      setCompareError('Failed to load comparison data from server.');
     } finally {
       setCompareLoading(false);
     }
@@ -171,51 +176,21 @@ const NpuDeviceComparisonPage = () => {
         )}
       </Drawer>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>NPU vs GPU — Side-by-Side Comparison</DialogTitle>
-        <DialogContent dividers>
-          {compareError && (
-            <Alert severity="error" sx={{ mb: 2 }}>{compareError}</Alert>
-          )}
-          {compareData && (
-            <Box>
-              <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-                <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.primary.main}` }}>
-                  <Typography variant="subtitle2" fontWeight={700}>Run A: {selectedA?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedA?.hardware.model}</Typography>
-                </Paper>
-                <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.secondary.main}` }}>
-                  <Typography variant="subtitle2" fontWeight={700}>Run B: {selectedB?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedB?.hardware.model}</Typography>
-                </Paper>
-              </Stack>
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Metric</TableCell>
-                      <TableCell>Run A</TableCell>
-                      <TableCell>Run B</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {Object.entries(compareData).map(([key, val]) => (
-                      <TableRow key={key}>
-                        <TableCell sx={{ fontWeight: 600 }}>{key}</TableCell>
-                        <TableCell>{typeof val.a === 'number' ? val.a.toFixed(3) : '—'}</TableCell>
-                        <TableCell>{typeof val.b === 'number' ? val.b.toFixed(3) : '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      <ComparisonDetailDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        title="NPU vs GPU — Side-by-Side Comparison"
+        runA={selectedA}
+        runB={selectedB}
+        metrics={compareData}
+        isLoading={compareLoading}
+        error={compareError}
+        onRetry={handleRetry}
+        accentA={theme.palette.primary.main}
+        accentB={theme.palette.secondary.main}
+        labelA="Run A"
+        labelB="Run B"
+      />
     </Box>
   );
 };

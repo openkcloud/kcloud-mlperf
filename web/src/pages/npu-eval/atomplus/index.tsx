@@ -1,21 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Box, Button, Chip, CircularProgress, Alert,
+  Box, Button, Chip, CircularProgress, Alert, MenuItem,
   Pagination, Paper, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Typography
+  TableContainer, TableHead, TableRow, TextField, Typography
 } from '@mui/material';
 import { CompareArrows as CompareIcon } from '@mui/icons-material';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm, Controller } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
 import { NpuEvalApi } from '@/api/domains/npu-eval.domain';
+import { DevicesApi } from '@/api/domains/devices.domains';
 import { ComparisonApi } from '@/api/domains/comparison';
 import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { StatusEnum } from '@/enums/status.enum';
 import { Tt100tBadge } from '@/components/Tt100tBadge';
 import { HardwareIdentityCard, LiveBenchDashboard } from '@/components/benchmark-page';
 import type { ComparisonRunRow } from '@/api/domains/comparison';
+import type { NpuExamCreateBody } from '@/api/types/npu-eval.types.d';
 
 // ----------------------------------------------------------------------
 
@@ -90,15 +93,78 @@ const ActiveBenchmarkCard = ({ run }: { run: ComparisonRunRow }) => {
 
 // ----------------------------------------------------------------------
 
+type AtomExamFormData = NpuExamCreateBody;
+
+const ATOM_DEFAULT_VALUES: AtomExamFormData = {
+  name: '',
+  description: '',
+  benchmark: 'mlperf',
+  model: 'rebellions/Llama-3.1-8B-Instruct',
+  precision: 'fp8',
+  framework: 'optimum-rbln',
+  batch_size: 1,
+  dataset: 'cnn_dailymail',
+  data_number: 100,
+  npu_type: 'ATOM',
+  npu_num: 1,
+  cpu_core: 8,
+  ram_capacity: 64,
+  retry_num: 3,
+  max_output_tokens: 128,
+  started_at: dayjs().format('YYYY-MM-DDTHH:mm')
+};
+
+// ----------------------------------------------------------------------
+
 const AtomPlusNpuEvalPage = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [showForm, setShowForm] = useState(false);
   const limit = 10;
 
   const { data: npuListData } = useQuery({
     queryKey: NpuEvalQueryKeys.npuList(),
     queryFn: NpuEvalApi.npuList,
   });
+
+  const { data: devicesList } = useQuery({
+    queryKey: ['devices', 'list'],
+    queryFn: DevicesApi.list,
+    refetchInterval: 15000,
+  });
+
+  const rebellionsDevices = (devicesList ?? []).filter(
+    (d) => d.vendor === 'rebellions' && d.state === 'ready'
+  );
+  const hasReadyDevice = rebellionsDevices.length > 0;
+
+  const createMutation = useMutation({
+    mutationFn: NpuEvalApi.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [NpuEvalQueryKeys.PREFIX] });
+      setShowForm(false);
+      reset(ATOM_DEFAULT_VALUES);
+    }
+  });
+
+  const { control, handleSubmit, reset, watch, setValue } = useForm<AtomExamFormData>({
+    defaultValues: ATOM_DEFAULT_VALUES
+  });
+
+  const selectedBenchmark = watch('benchmark');
+  useEffect(() => {
+    const datasetMap: Record<string, string> = { mlperf: 'cnn_dailymail', mmlu: 'MMLU-Pro' };
+    if (datasetMap[selectedBenchmark]) setValue('dataset', datasetMap[selectedBenchmark]);
+  }, [selectedBenchmark, setValue]);
+
+  const onSubmit = (data: AtomExamFormData) => {
+    createMutation.mutate({
+      ...data,
+      npu_type: 'ATOM',
+      started_at: dayjs(data.started_at).format('YYYY-MM-DDTHH:mm:ssZ')
+    });
+  };
 
   const atomInfo = npuListData?.npus?.find((n) => n.npu_model?.toLowerCase().includes('atom')) ?? npuListData?.npus?.[0];
 
@@ -152,10 +218,89 @@ const AtomPlusNpuEvalPage = () => {
         </Box>
       </Box>
 
-      {/* D-8: inform demo users why there is no "New Exam" button */}
-      <Alert severity="info" sx={{ mb: 2 }}>
-        Awaiting device plugin — exam creation disabled until node5 joins the cluster.
-      </Alert>
+      {/* Device-aware create button and form */}
+      {hasReadyDevice ? (
+        <Box sx={{ mb: 2 }}>
+          <Button variant="contained" sx={{ bgcolor: VENDOR_COLOR, '&:hover': { bgcolor: '#9333ea' } }} onClick={() => setShowForm(!showForm)}>
+            {showForm ? 'Cancel' : 'New Atom+ Exam'}
+          </Button>
+        </Box>
+      ) : (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          No ready Rebellions device found in cluster.
+          Run: <code>kubectl get nodes -l kubernetes.io/hostname=node5</code> and
+          <code>kubectl get pods -n rbln-system</code> to diagnose.
+          Device plugin must report allocatable rebellions.ai/ATOM before exam creation is available.
+        </Alert>
+      )}
+
+      {/* Create Form */}
+      {showForm && hasReadyDevice && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>Create Atom+ NPU Exam</Typography>
+          <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 2 }}>
+            <Controller name="name" control={control} rules={{ required: true }} render={({ field }) => (
+              <TextField {...field} label="Test Name" size="small" required />
+            )} />
+            <Controller name="description" control={control} render={({ field }) => (
+              <TextField {...field} label="Description" size="small" />
+            )} />
+            <Controller name="benchmark" control={control} render={({ field }) => (
+              <TextField {...field} label="Benchmark" size="small" select>
+                <MenuItem value="mlperf">MLPerf</MenuItem>
+                <MenuItem value="mmlu">MMLU</MenuItem>
+              </TextField>
+            )} />
+            <Controller name="model" control={control} render={({ field }) => (
+              <TextField {...field} label="Model (HuggingFace path)" size="small" />
+            )} />
+            <Controller name="precision" control={control} render={({ field }) => (
+              <TextField {...field} label="Precision" size="small" select>
+                <MenuItem value="fp8">FP8</MenuItem>
+                <MenuItem value="bf16">BF16</MenuItem>
+                <MenuItem value="int8">INT8</MenuItem>
+              </TextField>
+            )} />
+            <Controller name="framework" control={control} render={({ field }) => (
+              <TextField {...field} label="Framework" size="small" disabled />
+            )} />
+            <Controller name="batch_size" control={control} render={({ field }) => (
+              <TextField {...field} label="Batch Size" size="small" type="number" />
+            )} />
+            <Controller name="dataset" control={control} render={({ field }) => (
+              <TextField {...field} label="Dataset" size="small" />
+            )} />
+            <Controller name="data_number" control={control} render={({ field }) => (
+              <TextField {...field} label="Data Samples (0=full)" size="small" type="number" />
+            )} />
+            <TextField label="NPU Type" size="small" value="ATOM" disabled />
+            <Controller name="npu_num" control={control} render={({ field }) => (
+              <TextField {...field} label="NPU Count" size="small" type="number" />
+            )} />
+            <Controller name="cpu_core" control={control} render={({ field }) => (
+              <TextField {...field} label="CPU Cores" size="small" type="number" />
+            )} />
+            <Controller name="ram_capacity" control={control} render={({ field }) => (
+              <TextField {...field} label="RAM (GB)" size="small" type="number" />
+            )} />
+            <Controller name="retry_num" control={control} render={({ field }) => (
+              <TextField {...field} label="Repetitions" size="small" type="number" />
+            )} />
+            <Controller name="max_output_tokens" control={control} render={({ field }) => (
+              <TextField {...field} label="Max Output Tokens (0=unlimited)" size="small" type="number" />
+            )} />
+            <Controller name="started_at" control={control} render={({ field }) => (
+              <TextField {...field} label="Start Time" size="small" type="datetime-local" InputLabelProps={{ shrink: true }} />
+            )} />
+            <Box sx={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+              <Button variant="outlined" onClick={() => { setShowForm(false); reset(ATOM_DEFAULT_VALUES); }}>Cancel</Button>
+              <Button variant="contained" type="submit" disabled={createMutation.isPending} sx={{ bgcolor: VENDOR_COLOR, '&:hover': { bgcolor: '#9333ea' } }}>
+                {createMutation.isPending ? 'Creating...' : 'Create Exam'}
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+      )}
 
       {/* Run Table */}
       {error && (

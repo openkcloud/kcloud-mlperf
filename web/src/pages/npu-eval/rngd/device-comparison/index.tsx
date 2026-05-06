@@ -5,18 +5,7 @@ import {
   Alert,
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Typography,
   useTheme
 } from '@mui/material';
@@ -24,6 +13,7 @@ import {
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/DeviceDashboardHeader';
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
 import { ComparisonRunTable } from '@/components/ComparisonRunTable';
+import { ComparisonDetailDialog } from '@/components/ComparisonDetailDialog';
 import { ComparisonApi } from '@/api/domains/comparison';
 import type { ComparisonRunRow, ComparisonDiagnosticReason } from '@/api/domains/comparison';
 
@@ -57,13 +47,13 @@ const RngdDeviceComparisonPage = () => {
     setCompareLoading(true);
     setCompareError(null);
     setCompareData(null);
+    setDialogOpen(true);
     try {
-      const result = await ComparisonApi.compare('all', selectedRngd.id, selectedGpu.id);
+      const bench = selectedRngd.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+      const result = await ComparisonApi.compare(bench, selectedRngd.id, selectedGpu.id);
       setCompareData(result.metrics);
-      setDialogOpen(true);
     } catch {
       setCompareError('Failed to load comparison data from server.');
-      setDialogOpen(true);
     } finally {
       setCompareLoading(false);
     }
@@ -99,7 +89,7 @@ const RngdDeviceComparisonPage = () => {
 
       {!isEmpty && (
         <>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
             <Typography variant="body2" color="text.secondary">
               {selectedRngd ? `RNGD: #${selectedRngd.id} ${selectedRngd.name}` : 'No RNGD run selected'}
             </Typography>
@@ -194,53 +184,21 @@ const RngdDeviceComparisonPage = () => {
         </>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>RNGD NPU vs GPU — Side-by-Side Comparison</DialogTitle>
-        <DialogContent dividers>
-          {compareError && <Alert severity="error" sx={{ mb: 2 }}>{compareError}</Alert>}
-          {compareData && (
-            <Box>
-              <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-                <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: '3px solid #F97316' }}>
-                  <Typography variant="subtitle2" fontWeight={700}>RNGD: {selectedRngd?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {selectedRngd?.hardware.model} (FuriosaAI)
-                  </Typography>
-                </Paper>
-                <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.secondary.main}` }}>
-                  <Typography variant="subtitle2" fontWeight={700}>GPU: {selectedGpu?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {selectedGpu?.hardware.model}
-                  </Typography>
-                </Paper>
-              </Stack>
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Metric</TableCell>
-                      <TableCell>RNGD (NPU)</TableCell>
-                      <TableCell>GPU</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {Object.entries(compareData).map(([key, val]) => (
-                      <TableRow key={key}>
-                        <TableCell sx={{ fontWeight: 600 }}>{key}</TableCell>
-                        <TableCell>{typeof val.a === 'number' ? val.a.toFixed(3) : '—'}</TableCell>
-                        <TableCell>{typeof val.b === 'number' ? val.b.toFixed(3) : '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      <ComparisonDetailDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        title="RNGD NPU vs GPU — Side-by-Side Comparison"
+        runA={selectedRngd}
+        runB={selectedGpu}
+        metrics={compareData}
+        isLoading={compareLoading}
+        error={compareError}
+        onRetry={handleCompare}
+        accentA="#F97316"
+        accentB={theme.palette.secondary.main}
+        labelA="RNGD (NPU)"
+        labelB="GPU"
+      />
     </Box>
   );
 };

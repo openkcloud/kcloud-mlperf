@@ -56,6 +56,8 @@ const fieldGrid = { xs: 12, sm: 6, lg: 4 };
 
 const selectValue = { label: '', value: '' };
 
+const FP8_MODEL = { label: 'Llama-3.1-8B-Instruct (FP8)', value: 'Llama-3.1-8B-Instruct-FP8' };
+
 const initialData: MlExamFormInput = {
   name: '',
   description: '',
@@ -69,6 +71,7 @@ const initialData: MlExamFormInput = {
   dataNumber: 0,
   batchSize: 1,
   gpuUtil: 0.8,
+  maxTokens: 128,
   subjects: 'all',
   ramSize: 16,
   repetitionCount: 1,
@@ -108,11 +111,13 @@ export const MmluExamForm = memo(
     const selectedGpuType = watch('gpuType');
     const selectedModel = watch('model');
 
-    // Extract models from settings.mmlu
+    // Extract models from settings.mmlu; always include FP8 variant
     const models = useMemo(() => {
-      if (!settings?.mmlu) return apiModels;
-      const modelNames = Object.keys(settings.mmlu);
-      return modelNames.map(name => ({ label: name, value: name }));
+      const base: { label: string; value: string | number }[] = settings?.mmlu
+        ? Object.keys(settings.mmlu).map(name => ({ label: name, value: name }))
+        : apiModels;
+      const hasFp8 = base.some(m => m.value === FP8_MODEL.value);
+      return hasFp8 ? base : [...base, FP8_MODEL];
     }, [settings?.mmlu, apiModels]);
 
     // Extract datasets: local mapping → settings API → all datasets fallback
@@ -397,6 +402,29 @@ export const MmluExamForm = memo(
                   );
                 }}
                 rules={{ min: { value: 0, message: 'GPU util should be positive!' } }}
+              />
+            </Grid>
+            <Grid size={fieldGrid}>
+              <Controller
+                name="maxTokens"
+                control={control}
+                render={({ field, fieldState }) => {
+                  const { error } = fieldState;
+                  return (
+                    <TextInput
+                      {...field}
+                      size={size}
+                      label="Max Tokens"
+                      type="number"
+                      hasError={Boolean(error)}
+                      helperText={error?.message}
+                    />
+                  );
+                }}
+                rules={{
+                  min: { value: 16, message: 'Min 16 tokens' },
+                  max: { value: 2048, message: 'Max 2048 tokens' }
+                }}
               />
             </Grid>
           </Grid>

@@ -12,7 +12,8 @@ export type ComparisonHardware = {
   type: 'gpu' | 'npu';
   vendor: 'nvidia' | 'furiosa' | 'rebellions';
   model: 'L40' | 'A40' | 'RNGD' | 'Atom+' | string;
-  node?: string;
+  canonical?: string;
+  node?: string | null;
 };
 
 export type ComparisonMetrics = {
@@ -31,11 +32,21 @@ export type ComparisonRunRow = {
   status: string;
   started_at: string | null;
   completed_at: string | null;
+  elapsed_seconds?: number | null;
   metrics: ComparisonMetrics;
   artifacts: string[];
+  precision?: string | null;
+  scenario?: string | null;
+  batch_size?: number | null;
+  dataset?: string | null;
+  data_number?: number | null;
+  max_output_tokens?: number | null;
+  source_table?: string;
   drift_flag?: boolean;
   drift_fields?: string[];
   failure_reason?: string | null;
+  /** True when this run used the full canonical dataset (data_number = max). False for subset/smoke runs. */
+  is_canonical?: boolean;
 };
 
 export type ComparisonListParams = {
@@ -44,10 +55,34 @@ export type ComparisonListParams = {
   node?: string;
 };
 
+// Backend returns either a success envelope or a diagnostic (empty) envelope.
+// Success: { empty: false, total: N, runs: [...] }
+// Empty:   { empty: true, reason: ..., message: ..., total_runs: N, filtered_runs: N, filters_applied: {...} }
+type BackendListSuccess = {
+  empty: false;
+  total: number;
+  runs: ComparisonRunRow[];
+};
+
+type BackendListEmpty = {
+  empty: true;
+  reason: ComparisonDiagnosticReason;
+  message: string;
+  total_runs: number;
+  filtered_runs: number;
+};
+
+type BackendListRaw = BackendListSuccess | BackendListEmpty;
+
+// Normalised shape consumed by the frontend pages.
 export type ComparisonListResponse = {
   runs: ComparisonRunRow[];
   total: number;
-  diagnostic?: ComparisonDiagnostic;
+  /** Present when the backend returned an empty/diagnostic envelope. */
+  diagnostic?: {
+    reason: ComparisonDiagnosticReason;
+    message: string;
+  };
 };
 
 export type ComparisonDiagnostic = {
@@ -62,6 +97,8 @@ export type ComparisonDiagnostic = {
   ingestion_errors: string[];
 };
 
+// Backend pair response shape: { benchmark, a: NormalizedRun, b: NormalizedRun, delta: {...} }
+// We expose it as metrics: Record<string, {a, b}> for the dialog.
 export type ComparisonPairResponse = {
   idA: number;
   idB: number;
@@ -70,6 +107,9 @@ export type ComparisonPairResponse = {
   runB: ComparisonRunRow;
   metrics: Record<string, { a: number | null; b: number | null }>;
 };
+
+// Valid benchmark values for the pair endpoint (backend rejects 'all').
+export type PairBenchmark = 'mlperf' | 'mmlu';
 
 // ----------------------------------------------------------------------
 
@@ -155,21 +195,53 @@ export type FlatComparisonRunRow = {
 
 export const ComparisonApi = {
   list: async (params?: ComparisonListParams): Promise<ComparisonListResponse> => {
-    const { data } = await httpClient.get<ComparisonListResponse>('/comparison/list', {
-      params
-    });
-    return data;
+    const { data } = await httpClient.get<BackendListRaw>('/comparison/list', { params });
+    if (data.empty) {
+      return {
+        runs: [],
+        total: 0,
+        diagnostic: { reason: data.reason, message: data.message },
+      };
+    }
+    return { runs: data.runs, total: data.total };
   },
 
+  // benchmark must be 'mlperf' or 'mmlu' — backend rejects 'all'.
+  // Returns metrics as Record<metricName, {a, b}> mapped from the backend delta shape.
   compare: async (
-    benchmark: string,
+    benchmark: PairBenchmark | string,
     idA: number | string,
     idB: number | string
   ): Promise<ComparisonPairResponse> => {
-    const { data } = await httpClient.get<ComparisonPairResponse>(
-      `/comparison/${benchmark}/${idA}/${idB}`
-    );
-    return data;
+    // Coerce cross-benchmark or unknown benchmark to 'mlperf' (safest default).
+    const safeBenchmark: PairBenchmark =
+      benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+    const { data } = await httpClient.get<{
+      benchmark: string;
+      a: ComparisonRunRow;
+      b: ComparisonRunRow;
+      delta: Record<string, number | null>;
+    }>(`/comparison/${safeBenchmark}/${idA}/${idB}`);
+    // Map delta {field: number} → metrics {field: {a: valA, b: valB}}
+    const METRIC_KEYS: Array<keyof ComparisonMetrics> = [
+      'tt100t_seconds', 'tps', 'accuracy_pct', 'throughput'
+    ];
+    const metrics: Record<string, { a: number | null; b: number | null }> = {};
+    for (const key of METRIC_KEYS) {
+      const valA = data.a.metrics?.[key] ?? null;
+      const valB = data.b.metrics?.[key] ?? null;
+      if (valA !== null || valB !== null) {
+        metrics[key] = { a: valA as number | null, b: valB as number | null };
+      }
+    }
+    return {
+      idA: data.a.id,
+      idB: data.b.id,
+      benchmark: data.benchmark,
+      runA: data.a,
+      runB: data.b,
+      metrics,
+    };
   },
 
   diagnostics: async (params?: ComparisonListParams): Promise<ComparisonDiagnostic> => {

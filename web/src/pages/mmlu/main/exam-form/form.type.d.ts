@@ -16,6 +16,7 @@ export type MlExamFormInput = {
   batchSize: number;
   subjects: string;
   gpuUtil: number;
+  maxTokens: number;
   gpuType: SelectValue;
   gpuNumber: SelectValue;
   cpuCore: SelectValue;

@@ -1,13 +1,5 @@
-import { PrometheusIframeDashboard } from '@/components/benchmark-page';
+import { DeviceRealtimeDashboard } from '@/components/DeviceRealtimeDashboard';
 
-// Re-export helpers so existing imports from this module still resolve
-export { getGpuPrometheusUrl, deriveState } from '@/components/benchmark-page';
-
-const GpuRealtimePage = () => (
-  <PrometheusIframeDashboard
-    title="Live GPU Dashboard"
-    fallbackMessage="Prometheus unavailable — install kube-prometheus-stack and set VITE__APP_GPU_PROMETHEUS_URL"
-  />
-);
+const GpuRealtimePage = () => <DeviceRealtimeDashboard deviceType="gpu" />;
 
 export default GpuRealtimePage;

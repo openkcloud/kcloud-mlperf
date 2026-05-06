@@ -192,6 +192,8 @@ export type ComparisonRunTableProps = {
   skeletonRows?: number;
   /** Link shown in empty state */
   onClearFilters?: () => void;
+  /** When true, only show runs with is_canonical=true; non-canonical runs are hidden */
+  canonicalOnly?: boolean;
 };
 
 const SKELETON_COLS = 7;
@@ -207,9 +209,14 @@ export const ComparisonRunTable = ({
   showVendor = true,
   skeletonRows = 5,
   onClearFilters,
+  canonicalOnly = false,
 }: ComparisonRunTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('tt100t');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const visibleRuns = canonicalOnly
+    ? runs.filter(r => r.is_canonical !== false)
+    : runs;
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -220,7 +227,7 @@ export const ComparisonRunTable = ({
     }
   };
 
-  const sorted = [...runs].sort((a, b) => {
+  const sorted = [...visibleRuns].sort((a, b) => {
     switch (sortKey) {
       case 'tt100t':
         return nullLast(a.metrics.tt100t_seconds, b.metrics.tt100t_seconds, sortDir);
@@ -289,7 +296,7 @@ export const ComparisonRunTable = ({
     );
   }
 
-  if (runs.length === 0) {
+  if (visibleRuns.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 1 }}>
         No runs match your filters.
@@ -384,6 +391,7 @@ export const ComparisonRunTable = ({
               const vendorColor = VENDOR_COLOR[vendor] ?? '#64748B';
               const elapsed = elapsedSec(run);
               const hasDrift = !!run.drift_flag;
+              const isSubset = run.is_canonical === false;
 
               return [
                 goalLineIdx === idx && <GoalLineRow key={`goal-${idx}`} colSpan={colCount} />,
@@ -407,6 +415,21 @@ export const ComparisonRunTable = ({
                         }}
                       />
                       {hasDrift && <DriftBadge fields={run.drift_fields} />}
+                      {isSubset && (
+                        <Tooltip title="Subset/smoke run — not a full canonical dataset run" arrow>
+                          <Chip
+                            size="small"
+                            label="subset"
+                            sx={{
+                              fontWeight: 700,
+                              fontSize: '0.6875rem',
+                              bgcolor: 'rgba(148,163,184,0.15)',
+                              color: '#475569',
+                              cursor: 'default',
+                            }}
+                          />
+                        </Tooltip>
+                      )}
                     </Stack>
                   </TableCell>
                   {showVendor && (

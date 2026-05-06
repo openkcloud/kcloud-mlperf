@@ -58,6 +58,8 @@ const fieldGrid = { xs: 12, sm: 6, lg: 4 };
 
 // ----------------------------------------------------------------------
 
+const FP8_MODEL = { label: 'Llama-3.1-8B-Instruct (FP8)', value: 'Llama-3.1-8B-Instruct-FP8' };
+
 const initialData: MpExamFormInput = {
   name: '',
   description: '',
@@ -88,6 +90,7 @@ const initialData: MpExamFormInput = {
   numOfWorkers: 1,
   minDuration: 0,
   tensorParallelSize: 1,
+  maxOutputTokens: 128,
   ramSize: 16,
   repetitionCount: 1,
   time: dayjs()
@@ -123,11 +126,13 @@ export const MpExamForm = memo(
     const selectedScenario = watch('scenario');
     const selectedModel = watch('model');
 
-    // Extract models from settings.mlperf
+    // Extract models from settings.mlperf; always include FP8 variant
     const models = useMemo(() => {
-      if (!settings?.mlperf) return apiModels;
-      const modelNames = Object.keys(settings.mlperf);
-      return modelNames.map(name => ({ label: name, value: name }));
+      const base: { label: string; value: string }[] = settings?.mlperf
+        ? Object.keys(settings.mlperf).map(name => ({ label: name, value: name }))
+        : apiModels;
+      const hasFp8 = base.some(m => m.value === FP8_MODEL.value);
+      return hasFp8 ? base : [...base, FP8_MODEL];
     }, [settings?.mlperf, apiModels]);
 
     // Extract datasets: local mapping → settings API → all datasets fallback
@@ -499,6 +504,29 @@ export const MpExamForm = memo(
                   );
                 }}
                 rules={{ min: { value: 0, message: 'Tensor parallel size should be positive!' } }}
+              />
+            </Grid>
+            <Grid size={fieldGrid}>
+              <Controller
+                name="maxOutputTokens"
+                control={control}
+                render={({ field, fieldState }) => {
+                  const { error } = fieldState;
+                  return (
+                    <TextInput
+                      {...field}
+                      size={size}
+                      label="Max Output Tokens"
+                      type="number"
+                      hasError={Boolean(error)}
+                      helperText={error?.message}
+                    />
+                  );
+                }}
+                rules={{
+                  min: { value: 16, message: 'Min 16 tokens' },
+                  max: { value: 2048, message: 'Max 2048 tokens' }
+                }}
               />
             </Grid>
           </Grid>

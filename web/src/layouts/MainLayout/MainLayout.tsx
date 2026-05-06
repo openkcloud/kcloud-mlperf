@@ -1,5 +1,5 @@
 import { type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 
 import { Box, Drawer, IconButton, Typography, useMediaQuery, useTheme, styled } from '@mui/material';
 import { Menu as MenuIcon, Close as CloseIcon } from '@mui/icons-material';
@@ -10,7 +10,7 @@ import CloudSVG from '@/assets/icons/cloud.svg?react';
 import HexagonSVG from '@/assets/icons/hexagon.svg?react';
 import { AppLoader } from '@/components/AppLoader';
 
-import { DashboardPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks, NpuEvalAtomPlusPageLinks } from '@/contexts/RouterContext/router.links.ts';
+import { DashboardPageLinks, HomePageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks, NpuEvalAtomPlusPageLinks } from '@/contexts/RouterContext/router.links.ts';
 
 // ----------------------------------------------------------------------
 
@@ -182,7 +182,13 @@ const Sidebar = ({ onClose }: SidebarProps) => (
   <SidebarContent>
     {/* Logo / Brand */}
     <Box sx={{ mb: 3.5, px: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+      <Link
+        to={HomePageLinks.main}
+        aria-label="Go to home page"
+        style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', cursor: 'pointer', borderRadius: '0.5rem', outline: 'none' }}
+        onFocus={(e) => { e.currentTarget.style.boxShadow = '0 0 0 2px #818CF8'; }}
+        onBlur={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
+      >
         <Box
           sx={{
             width: 36,
@@ -224,7 +230,7 @@ const Sidebar = ({ onClose }: SidebarProps) => (
             LLM Benchmark Suite
           </Typography>
         </Box>
-      </Box>
+      </Link>
       {onClose && (
         <IconButton
           onClick={onClose}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { deriveState } from '../index';
+import { deriveState, getGpuPrometheusUrl } from '@/components/benchmark-page';
 
 // ---------------------------------------------------------------------------
 // deriveState: URL construction + state mapping
@@ -27,5 +27,15 @@ describe('deriveState', () => {
     const result = deriveState('', false);
     expect(result).not.toBe('ready');
     expect(result).not.toBe('loading');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getGpuPrometheusUrl: exported helper still resolves after page refactor
+// ---------------------------------------------------------------------------
+
+describe('getGpuPrometheusUrl', () => {
+  it('is still importable from benchmark-page after gpu-realtime page refactor', () => {
+    expect(typeof getGpuPrometheusUrl).toBe('function');
   });
 });

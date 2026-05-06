@@ -52,6 +52,7 @@ export interface ComparisonRunRow {
   config_fingerprint: string;
   drift_flag: boolean;
   is_canonical: boolean;
+  precision_mismatch: boolean;
 }
 
 export interface NormalizedMetrics {
@@ -87,6 +88,8 @@ export interface NormalizedRun {
   // W7 contract: subset runs (data_number 1..13367) are excluded from canonical comparison.
   // data_number=0 means full dataset (13368 samples), which is canonical.
   is_canonical: boolean;
+  // W7/W10 contract: BF16 fallback on MLPerf where FP8 is canonical (A40, RNGD-bf16, Atom+).
+  precision_mismatch: boolean;
 }
 
 export type EmptyReason =
@@ -306,6 +309,7 @@ export class ComparisonService {
       config_fingerprint: run.config_fingerprint,
       drift_flag: run.drift_flag,
       is_canonical: run.is_canonical,
+      precision_mismatch: run.precision_mismatch,
     };
   }
 
@@ -541,7 +545,12 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
-      is_canonical: this.isCanonicalRun('mlperf', exam.data_number ?? null),
+      is_canonical: this.isCanonicalRun('mlperf', exam.data_number ?? null, null),
+      precision_mismatch: this.isPrecisionMismatch(
+        'mlperf',
+        this.canonicalizeHardwareLabel(exam.gpu_type ?? ''),
+        exam.precision ?? null,
+      ),
     };
   }
 
@@ -591,6 +600,7 @@ export class ComparisonService {
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
       is_canonical: this.isCanonicalRun('mmlu', exam.data_number ?? null),
+      precision_mismatch: false, // MMLU never has precision mismatch
     };
   }
 
@@ -637,7 +647,12 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
-      is_canonical: this.isCanonicalRun(benchmark, exam.data_number ?? null),
+      is_canonical: this.isCanonicalRun(benchmark, exam.data_number ?? null, exam.max_output_tokens ?? null),
+      precision_mismatch: this.isPrecisionMismatch(
+        benchmark,
+        this.canonicalizeHardwareLabel(exam.npu_type ?? ''),
+        exam.precision ?? null,
+      ),
     };
   }
 
@@ -1087,12 +1102,36 @@ export class ComparisonService {
     return bare.toLowerCase().replace(/-fp8$/i, '');
   }
 
-  // W7 contract: data_number=0 means full dataset (canonical). 1..13367 = subset (not canonical).
+  // W7/W10 contract: data_number=0 means full dataset (canonical). 1..13367 = subset (not canonical).
   // data_number >= 13368 is also canonical (explicit full count).
-  private isCanonicalRun(benchmark: 'mlperf' | 'mmlu', dataNbr: number | null): boolean {
+  // For MLPerf, max_output_tokens must be 128 or null to be canonical (W10 alignment).
+  private isCanonicalRun(
+    benchmark: 'mlperf' | 'mmlu',
+    dataNbr: number | null,
+    maxOutputTokens?: number | null,
+  ): boolean {
     if (benchmark === 'mmlu') return true; // MMLU always uses full dataset
     const n = dataNbr ?? 0;
-    return n === 0 || n >= 13368;
+    const fullDataset = n === 0 || n >= 13368;
+    if (!fullDataset) return false;
+    // max_output_tokens=0 is NOT canonical (means unset/unknown, not the standard 128)
+    const tok = maxOutputTokens ?? null;
+    return tok === null || tok === 128;
+  }
+
+  // W10 contract: precision_mismatch=true when hardware uses BF16 fallback on MLPerf
+  // where FP8 is the canonical precision (A40, RNGD-bf16, Atom+).
+  private isPrecisionMismatch(
+    benchmark: 'mlperf' | 'mmlu',
+    hardware: CanonicalHardwareLabel,
+    precision: string | null,
+  ): boolean {
+    if (benchmark !== 'mlperf') return false;
+    // Hardware that should run FP8 but falls back to BF16
+    const fp8CapableHardware = new Set(['A40', 'RNGD', 'Atom+']);
+    if (!fp8CapableHardware.has(hardware)) return false;
+    const p = (precision ?? '').toUpperCase();
+    return p === 'BF16' || p === 'BFLOAT16';
   }
 
   private normalizeDataset(dataset: string | null | undefined): string {

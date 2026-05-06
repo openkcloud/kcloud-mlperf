@@ -2,13 +2,19 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead,
-  TableRow, Typography, useTheme
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Stack,
+  Typography,
+  useTheme
 } from '@mui/material';
 
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/DeviceDashboardHeader';
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
+import { ComparisonRunTable } from '@/components/ComparisonRunTable';
+import { ComparisonDetailDialog } from '@/components/ComparisonDetailDialog';
 import { ComparisonApi } from '@/api/domains/comparison';
 import type { ComparisonRunRow, ComparisonDiagnosticReason } from '@/api/domains/comparison';
 
@@ -42,13 +48,13 @@ const AtomPlusDeviceComparisonPage = () => {
     setCompareLoading(true);
     setCompareError(null);
     setCompareData(null);
+    setDialogOpen(true);
     try {
-      const result = await ComparisonApi.compare('all', selectedAtom.id, selectedGpu.id);
+      const bench = selectedAtom.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+      const result = await ComparisonApi.compare(bench, selectedAtom.id, selectedGpu.id);
       setCompareData(result.metrics);
-      setDialogOpen(true);
     } catch {
       setCompareError('Failed to load comparison data from server.');
-      setDialogOpen(true);
     } finally {
       setCompareLoading(false);
     }
@@ -90,7 +96,7 @@ const AtomPlusDeviceComparisonPage = () => {
 
       {!isLoading && !error && runs.length > 0 && (
         <>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
             <Typography variant="body2" color="text.secondary">
               {selectedAtom ? `Atom+: #${selectedAtom.id} ${selectedAtom.name}` : 'No Atom+ run selected'}
             </Typography>
@@ -108,8 +114,8 @@ const AtomPlusDeviceComparisonPage = () => {
             </Button>
           </Box>
 
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
-            <Paper sx={{ flex: 1, p: 2, overflow: 'auto', maxHeight: 520 }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'flex-start' }}>
+            <Box sx={{ flex: 1, width: '100%' }}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                 Rebellions Atom+ Runs
               </Typography>
@@ -120,53 +126,33 @@ const AtomPlusDeviceComparisonPage = () => {
                   onAction={() => navigate('/npu-eval/atomplus')}
                 />
               ) : (
-                <TableContainer>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ID</TableCell>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Hardware</TableCell>
-                        <TableCell>Benchmark</TableCell>
-                        <TableCell>TT100T</TableCell>
-                        <TableCell>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {atomRuns.map((run) => {
-                        const selected = selectedAtom?.id === run.id;
-                        return (
-                          <TableRow
-                            key={run.id}
-                            hover
-                            selected={selected}
-                            onClick={() => setSelectedAtom(selected ? null : run)}
-                            sx={{ cursor: 'pointer' }}
-                          >
-                            <TableCell>{run.id}</TableCell>
-                            <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {run.name}
-                            </TableCell>
-                            <TableCell><Chip label={run.hardware.model} size="small" variant="outlined" /></TableCell>
-                            <TableCell><Chip label={run.benchmark.toUpperCase()} size="small" variant="outlined" /></TableCell>
-                            <TableCell>
-                              {run.metrics.tt100t_seconds != null
-                                ? `${run.metrics.tt100t_seconds.toFixed(3)}s`
-                                : '—'}
-                            </TableCell>
-                            <TableCell>
-                              {run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <ComparisonRunTable
+                  runs={atomRuns}
+                  isLoading={false}
+                  onSelectRun={(run) => setSelectedAtom(prev => prev?.id === run.id ? null : run)}
+                  selectedId={selectedAtom?.id}
+                  showBenchmark
+                  showVendor={false}
+                  exportParams={{ hardware: 'npu' }}
+                  renderRowAction={(run) => (
+                    <Button
+                      size="small"
+                      variant={selectedAtom?.id === run.id ? 'contained' : 'outlined'}
+                      color="warning"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedAtom(prev => prev?.id === run.id ? null : run);
+                      }}
+                    >
+                      {selectedAtom?.id === run.id ? 'Selected' : 'Pick'}
+                    </Button>
+                  )}
+                  onClearFilters={() => refetch()}
+                />
               )}
-            </Paper>
+            </Box>
 
-            <Paper sx={{ flex: 1, p: 2, overflow: 'auto', maxHeight: 520 }}>
+            <Box sx={{ flex: 1, width: '100%' }}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                 MLPerf GPU Runs
               </Typography>
@@ -177,92 +163,49 @@ const AtomPlusDeviceComparisonPage = () => {
                   onAction={() => navigate('/ml-perf')}
                 />
               ) : (
-                <TableContainer>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ID</TableCell>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Hardware</TableCell>
-                        <TableCell>TPS</TableCell>
-                        <TableCell>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {gpuRuns.map((run) => {
-                        const selected = selectedGpu?.id === run.id;
-                        return (
-                          <TableRow
-                            key={run.id}
-                            hover
-                            selected={selected}
-                            onClick={() => setSelectedGpu(selected ? null : run)}
-                            sx={{ cursor: 'pointer' }}
-                          >
-                            <TableCell>{run.id}</TableCell>
-                            <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {run.name}
-                            </TableCell>
-                            <TableCell><Chip label={run.hardware.model} size="small" variant="outlined" /></TableCell>
-                            <TableCell>{run.metrics.tps?.toFixed(1) ?? '—'}</TableCell>
-                            <TableCell>
-                              {run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <ComparisonRunTable
+                  runs={gpuRuns}
+                  isLoading={false}
+                  onSelectRun={(run) => setSelectedGpu(prev => prev?.id === run.id ? null : run)}
+                  selectedId={selectedGpu?.id}
+                  showBenchmark
+                  showVendor
+                  exportParams={{ hardware: 'gpu' }}
+                  renderRowAction={(run) => (
+                    <Button
+                      size="small"
+                      variant={selectedGpu?.id === run.id ? 'contained' : 'outlined'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedGpu(prev => prev?.id === run.id ? null : run);
+                      }}
+                    >
+                      {selectedGpu?.id === run.id ? 'Selected' : 'Pick'}
+                    </Button>
+                  )}
+                  onClearFilters={() => refetch()}
+                />
               )}
-            </Paper>
+            </Box>
           </Stack>
         </>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Atom+ NPU vs GPU — Side-by-Side Comparison</DialogTitle>
-        <DialogContent dividers>
-          {compareError && <Alert severity="error" sx={{ mb: 2 }}>{compareError}</Alert>}
-          {compareData && (
-            <Box>
-              <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-                <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: '3px solid #CA8A04' }}>
-                  <Typography variant="subtitle2" fontWeight={700}>Atom+: {selectedAtom?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedAtom?.hardware.model} (Rebellions)</Typography>
-                </Paper>
-                <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.secondary.main}` }}>
-                  <Typography variant="subtitle2" fontWeight={700}>GPU: {selectedGpu?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedGpu?.hardware.model}</Typography>
-                </Paper>
-              </Stack>
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Metric</TableCell>
-                      <TableCell>Atom+ (NPU)</TableCell>
-                      <TableCell>GPU</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {Object.entries(compareData).map(([key, val]) => (
-                      <TableRow key={key}>
-                        <TableCell sx={{ fontWeight: 600 }}>{key}</TableCell>
-                        <TableCell>{typeof val.a === 'number' ? val.a.toFixed(3) : '—'}</TableCell>
-                        <TableCell>{typeof val.b === 'number' ? val.b.toFixed(3) : '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      <ComparisonDetailDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        title="Atom+ NPU vs GPU — Side-by-Side Comparison"
+        runA={selectedAtom}
+        runB={selectedGpu}
+        metrics={compareData}
+        isLoading={compareLoading}
+        error={compareError}
+        onRetry={handleCompare}
+        accentA="#CA8A04"
+        accentB={theme.palette.secondary.main}
+        labelA="Atom+ (NPU)"
+        labelB="GPU"
+      />
     </Box>
   );
 };

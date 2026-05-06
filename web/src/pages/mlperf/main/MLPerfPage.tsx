@@ -14,7 +14,7 @@ import {
   Typography
 } from '@mui/material';
 
-import { PrometheusIframeDashboard } from '@/components/benchmark-page';
+import { LiveBenchDashboard, getGpuPrometheusUrl } from '@/components/benchmark-page';
 
 // ----------------------------------------------------------------------
 
@@ -70,6 +70,7 @@ const MLPerfPage = () => {
       framework,
       gpuNumber,
       gpuType,
+      maxOutputTokens,
       minDuration,
       mode,
       model,
@@ -95,6 +96,7 @@ const MLPerfPage = () => {
       framework: framework.value,
       gpu_num: Number(gpuNumber.value),
       gpu_type: gpuType.value,
+      max_output_tokens: Number(maxOutputTokens),
       min_duration: Number(minDuration),
       mode: mode.value as MpExamModeEnum,
       model: model.value,
@@ -266,7 +268,11 @@ const MLPerfPage = () => {
 
       <MpExamConfirmationModal modalState={modalData} handleClose={handleCloseModal} />
 
-      <PrometheusIframeDashboard title="Live GPU Dashboard (MLPerf)" />
+      <LiveBenchDashboard
+        title="Live GPU Dashboard (MLPerf — L40)"
+        src={getGpuPrometheusUrl()}
+        height={900}
+      />
     </Fragment>
   );
 };

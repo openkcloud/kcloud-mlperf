@@ -6,6 +6,11 @@ export interface DecodingParams {
   top_k?: number | null;
 }
 
+export interface DatasetSubset {
+  name: string;
+  n_samples: number;
+}
+
 /**
  * Canonical run descriptor: the fields that define "same benchmark config"
  * across hardware targets.
@@ -14,6 +19,11 @@ export interface DecodingParams {
  * those are metadata, not config. Two runs on L40 and RNGD with identical
  * config fields should produce the same fingerprint hash so they can be placed
  * side-by-side in the comparison view.
+ *
+ * precision must be 'fp8' for all MLPerf canonical runs across all hardware.
+ * BF16 runs produce a different fingerprint and are not in the canonical group.
+ * dataset_subset, when present, is included in the hash so a 100-sample run
+ * never matches a full-dataset run.
  */
 export interface CanonicalRunConfig {
   benchmark: 'mlperf' | 'mmlu';
@@ -26,6 +36,7 @@ export interface CanonicalRunConfig {
   decoding: DecodingParams;
   scenario?: string | null;
   max_output_tokens?: number | null;
+  dataset_subset?: DatasetSubset | null;
 }
 
 /**
@@ -56,6 +67,12 @@ function buildNormalizedObject(
     benchmark: normalizeStr(run.benchmark),
     model: normalizeStr(run.model),
     dataset: normalizeStr(run.dataset),
+    dataset_subset: run.dataset_subset
+      ? {
+          name: normalizeStr(run.dataset_subset.name),
+          n_samples: normalizeNum(run.dataset_subset.n_samples),
+        }
+      : { name: '', n_samples: 0 },
     dataset_version: normalizeStr(run.dataset_version),
     precision: normalizeStr(run.precision),
     batch_size: normalizeNum(run.batch_size),

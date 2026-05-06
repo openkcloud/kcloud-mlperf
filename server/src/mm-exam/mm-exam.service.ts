@@ -146,7 +146,7 @@ export class MmExamService implements OnModuleInit {
       id: data.id.toString(),
       benchmark: this.examBenchmark,
       resource: {
-        cpu: data.cpu_core,
+        cpu: Math.min(data.cpu_core, 7), // cap at 7 to preserve 1-core headroom on node3 (15900m allocatable, daemons ~500m)
         gpuCount: data.gpu_num,
         gpuModel: data.gpu_type,
         memory: data.ram_capacity,

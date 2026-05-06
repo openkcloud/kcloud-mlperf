@@ -17,6 +17,7 @@ export type MpExamCreateBody = {
   target_qps: number;
   num_workers: number;
   tensor_parallel_size: number;
+  max_output_tokens?: number;
   device_type?: string; // 'GPU' | 'NPU'
   gpu_type: string;
   gpu_num: number;

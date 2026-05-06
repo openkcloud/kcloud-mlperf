@@ -11,6 +11,7 @@ export type MmExamCreateBody = {
   data_number: number;
   batch_size: number;
   gpu_util: number;
+  max_tokens?: number;
   device_type?: string; // 'GPU' | 'NPU'
   gpu_type: string;
   gpu_num: number;

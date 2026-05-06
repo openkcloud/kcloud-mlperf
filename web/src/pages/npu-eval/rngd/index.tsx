@@ -17,6 +17,7 @@ import { NpuEvalPageLinks } from '@/contexts/RouterContext/router.links';
 import { StatusEnum } from '@/enums/status.enum';
 import { Tt100tBadge } from '@/components/Tt100tBadge';
 import { HardwareIdentityCard, LiveBenchDashboard } from '@/components/benchmark-page';
+import { useRealtimeExams } from '@/hooks/useRealtimeExams';
 import type { NpuExamCreateBody, NpuExamDetails } from '@/api/types/npu-eval.types.d';
 
 // ----------------------------------------------------------------------
@@ -177,6 +178,11 @@ const RngdNpuEvalPage = () => {
   }
 
   const rngdInfo = npuListData?.npus?.find((n) => n.npu_model?.toLowerCase().includes('rngd')) ?? npuListData?.npus?.[0];
+
+  const { snapshot: realtimeSnapshot } = useRealtimeExams({ pollIntervalMs: 5000 });
+  const rngdSlot = realtimeSnapshot?.slots?.find(
+    (s) => s.vendor === 'furiosa' && s.device_type === 'npu'
+  ) ?? null;
 
   const createMutation = useMutation({
     mutationFn: NpuEvalApi.create,
@@ -430,6 +436,55 @@ const RngdNpuEvalPage = () => {
             .map((exam: NpuExamDetails) => <ActiveBenchmarkCard key={exam.id} exam={exam} />)}
         </Paper>
       )}
+
+      {/* Active Benchmark (cluster-source) — shows k8s job status even when systemd iframe is idle */}
+      <Paper sx={{ p: 3, mb: 2, border: '1px solid rgba(249,115,22,0.3)', bgcolor: 'rgba(249,115,22,0.02)' }}>
+        <Typography variant="h6" sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: '#F97316',
+            ...(rngdSlot && ['Running', 'Preparing', 'Queued'].includes(rngdSlot.status)
+              ? { animation: 'pulse 1.5s infinite', '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.4 }, '100%': { opacity: 1 } } }
+              : {})
+          }} />
+          Active Benchmark (cluster-source)
+        </Typography>
+        {rngdSlot && rngdSlot.exam_name ? (
+          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Exam</Typography>
+              <Typography variant="body2" fontWeight={600}>{rngdSlot.exam_name}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Status</Typography>
+              <Chip
+                label={rngdSlot.status}
+                size="small"
+                color={rngdSlot.status === 'Running' ? 'info' : rngdSlot.status === 'Preparing' ? 'info' : 'warning'}
+                sx={['Running', 'Preparing', 'Queued'].includes(rngdSlot.status)
+                  ? { animation: 'pulse 1.5s infinite', '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.6 }, '100%': { opacity: 1 } } }
+                  : {}}
+              />
+            </Box>
+            {rngdSlot.elapsed_seconds != null && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Elapsed</Typography>
+                <Typography variant="body2" fontWeight={600}>
+                  {Math.floor(rngdSlot.elapsed_seconds / 60)}m {rngdSlot.elapsed_seconds % 60}s
+                </Typography>
+              </Box>
+            )}
+            {rngdSlot.exam_id != null && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Exam ID</Typography>
+                <Typography variant="body2" fontWeight={600}>{rngdSlot.exam_id}</Typography>
+              </Box>
+            )}
+          </Box>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            No active RNGD job in cluster orchestrator
+          </Typography>
+        )}
+      </Paper>
 
       <LiveBenchDashboard
         title="Live Bench Dashboard (node4 — RNGD)"
