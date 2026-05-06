@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Link, Navigate, useRoutes } from 'react-router-dom';
+import { Link, useRoutes } from 'react-router-dom';
 
 import { Alert, Button, Container, Typography } from '@mui/material';
 
@@ -25,6 +25,7 @@ const MLPerfPage = lazy(() => import('@/pages/mlperf/main'));
 const MMLUTestComparisonPage = lazy(() => import('@/pages/mmlu/test-comparison'));
 const MMLUTestResultPage = lazy(() => import('@/pages/mmlu/test-result'));
 
+const HomePage = lazy(() => import('@/pages/home/HomePage'));
 const NpuEvalPage = lazy(() => import('@/pages/npu/main'));
 const NpuTestResultPage = lazy(() => import('@/pages/npu/test-result'));
 const NpuComparisonPage = lazy(() => import('@/pages/npu/test-comparison'));
@@ -73,7 +74,7 @@ export const Routes = () => {
   return useRoutes([
     {
       path: HomePageLinks.main,
-      element: <Navigate to={MpExamPageLinks.main} replace />
+      element: <HomePage />
     },
 
     // mp exam pages

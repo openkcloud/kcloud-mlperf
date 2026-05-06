@@ -221,20 +221,20 @@ const LiveBenchDashboard = () => (
       <Typography variant="h6">Live Bench Dashboard (node5 — Atom+)</Typography>
       <Typography variant="caption">
         <a
-          href="http://10.254.177.41:30891/metrics"
+          href="/dashboard/npu-realtime"
           target="_blank"
           rel="noopener noreferrer"
           style={{ color: '#3aa3ff', textDecoration: 'none' }}
         >
-          open Prometheus metrics in new tab ↗
+          open in new tab ↗
         </a>
       </Typography>
     </Box>
     <Box
       component="iframe"
-      src="http://10.254.177.41:30891/metrics"
-      title="node5 Atom+ rbln-metrics-exporter"
-      sx={{ width: '100%', height: 900, border: 0, borderRadius: 1, bgcolor: '#0e1117', display: 'block' }}
+      src="/dashboard/npu-realtime"
+      title="node5 Atom+ realtime dashboard"
+      sx={{ width: '100%', height: 700, border: 0, borderRadius: 1, bgcolor: '#0e1117', display: 'block' }}
     />
   </Paper>
 );
