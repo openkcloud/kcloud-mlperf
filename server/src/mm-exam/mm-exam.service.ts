@@ -356,11 +356,24 @@ export class MmExamService implements OnModuleInit {
   async findAll(params: PaginationQueryDto) {
     const { page = 1, limit = 10 } = params;
 
-    const [data, total] = await this.mmExamRepo.findAndCount({
+    let [data, total] = await this.mmExamRepo.findAndCount({
       skip: (page - 1) * limit,
       take: limit,
       order: { created_at: 'DESC' }, // or ASC
     });
+
+    // Auto-refresh DB for Running rows by polling gRPC status (symmetric with
+    // mp-exam fix). Without this, a Running row stays Running in the DB until
+    // someone polls /api/mm-exam/status/{id} explicitly. Capped at 5 grpc calls.
+    const running = data.filter((r) => r.status === StatusEnum.RUNNING).slice(0, 5);
+    if (running.length > 0) {
+      await Promise.all(running.map((r) => this.getExamStatus(r.id).catch(() => null)));
+      [data, total] = await this.mmExamRepo.findAndCount({
+        skip: (page - 1) * limit,
+        take: limit,
+        order: { created_at: 'DESC' },
+      });
+    }
 
     return {
       list: data,
