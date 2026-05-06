@@ -318,6 +318,26 @@ export class MmExamService implements OnModuleInit {
       status: examStatus,
     });
 
+    // Clamp progress values to user-requested data_number — symmetric with
+    // the mp-exam fix; prevents 10-sample MMLU runs from showing 10h ETA.
+    if (
+      examStatus === StatusEnum.RUNNING &&
+      typeof examRes.data_number === 'number' &&
+      examRes.data_number > 0
+    ) {
+      const cap = examRes.data_number;
+      testResult = testResult.map((series) => ({
+        ...series,
+        values: series.values.map(([ts, val]: [string, string]) => {
+          const parts = (val ?? '').split('/').map(Number);
+          if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1]) || parts[1] <= 0) {
+            return [ts, val];
+          }
+          return [ts, `${Math.min(parts[0], cap)}/${Math.min(parts[1], cap)}`];
+        }),
+      }));
+    }
+
     if (
       examStatus === StatusEnum.COMPLETED &&
       res.currentRepeatCount === examRes.retry_num.toString()

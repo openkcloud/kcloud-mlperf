@@ -14,7 +14,11 @@ import {
   Typography
 } from '@mui/material';
 
-import { LiveBenchDashboard, getL40LiveBenchUrl } from '@/components/benchmark-page';
+import {
+  LiveBenchDashboard,
+  getL40LiveBenchUrl,
+  getA40LiveBenchUrl,
+} from '@/components/benchmark-page';
 import { useRealtimeExams } from '@/hooks/useRealtimeExams';
 
 // ----------------------------------------------------------------------
@@ -51,7 +55,15 @@ dayjs.extend(timezone);
 
 const MLPerfPage = () => {
   const { snapshot } = useRealtimeExams();
-  const isMlperfActive = snapshot?.slots.some(s => s.device_type === 'gpu' && s.exam_kind === 'mp') ?? false;
+  const isMlperfActiveOn = (modelMatch: string) =>
+    snapshot?.slots.some(
+      s =>
+        s.device_type === 'gpu' &&
+        s.exam_kind === 'mp' &&
+        (s.model ?? '').toUpperCase().includes(modelMatch),
+    ) ?? false;
+  const isL40MlperfActive = isMlperfActiveOn('L40');
+  const isA40MlperfActive = isMlperfActiveOn('A40');
   const [modalData, setModalData] = useState<MpExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
@@ -275,8 +287,16 @@ const MLPerfPage = () => {
         title="Live GPU Dashboard (MLPerf — L40)"
         src={getL40LiveBenchUrl()}
         height={900}
-        idle={!isMlperfActive}
-        idleLabel="No MLPerf benchmark currently running on GPU devices"
+        idle={!isL40MlperfActive}
+        idleLabel="No MLPerf benchmark currently running on L40 (node2)"
+      />
+
+      <LiveBenchDashboard
+        title="Live GPU Dashboard (MLPerf — A40)"
+        src={getA40LiveBenchUrl()}
+        height={900}
+        idle={!isA40MlperfActive}
+        idleLabel="No MLPerf benchmark currently running on A40 (node3)"
       />
     </Fragment>
   );

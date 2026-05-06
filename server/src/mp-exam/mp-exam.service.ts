@@ -325,6 +325,30 @@ export class MpExamService implements OnModuleInit {
       status: examStatus,
     });
 
+    // Clamp progress values to user-requested data_number so frontend ETA
+    // (calculate-remaining-time.helper.ts) does not estimate hours-of-runtime
+    // when the user requested only a small subset (e.g., 10 samples). Loki
+    // exporter reports raw vllm:request_success_total which scales to the
+    // FULL dataset size; for a 10-sample request the unclamped ratio yields
+    // ETA = elapsed * (FULL_DATASET / 1) ≈ 10+ hours after first sample.
+    if (
+      examStatus === StatusEnum.RUNNING &&
+      typeof mpExam.data_number === 'number' &&
+      mpExam.data_number > 0
+    ) {
+      const cap = mpExam.data_number;
+      testResult = testResult.map((series) => ({
+        ...series,
+        values: series.values.map(([ts, val]: [string, string]) => {
+          const parts = (val ?? '').split('/').map(Number);
+          if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1]) || parts[1] <= 0) {
+            return [ts, val];
+          }
+          return [ts, `${Math.min(parts[0], cap)}/${Math.min(parts[1], cap)}`];
+        }),
+      }));
+    }
+
     if (
       examStatus === StatusEnum.COMPLETED &&
       res.currentRepeatCount === mpExam.retry_num.toString()

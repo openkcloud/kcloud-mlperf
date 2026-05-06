@@ -14,7 +14,11 @@ import {
   Typography
 } from '@mui/material';
 
-import { LiveBenchDashboard, getL40LiveBenchUrl } from '@/components/benchmark-page';
+import {
+  LiveBenchDashboard,
+  getL40LiveBenchUrl,
+  getA40LiveBenchUrl,
+} from '@/components/benchmark-page';
 import { useRealtimeExams } from '@/hooks/useRealtimeExams';
 
 // ----------------------------------------------------------------------
@@ -49,7 +53,15 @@ dayjs.extend(timezone);
 
 const MMLUPage = () => {
   const { snapshot } = useRealtimeExams();
-  const isMmluActive = snapshot?.slots.some(s => s.device_type === 'gpu' && s.exam_kind === 'mm') ?? false;
+  const isMmluActiveOn = (modelMatch: string) =>
+    snapshot?.slots.some(
+      s =>
+        s.device_type === 'gpu' &&
+        s.exam_kind === 'mm' &&
+        (s.model ?? '').toUpperCase().includes(modelMatch),
+    ) ?? false;
+  const isL40MmluActive = isMmluActiveOn('L40');
+  const isA40MmluActive = isMmluActiveOn('A40');
   const [modalData, setModalData] = useState<MmExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
@@ -266,8 +278,16 @@ const MMLUPage = () => {
         title="Live GPU Dashboard (MMLU-Pro — L40)"
         src={getL40LiveBenchUrl()}
         height={900}
-        idle={!isMmluActive}
-        idleLabel="No MMLU-Pro benchmark currently running on GPU devices"
+        idle={!isL40MmluActive}
+        idleLabel="No MMLU-Pro benchmark currently running on L40 (node2)"
+      />
+
+      <LiveBenchDashboard
+        title="Live GPU Dashboard (MMLU-Pro — A40)"
+        src={getA40LiveBenchUrl()}
+        height={900}
+        idle={!isA40MmluActive}
+        idleLabel="No MMLU-Pro benchmark currently running on A40 (node3)"
       />
     </Fragment>
   );

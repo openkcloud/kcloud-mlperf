@@ -436,7 +436,7 @@ def render_html() -> str:
 <html lang='en'>
 <head>
 <meta charset='utf-8'>
-<title>{NODE_NAME} L40 GPU bench dashboard</title>
+<title>{NODE_NAME} {GPU_LABEL} GPU bench dashboard</title>
 <meta http-equiv='refresh' content='5'>
 <style>
   :root {{
@@ -474,7 +474,7 @@ def render_html() -> str:
 </style>
 </head>
 <body>
-  <h1>{NODE_NAME} L40 GPU bench dashboard <span class='meta'>· auto-refresh 5s · {dt.datetime.now():%H:%M:%S}</span></h1>
+  <h1>{NODE_NAME} {GPU_LABEL} GPU bench dashboard <span class='meta'>· auto-refresh 5s · {dt.datetime.now():%H:%M:%S}</span></h1>
   <div>{''.join(badges)}</div>
 
   {comparison_panel}
