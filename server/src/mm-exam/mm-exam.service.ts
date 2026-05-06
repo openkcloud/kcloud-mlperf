@@ -33,6 +33,7 @@ import {
 import { type ClientGrpc, RpcException } from '@nestjs/microservices';
 import { Empty } from '../../proto-types/google/protobuf/empty';
 import { LokiService } from '../loki/loki.service';
+import { clampLokiValuesToCap } from '../loki/clamp-loki-values';
 import { LokiInstantQueryResponseDto } from '../loki/dto/loki-instant-query-response.dto';
 import { StatusEnum } from '../enums/status.enum';
 import { MmExamResultService } from '../mm-exam-result/mm-exam-result.service';
@@ -318,24 +319,8 @@ export class MmExamService implements OnModuleInit {
       status: examStatus,
     });
 
-    // Clamp progress values to user-requested data_number — symmetric with
-    // the mp-exam fix; prevents 10-sample MMLU runs from showing 10h ETA.
-    if (
-      examStatus === StatusEnum.RUNNING &&
-      typeof examRes.data_number === 'number' &&
-      examRes.data_number > 0
-    ) {
-      const cap = examRes.data_number;
-      testResult = testResult.map((series) => ({
-        ...series,
-        values: series.values.map(([ts, val]: [string, string]) => {
-          const parts = (val ?? '').split('/').map(Number);
-          if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1]) || parts[1] <= 0) {
-            return [ts, val];
-          }
-          return [ts, `${Math.min(parts[0], cap)}/${Math.min(parts[1], cap)}`];
-        }),
-      }));
+    if (examStatus === StatusEnum.RUNNING) {
+      testResult = clampLokiValuesToCap(testResult, examRes.data_number);
     }
 
     if (

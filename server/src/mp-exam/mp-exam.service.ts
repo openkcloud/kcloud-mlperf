@@ -26,6 +26,7 @@ import {
 } from '../../proto-types/exam';
 import { type ClientGrpc, RpcException } from '@nestjs/microservices';
 import { LokiService } from '../loki/loki.service';
+import { clampLokiValuesToCap } from '../loki/clamp-loki-values';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Empty } from 'proto-types/google/protobuf/empty';
 import { lastValueFrom, Observable } from 'rxjs';
@@ -325,28 +326,43 @@ export class MpExamService implements OnModuleInit {
       status: examStatus,
     });
 
-    // Clamp progress values to user-requested data_number so frontend ETA
-    // (calculate-remaining-time.helper.ts) does not estimate hours-of-runtime
-    // when the user requested only a small subset (e.g., 10 samples). Loki
-    // exporter reports raw vllm:request_success_total which scales to the
-    // FULL dataset size; for a 10-sample request the unclamped ratio yields
-    // ETA = elapsed * (FULL_DATASET / 1) ≈ 10+ hours after first sample.
-    if (
-      examStatus === StatusEnum.RUNNING &&
-      typeof mpExam.data_number === 'number' &&
-      mpExam.data_number > 0
-    ) {
-      const cap = mpExam.data_number;
-      testResult = testResult.map((series) => ({
-        ...series,
-        values: series.values.map(([ts, val]: [string, string]) => {
-          const parts = (val ?? '').split('/').map(Number);
-          if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1]) || parts[1] <= 0) {
-            return [ts, val];
-          }
-          return [ts, `${Math.min(parts[0], cap)}/${Math.min(parts[1], cap)}`];
-        }),
-      }));
+    if (examStatus === StatusEnum.RUNNING) {
+      testResult = clampLokiValuesToCap(testResult, mpExam.data_number);
+
+      // MLPerf performance mode requires the harness to keep submitting
+      // requests until BOTH N samples done AND min_duration_ms elapsed
+      // (compliance rule). Without this, progress shows 100% while the
+      // job continues running for several more minutes, which the user
+      // sees as "100% but doesnt end". Cap the displayed progress at the
+      // LESSER of (samples_done/N) and (elapsed/min_duration) so the bar
+      // reflects actual remaining time.
+      if (
+        mpExam.min_duration &&
+        mpExam.min_duration > 0 &&
+        mpExam.started_at
+      ) {
+        const startMs = new Date(mpExam.started_at).getTime();
+        const elapsedMs = Date.now() - startMs;
+        const timeRatio = Math.min(1, Math.max(0, elapsedMs / mpExam.min_duration));
+        testResult = testResult.map((series) => ({
+          ...series,
+          values: series.values.map(([ts, val]: [string, string]) => {
+            const parts = (val ?? '').split('/').map(Number);
+            if (
+              parts.length !== 2 ||
+              !Number.isFinite(parts[0]) ||
+              !Number.isFinite(parts[1]) ||
+              parts[1] <= 0
+            ) {
+              return [ts, val];
+            }
+            const sampleRatio = parts[0] / parts[1];
+            const effective = Math.min(sampleRatio, timeRatio);
+            const newA = Math.floor(effective * parts[1]);
+            return [ts, `${newA}/${parts[1]}`];
+          }),
+        }));
+      }
     }
 
     if (
