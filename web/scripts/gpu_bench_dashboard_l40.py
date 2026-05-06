@@ -141,15 +141,14 @@ def _fetch_exam_list(path: str) -> list[dict]:
     return rows if isinstance(rows, list) else []
 
 
-def fetch_active_l40_exams() -> list[dict]:
-    """Return Running L40 exams from BOTH MLPerf (mp-exam) and MMLU (mm-exam) APIs.
-    Each row tagged with `_kind` ('mlperf' or 'mmlu') for downstream rendering."""
+def _fetch_l40_exams_by_status(target_status: str) -> list[dict]:
+    """Return rows across mp-exam + mm-exam APIs filtered by status + L40 gpu_type."""
     out: list[dict] = []
     for kind, path in (("mlperf", "/api/mp-exam/list"), ("mmlu", "/api/mm-exam/list")):
         for r in _fetch_exam_list(path):
             if (
                 isinstance(r, dict)
-                and str(r.get("status", "")) == "Running"
+                and str(r.get("status", "")) == target_status
                 and GPU_FILTER in str(r.get("gpu_type", "")).upper()
             ):
                 r = dict(r)
@@ -158,19 +157,14 @@ def fetch_active_l40_exams() -> list[dict]:
     return out
 
 
+def fetch_active_l40_exams() -> list[dict]:
+    """Running L40 exams from BOTH MLPerf and MMLU. Each tagged with `_kind`."""
+    return _fetch_l40_exams_by_status("Running")
+
+
 def fetch_recent_l40_runs(limit: int = 5) -> list[dict]:
-    """Return last N completed L40 runs across MLPerf+MMLU, newest first."""
-    out: list[dict] = []
-    for kind, path in (("mlperf", "/api/mp-exam/list"), ("mmlu", "/api/mm-exam/list")):
-        for r in _fetch_exam_list(path):
-            if (
-                isinstance(r, dict)
-                and str(r.get("status", "")) == "Completed"
-                and GPU_FILTER in str(r.get("gpu_type", "")).upper()
-            ):
-                r = dict(r)
-                r["_kind"] = kind
-                out.append(r)
+    """Last N completed L40 runs across MLPerf+MMLU, newest first."""
+    out = _fetch_l40_exams_by_status("Completed")
     out.sort(key=lambda r: r.get("end_at") or r.get("modified_at") or "", reverse=True)
     return out[:limit]
 

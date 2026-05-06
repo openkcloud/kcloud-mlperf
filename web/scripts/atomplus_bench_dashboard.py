@@ -143,24 +143,23 @@ def fetch_comparison_runs() -> list[dict]:
     return [r for r in runs if isinstance(r, dict)]
 
 
-def fetch_active_atomplus_exams() -> list[dict]:
-    """Return Running Atom+ runs from /api/comparison/list filtered by vendor."""
+def _filter_atomplus(runs: list[dict], target_status: str) -> list[dict]:
     return [
-        r for r in fetch_comparison_runs()
+        r for r in runs
         if isinstance(r.get("hardware"), dict)
         and str(r["hardware"].get("vendor", "")).lower() == VENDOR_FILTER
-        and str(r.get("status", "")) == "Running"
+        and str(r.get("status", "")) == target_status
     ]
 
 
-def fetch_recent_atomplus_runs(limit: int = 5) -> list[dict]:
-    """Return last N completed Atom+ runs, newest first."""
-    completed = [
-        r for r in fetch_comparison_runs()
-        if isinstance(r.get("hardware"), dict)
-        and str(r["hardware"].get("vendor", "")).lower() == VENDOR_FILTER
-        and str(r.get("status", "")) == "Completed"
-    ]
+def fetch_active_atomplus_exams(runs: list[dict]) -> list[dict]:
+    """Running Atom+ runs from a pre-fetched comparison-list."""
+    return _filter_atomplus(runs, "Running")
+
+
+def fetch_recent_atomplus_runs(runs: list[dict], limit: int = 5) -> list[dict]:
+    """Last N completed Atom+ runs from a pre-fetched comparison-list, newest first."""
+    completed = _filter_atomplus(runs, "Completed")
     completed.sort(key=lambda r: r.get("completed_at") or r.get("started_at") or "", reverse=True)
     return completed[:limit]
 
@@ -358,16 +357,12 @@ def render_html() -> str:
     rows, hist, rbln_text = _get_telemetry_snapshot()
     rbln_ok = bool(rows)
     backend_ok = True
-    active_runs: list[dict] = []
-    try:
-        active_runs = fetch_active_atomplus_exams()
-    except Exception:
-        backend_ok = False
     try:
         comparison_runs = fetch_comparison_runs()
     except Exception:
         comparison_runs = []
         backend_ok = False
+    active_runs = fetch_active_atomplus_exams(comparison_runs)
 
     badges = [
         _badge("rbln-stat", rbln_ok),
@@ -389,7 +384,7 @@ def render_html() -> str:
 
     comparison_panel = render_comparison_panel(comparison_runs)
     npu_card = render_npu_card(rows, hist, rbln_text)
-    recent_runs_panel = render_recent_runs_panel(fetch_recent_atomplus_runs(limit=5))
+    recent_runs_panel = render_recent_runs_panel(fetch_recent_atomplus_runs(comparison_runs, limit=5))
 
     return f"""<!doctype html>
 <html lang='en'>
