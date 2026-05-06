@@ -26,7 +26,7 @@ import {
 } from '../../proto-types/exam';
 import { type ClientGrpc, RpcException } from '@nestjs/microservices';
 import { LokiService } from '../loki/loki.service';
-import { clampLokiValuesToCap } from '../loki/clamp-loki-values';
+import { clampLokiValuesToCap, capLokiValuesByMinDuration } from '../loki/clamp-loki-values';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Empty } from 'proto-types/google/protobuf/empty';
 import { lastValueFrom, Observable } from 'rxjs';
@@ -328,41 +328,11 @@ export class MpExamService implements OnModuleInit {
 
     if (examStatus === StatusEnum.RUNNING) {
       testResult = clampLokiValuesToCap(testResult, mpExam.data_number);
-
-      // MLPerf performance mode requires the harness to keep submitting
-      // requests until BOTH N samples done AND min_duration_ms elapsed
-      // (compliance rule). Without this, progress shows 100% while the
-      // job continues running for several more minutes, which the user
-      // sees as "100% but doesnt end". Cap the displayed progress at the
-      // LESSER of (samples_done/N) and (elapsed/min_duration) so the bar
-      // reflects actual remaining time.
-      if (
-        mpExam.min_duration &&
-        mpExam.min_duration > 0 &&
-        mpExam.started_at
-      ) {
-        const startMs = new Date(mpExam.started_at).getTime();
-        const elapsedMs = Date.now() - startMs;
-        const timeRatio = Math.min(1, Math.max(0, elapsedMs / mpExam.min_duration));
-        testResult = testResult.map((series) => ({
-          ...series,
-          values: series.values.map(([ts, val]: [string, string]) => {
-            const parts = (val ?? '').split('/').map(Number);
-            if (
-              parts.length !== 2 ||
-              !Number.isFinite(parts[0]) ||
-              !Number.isFinite(parts[1]) ||
-              parts[1] <= 0
-            ) {
-              return [ts, val];
-            }
-            const sampleRatio = parts[0] / parts[1];
-            const effective = Math.min(sampleRatio, timeRatio);
-            const newA = Math.floor(effective * parts[1]);
-            return [ts, `${newA}/${parts[1]}`];
-          }),
-        }));
-      }
+      testResult = capLokiValuesByMinDuration(
+        testResult,
+        mpExam.started_at,
+        mpExam.min_duration,
+      );
     }
 
     if (

@@ -18,9 +18,50 @@ export function clampLokiValuesToCap(
   result: LokiResult,
   cap: number | null | undefined,
 ): LokiResult {
-  if (typeof cap !== 'number' || !Number.isFinite(cap) || cap <= 0) {
+  return mapLokiValues(result, ([_, parts]) =>
+    typeof cap === 'number' && Number.isFinite(cap) && cap > 0
+      ? `${Math.min(parts[0], cap)}/${Math.min(parts[1], cap)}`
+      : null,
+  );
+}
+
+/**
+ * Cap reported progress at min(samples_done/N, elapsed/min_duration_ms) for
+ * MLPerf performance-mode runs. Without this the bar shows 100% the moment
+ * N samples have been served, even though the harness keeps looping until
+ * min_duration elapses (MLCommons compliance rule). When min_duration_ms is
+ * 0 or unset, the cap is a no-op.
+ */
+export function capLokiValuesByMinDuration(
+  result: LokiResult,
+  startedAt: string | null | undefined,
+  minDurationMs: number | null | undefined,
+): LokiResult {
+  if (
+    !startedAt ||
+    typeof minDurationMs !== 'number' ||
+    !Number.isFinite(minDurationMs) ||
+    minDurationMs <= 0
+  ) {
     return result;
   }
+  const startMs = new Date(startedAt).getTime();
+  if (!Number.isFinite(startMs)) return result;
+  const elapsedMs = Date.now() - startMs;
+  const timeRatio = Math.min(1, Math.max(0, elapsedMs / minDurationMs));
+  return mapLokiValues(result, ([_, parts]) => {
+    const sampleRatio = parts[0] / parts[1];
+    const effective = Math.min(sampleRatio, timeRatio);
+    return `${Math.floor(effective * parts[1])}/${parts[1]}`;
+  });
+}
+
+/** Internal helper: map every Loki "<a>/<b>" value through `transform`,
+ *  preserving the timestamp + skipping malformed values + null-no-op. */
+function mapLokiValues(
+  result: LokiResult,
+  transform: (parsed: [string, [number, number]]) => string | null,
+): LokiResult {
   return result.map((series) => ({
     ...series,
     values: series.values.map(([ts, val]: [string, string]) => {
@@ -33,7 +74,8 @@ export function clampLokiValuesToCap(
       ) {
         return [ts, val];
       }
-      return [ts, `${Math.min(parts[0], cap)}/${Math.min(parts[1], cap)}`];
+      const next = transform([ts, [parts[0], parts[1]]]);
+      return next === null ? [ts, val] : [ts, next];
     }),
   }));
 }
