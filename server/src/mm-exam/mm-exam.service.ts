@@ -362,12 +362,20 @@ export class MmExamService implements OnModuleInit {
       order: { created_at: 'DESC' }, // or ASC
     });
 
-    // Auto-refresh DB for Running rows by polling gRPC status (symmetric with
-    // mp-exam fix). Without this, a Running row stays Running in the DB until
-    // someone polls /api/mm-exam/status/{id} explicitly. Capped at 5 grpc calls.
-    const running = data.filter((r) => r.status === StatusEnum.RUNNING).slice(0, 5);
-    if (running.length > 0) {
-      await Promise.all(running.map((r) => this.getExamStatus(r.id).catch(() => null)));
+    // Auto-refresh DB for any non-terminal row (symmetric with mp-exam fix).
+    // Covers Idle→Running (new submission) AND Running→Completed (k8s job done).
+    const inFlightStatuses = [
+      StatusEnum.UNDEFINED,
+      StatusEnum.IDLE,
+      StatusEnum.PENDING,
+      StatusEnum.PREPARING,
+      StatusEnum.RUNNING,
+    ];
+    const inFlight = data
+      .filter((r) => inFlightStatuses.includes(r.status as StatusEnum))
+      .slice(0, 5);
+    if (inFlight.length > 0) {
+      await Promise.all(inFlight.map((r) => this.getExamStatus(r.id).catch(() => null)));
       [data, total] = await this.mmExamRepo.findAndCount({
         skip: (page - 1) * limit,
         take: limit,

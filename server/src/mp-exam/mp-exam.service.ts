@@ -378,13 +378,22 @@ export class MpExamService implements OnModuleInit {
       order: { created_at: 'DESC' }, // or ASC
     });
 
-    // Auto-refresh DB for Running rows by polling gRPC status. Without this,
-    // a Running row stays Running in the DB forever unless the frontend polls
-    // /api/mp-exam/status/{id} explicitly. Capped at 5 concurrent grpc calls
-    // to bound list latency.
-    const running = data.filter((r) => r.status === StatusEnum.RUNNING).slice(0, 5);
-    if (running.length > 0) {
-      await Promise.all(running.map((r) => this.getMpExamStatus(r.id).catch(() => null)));
+    // Auto-refresh DB for any non-terminal row by polling gRPC status. Covers
+    // both Idle→Running (new submission, ~5min delay otherwise from cron) AND
+    // Running→Completed (k8s job finished, frontend hasn't polled per-row).
+    // Capped at 5 concurrent grpc calls to bound list latency.
+    const inFlightStatuses = [
+      StatusEnum.UNDEFINED,
+      StatusEnum.IDLE,
+      StatusEnum.PENDING,
+      StatusEnum.PREPARING,
+      StatusEnum.RUNNING,
+    ];
+    const inFlight = data
+      .filter((r) => inFlightStatuses.includes(r.status as StatusEnum))
+      .slice(0, 5);
+    if (inFlight.length > 0) {
+      await Promise.all(inFlight.map((r) => this.getMpExamStatus(r.id).catch(() => null)));
       // Re-read the refreshed rows
       [data, total] = await this.mpExamRepo.findAndCount({
         skip: (page - 1) * limit,
