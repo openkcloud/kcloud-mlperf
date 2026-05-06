@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Link, useRoutes } from 'react-router-dom';
+import { Link, Navigate, useRoutes } from 'react-router-dom';
 
 import { Alert, Button, Container, Typography } from '@mui/material';
 
