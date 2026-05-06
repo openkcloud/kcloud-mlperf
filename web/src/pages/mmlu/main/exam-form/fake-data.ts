@@ -1,6 +1,7 @@
 export const mlExamPrecisionList = [
-  // 'auto' is the dtype path for FP8 weights — see mlperf fake-data.ts.
-  { value: 'auto', label: 'FP8 (auto)' },
+  // MMLU image's evaluate_from_local.py argparse rejects 'auto' (choices=
+  // float16/bfloat16/float32). bfloat16 still loads FP8 weights via
+  // compressed-tensors auto-detection, so FP8 hardware path is preserved.
   { value: 'bfloat16', label: 'bfloat16' },
   { value: 'float16', label: 'float16' },
   { value: 'float32', label: 'float32' }
