@@ -9,6 +9,13 @@ export function getGpuPrometheusUrl(): string {
   return (import.meta.env.VITE__APP_GPU_PROMETHEUS_URL as string | undefined) ?? '';
 }
 
+export function getL40LiveBenchUrl(): string {
+  return (
+    (import.meta.env.VITE__APP_L40_LIVE_BENCH_URL as string | undefined) ??
+    'http://10.254.184.195:30891/'
+  );
+}
+
 export type DashboardState = 'loading' | 'ready' | 'error' | 'unavailable';
 
 export function deriveState(url: string, loadError: boolean): DashboardState {
