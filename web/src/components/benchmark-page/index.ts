@@ -8,6 +8,7 @@ export {
   PrometheusIframeDashboard,
   getGpuPrometheusUrl,
   getL40LiveBenchUrl,
+  getAtomPlusLiveBenchUrl,
   deriveState,
 } from './PrometheusIframeDashboard';
 export type { DashboardState } from './PrometheusIframeDashboard';

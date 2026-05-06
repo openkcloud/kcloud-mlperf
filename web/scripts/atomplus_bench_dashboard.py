@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Live web dashboard for the L40 GPU on node2.
+"""Live web dashboard for the Rebellions Atom+ NPU on node5.
 
-Single-file, stdlib-only. Serves an HTML page on :30891 that auto-refreshes
+Single-file, stdlib-only. Serves an HTML page on :30892 that auto-refreshes
 every 5s. Visual layout mirrors /home/kcloud/bench_dashboard.py on node4
-(RNGD) so the iframe embed inside web/src/pages/mlperf/main/MLPerfPage.tsx
-("Live GPU Dashboard (MLPerf — L40)") looks structurally identical to
+(RNGD) so the iframe embed inside web/src/pages/npu-eval/atomplus/index.tsx
+("Live Bench Dashboard (node5 - Atom+)") looks structurally identical to
 "Live Bench Dashboard (node4 — RNGD)".
 
 Run:
-    python3 /home/kcloud/gpu_bench_dashboard_l40.py
+    python3 /home/kcloud/atomplus_bench_dashboard.py
 or
-    sudo systemd-run --unit=gpu-bench-dashboard-l40 --collect \
+    sudo systemd-run --unit=atomplus-bench-dashboard --collect \
         --property=WorkingDirectory=/home/kcloud \
-        /usr/bin/python3 /home/kcloud/gpu_bench_dashboard_l40.py
+        /usr/bin/python3 /home/kcloud/atomplus_bench_dashboard.py
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ import datetime as dt
 import html
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -28,82 +29,74 @@ import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PORT = int(os.environ.get("GPU_BENCH_DASHBOARD_PORT", "30891"))
-NODE_NAME = os.environ.get("GPU_BENCH_DASHBOARD_NODE", "node2")
-GPU_LABEL = os.environ.get("GPU_BENCH_DASHBOARD_LABEL", "NVIDIA L40")
-GPU_FILTER = os.environ.get("GPU_BENCH_DASHBOARD_FILTER", "L40").upper()
-BACKEND_URL = os.environ.get("GPU_BENCH_BACKEND_URL", "http://10.254.177.41:30001")
+PORT = int(os.environ.get("ATOMPLUS_BENCH_DASHBOARD_PORT", "30892"))
+NODE_NAME = os.environ.get("ATOMPLUS_BENCH_DASHBOARD_NODE", "node5")
+NPU_LABEL = os.environ.get("ATOMPLUS_BENCH_DASHBOARD_LABEL", "Rebellions Atom+")
+VENDOR_FILTER = os.environ.get("ATOMPLUS_BENCH_VENDOR", "rebellions").lower()
+VENDOR_COLOR = os.environ.get("ATOMPLUS_BENCH_VENDOR_COLOR", "#A855F7")  # purple
+BACKEND_URL = os.environ.get("ATOMPLUS_BENCH_BACKEND_URL", "http://10.254.177.41:30001")
 
 TELEMETRY_INTERVAL_SEC = 5
 TELEMETRY_HISTORY_LEN = 720  # 60 min @ 5 s
 
 _telemetry_lock = threading.Lock()
-_telemetry_history: list[deque] = []  # one deque per GPU
-_smi_snapshot_text = ""
+_telemetry_history: list[deque] = []  # one deque per NPU
+_rbln_snapshot_text = ""
 
-NVIDIA_SMI_QUERY = (
-    "index,name,temperature.gpu,power.draw,utilization.gpu,memory.used,memory.total"
-)
+# rbln-stat row format (after splitting on '|'):
+#   ['', ' 0   ', ' RBLN-CA22 ', ' rbln0   ', '  0000:c3:00.0 ', '  33C ', '  18.1W  ', ' P14  ', '    0.0B / 15.7GiB   ', '   0.0 ', '']
+# Indices:                       0          1            2          3                4         5           6        7        8                       9
+# Index of NPU#: 1, Name: 2, Device: 3, BUS: 4, Temp: 5, Power: 6, Perf: 7, Memory: 8, Util: 9
+RBLN_TEMP_RE = re.compile(r"(\d+(?:\.\d+)?)\s*C")
+RBLN_POWER_RE = re.compile(r"(\d+(?:\.\d+)?)\s*W")
+RBLN_UTIL_RE = re.compile(r"(\d+(?:\.\d+)?)")
 
 
-def _run_nvidia_smi() -> list[dict]:
-    """Return list of per-GPU dicts. Empty list on failure."""
+def _run_rbln_stat() -> tuple[list[dict], str]:
+    """Return (per-NPU dicts, raw stdout). Empty rows on failure."""
     try:
         out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=" + NVIDIA_SMI_QUERY,
-             "--format=csv,noheader,nounits"],
+            ["rbln-stat"],
             capture_output=True, text=True, timeout=4, check=True,
-        ).stdout.strip()
+        ).stdout
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return []
-    rows = []
+        return [], "(rbln-stat unavailable)"
+    rows: list[dict] = []
     for line in out.splitlines():
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 7:
+        if not line.startswith("|"):
+            continue
+        # Skip the header rows (those don't start with a digit after trimming)
+        parts = [p.strip() for p in line.split("|")]
+        # parts[0] is empty (left of leading |), parts[-1] is empty (right of trailing |)
+        if len(parts) < 10:
+            continue
+        npu_field = parts[1]
+        if not npu_field.isdigit():
             continue
         try:
+            temp_m = RBLN_TEMP_RE.search(parts[5])
+            power_m = RBLN_POWER_RE.search(parts[6])
+            util_m = RBLN_UTIL_RE.search(parts[9])
             rows.append({
-                "index": int(parts[0]),
-                "name": parts[1],
-                "temp_c": float(parts[2]) if parts[2] not in ("N/A", "[N/A]") else None,
-                "power_w": float(parts[3]) if parts[3] not in ("N/A", "[N/A]") else None,
-                "util_pct": float(parts[4]) if parts[4] not in ("N/A", "[N/A]") else None,
-                "mem_used_mib": int(float(parts[5])) if parts[5] not in ("N/A", "[N/A]") else None,
-                "mem_total_mib": int(float(parts[6])) if parts[6] not in ("N/A", "[N/A]") else None,
+                "index": int(npu_field),
+                "name": parts[2],
+                "device": parts[3],
+                "pci_bus": parts[4],
+                "temp_c": float(temp_m.group(1)) if temp_m else None,
+                "power_w": float(power_m.group(1)) if power_m else None,
+                "perf": parts[7],
+                "memory": parts[8],
+                "util_pct": float(util_m.group(1)) if util_m else None,
             })
-        except ValueError:
+        except (ValueError, IndexError):
             continue
-    return rows
-
-
-def _smi_table_text(rows: list[dict]) -> str:
-    if not rows:
-        return "(nvidia-smi unavailable)"
-    header = "+-------+--------------+--------+----------+---------+--------------+"
-    lines = [header,
-             "| Index | Name         | Temp   | Power    | Util    | Memory       |",
-             header]
-    for r in rows:
-        lines.append(
-            "| {idx:^5} | {name:<12} | {temp:>5} | {pw:>7}  | {ut:>5}  | {mem:<12} |".format(
-                idx=r["index"],
-                name=r["name"][:12],
-                temp=f"{r['temp_c']:.0f}°C" if r["temp_c"] is not None else "—",
-                pw=f"{r['power_w']:.1f} W" if r["power_w"] is not None else "—",
-                ut=f"{r['util_pct']:.0f} %" if r["util_pct"] is not None else "—",
-                mem=(f"{r['mem_used_mib']}/{r['mem_total_mib']} MiB"
-                     if r['mem_used_mib'] is not None and r['mem_total_mib'] is not None
-                     else "—"),
-            )
-        )
-    lines.append(header)
-    return "\n".join(lines)
+    return rows, out
 
 
 def _telemetry_poller():
-    global _smi_snapshot_text
+    global _rbln_snapshot_text
     while True:
-        rows = _run_nvidia_smi()
+        rows, raw = _run_rbln_stat()
         with _telemetry_lock:
             while len(_telemetry_history) < len(rows):
                 _telemetry_history.append(deque(maxlen=TELEMETRY_HISTORY_LEN))
@@ -114,7 +107,7 @@ def _telemetry_poller():
                     "power_w": r["power_w"],
                     "util_pct": r["util_pct"],
                 })
-            _smi_snapshot_text = _smi_table_text(rows)
+            _rbln_snapshot_text = raw
         time.sleep(TELEMETRY_INTERVAL_SEC)
 
 
@@ -124,59 +117,11 @@ def _get_telemetry_snapshot() -> tuple[list[dict], list[deque], str]:
         for i, hist in enumerate(_telemetry_history):
             if hist:
                 rows.append({"index": i, **hist[-1]})
-        return rows, [deque(d) for d in _telemetry_history], _smi_snapshot_text
-
-
-def _fetch_exam_list(path: str) -> list[dict]:
-    try:
-        req = urllib.request.Request(
-            f"{BACKEND_URL}{path}",
-            headers={"Accept": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as r:
-            payload = json.loads(r.read().decode("utf-8"))
-    except (urllib.error.URLError, json.JSONDecodeError, OSError):
-        return []
-    rows = (payload or {}).get("data", {}).get("list", []) if isinstance(payload, dict) else []
-    return rows if isinstance(rows, list) else []
-
-
-def fetch_active_l40_exams() -> list[dict]:
-    """Return Running L40 exams from BOTH MLPerf (mp-exam) and MMLU (mm-exam) APIs.
-    Each row tagged with `_kind` ('mlperf' or 'mmlu') for downstream rendering."""
-    out: list[dict] = []
-    for kind, path in (("mlperf", "/api/mp-exam/list"), ("mmlu", "/api/mm-exam/list")):
-        for r in _fetch_exam_list(path):
-            if (
-                isinstance(r, dict)
-                and str(r.get("status", "")) == "Running"
-                and GPU_FILTER in str(r.get("gpu_type", "")).upper()
-            ):
-                r = dict(r)
-                r["_kind"] = kind
-                out.append(r)
-    return out
-
-
-def fetch_recent_l40_runs(limit: int = 5) -> list[dict]:
-    """Return last N completed L40 runs across MLPerf+MMLU, newest first."""
-    out: list[dict] = []
-    for kind, path in (("mlperf", "/api/mp-exam/list"), ("mmlu", "/api/mm-exam/list")):
-        for r in _fetch_exam_list(path):
-            if (
-                isinstance(r, dict)
-                and str(r.get("status", "")) == "Completed"
-                and GPU_FILTER in str(r.get("gpu_type", "")).upper()
-            ):
-                r = dict(r)
-                r["_kind"] = kind
-                out.append(r)
-    out.sort(key=lambda r: r.get("end_at") or r.get("modified_at") or "", reverse=True)
-    return out[:limit]
+        return rows, [deque(d) for d in _telemetry_history], _rbln_snapshot_text
 
 
 def fetch_comparison_runs() -> list[dict]:
-    """Return cross-HW comparison rows (canonical / TT100T table). Best-effort."""
+    """Return cross-HW comparison rows from /api/comparison/list. Best-effort."""
     try:
         req = urllib.request.Request(
             f"{BACKEND_URL}/api/comparison/list",
@@ -198,8 +143,29 @@ def fetch_comparison_runs() -> list[dict]:
     return [r for r in runs if isinstance(r, dict)]
 
 
+def fetch_active_atomplus_exams() -> list[dict]:
+    """Return Running Atom+ runs from /api/comparison/list filtered by vendor."""
+    return [
+        r for r in fetch_comparison_runs()
+        if isinstance(r.get("hardware"), dict)
+        and str(r["hardware"].get("vendor", "")).lower() == VENDOR_FILTER
+        and str(r.get("status", "")) == "Running"
+    ]
+
+
+def fetch_recent_atomplus_runs(limit: int = 5) -> list[dict]:
+    """Return last N completed Atom+ runs, newest first."""
+    completed = [
+        r for r in fetch_comparison_runs()
+        if isinstance(r.get("hardware"), dict)
+        and str(r["hardware"].get("vendor", "")).lower() == VENDOR_FILTER
+        and str(r.get("status", "")) == "Completed"
+    ]
+    completed.sort(key=lambda r: r.get("completed_at") or r.get("started_at") or "", reverse=True)
+    return completed[:limit]
+
+
 def render_sparkline(values: list[float | None], stroke: str) -> str:
-    """SVG polyline sparkline, same shape as node4's render_sparkline."""
     samples = [v for v in values if v is not None]
     if not samples:
         return ("<svg viewBox='0 0 200 40' style='width:100%;max-width:200px;"
@@ -223,6 +189,14 @@ def render_sparkline(values: list[float | None], stroke: str) -> str:
     )
 
 
+def _kv_row(label: str, value: float | None, fmt: str = "", suffix: str = "") -> str:
+    if value is None:
+        rendered = "—"
+    else:
+        rendered = format(value, fmt) + (f" {suffix}" if suffix else "")
+    return f"<div class='kv'><span>{label}</span><b>{rendered}</b></div>"
+
+
 def _elapsed_seconds(started_at: str | None) -> float | None:
     if not started_at:
         return None
@@ -234,80 +208,35 @@ def _elapsed_seconds(started_at: str | None) -> float | None:
         return None
 
 
-def render_active_exam_card(exam: dict) -> str:
-    kind = exam.get("_kind", "mlperf")
-    kind_label = "MLPerf" if kind == "mlperf" else "MMLU-Pro"
-    api_source = "/api/mp-exam/list" if kind == "mlperf" else "/api/mm-exam/list"
-    job_prefix = "mlperf" if kind == "mlperf" else "mmlu"
+def render_active_exam_card(run: dict) -> str:
+    name = html.escape(str(run.get("name", "(unnamed)")))
+    eid = html.escape(str(run.get("id", "?")))
+    benchmark = html.escape(str(run.get("benchmark", "?")))
+    model = html.escape(str(run.get("model", "?")))
+    precision = html.escape(str(run.get("precision", "?")))
+    hw = run.get("hardware") if isinstance(run.get("hardware"), dict) else {}
+    hw_model = html.escape(str(hw.get("model", "Atom+")))
+    started = html.escape(str(run.get("started_at", "?")))
 
-    name = html.escape(str(exam.get("name", "(unnamed)")))
-    eid = html.escape(str(exam.get("id", "?")))
-    model = html.escape(str(exam.get("model", "?")))
-    precision = html.escape(str(exam.get("precision", "?")))
-    dataset = html.escape(str(exam.get("dataset", "?")))
-    n_samples = exam.get("data_number") or 0
-    max_tok = exam.get("max_output_tokens") or exam.get("max_tokens") or "?"
-    started = html.escape(str(exam.get("started_at", "?")))
-    gpu_type = html.escape(str(exam.get("gpu_type", "?")))
-
-    elapsed = _elapsed_seconds(exam.get("started_at"))
-    # MLPerf 100 samples ~25s; MMLU 100 samples ~120s. Rough estimate so the
-    # progress bar is animated rather than static. Real samples_completed not
-    # exposed by /api/{mp,mm}-exam/list yet.
-    est_total_sec = (n_samples * 0.5) if kind == "mlperf" else (n_samples * 1.5)
-    if elapsed is not None and est_total_sec > 0:
-        pct = min(99.0, (elapsed / est_total_sec) * 100)
-        elapsed_str = f"{int(elapsed)}s elapsed"
-    else:
-        pct = 5.0
-        elapsed_str = "starting"
+    elapsed = _elapsed_seconds(run.get("started_at"))
+    pct = min(99.0, (elapsed / 180.0) * 100) if elapsed is not None else 5.0
     bar_color = "#16A34A" if pct < 95 else "#F97316"
+    elapsed_str = f"{int(elapsed)}s elapsed" if elapsed is not None else "starting"
     progress_block = (
         f"<div class='progress'><div style='width:{pct:.1f}%; background:{bar_color}'></div></div>"
-        f"<div class='meta'>{elapsed_str} of est ~{int(est_total_sec)}s ({pct:.0f}%)</div>"
+        f"<div class='meta'>{elapsed_str} (pct estimated against ~180s baseline)</div>"
     )
     return (
-        "<section class='card' style='border-color: #3fb950;'>"
-        f"<h3 style='color: #3fb950;'>k8s {GPU_FILTER} {kind_label} exam #{eid} — {name} (Running)</h3>"
-        "<div class='kv'><span>State</span><b style='color: #3fb950;'>Running on cluster</b></div>"
-        f"<div class='kv'><span>GPU type</span><b>{gpu_type}</b></div>"
+        f"<section class='card' style='border-color: {VENDOR_COLOR};'>"
+        f"<h3 style='color: {VENDOR_COLOR};'>k8s {NPU_LABEL} {benchmark} run #{eid} — {name} (Running)</h3>"
+        f"<div class='kv'><span>State</span><b style='color: {VENDOR_COLOR};'>Running on cluster</b></div>"
+        f"<div class='kv'><span>Hardware</span><b>{hw_model}</b></div>"
         f"<div class='kv'><span>Model</span><b>{model}</b></div>"
         f"<div class='kv'><span>Precision</span><b>{precision}</b></div>"
-        f"<div class='kv'><span>Dataset</span><b>{dataset} ({n_samples} samples)</b></div>"
-        f"<div class='kv'><span>Max output tokens</span><b>{max_tok}</b></div>"
         f"<div class='kv'><span>Started</span><b>{started}</b></div>"
         f"{progress_block}"
-        f"<div class='meta'>Live state from <code>{api_source}</code>. "
-        f"Per-sample progress not exposed yet — see <code>kubectl logs job/{job_prefix}-{eid}-1-1 -n llm-evaluation</code>.</div>"
-        "</section>"
-    )
-
-
-def render_recent_runs_panel(runs: list[dict]) -> str:
-    if not runs:
-        return ""
-    rows = []
-    for r in runs:
-        kind = r.get("_kind", "?")
-        kind_label = "MLPerf" if kind == "mlperf" else "MMLU"
-        eid = html.escape(str(r.get("id", "?")))
-        name = html.escape(str(r.get("name", "?"))[:40])
-        ended = html.escape(str(r.get("end_at") or r.get("modified_at", "?"))[:19])
-        gpu = html.escape(str(r.get("gpu_type", "?")))
-        rows.append(
-            f"<tr><td>#{eid}</td><td>{kind_label}</td><td>{name}</td>"
-            f"<td>{gpu}</td><td>{ended}</td></tr>"
-        )
-    return (
-        "<section class='card'>"
-        "<h3>Recent activity — last completed " f"{GPU_FILTER}" " runs</h3>"
-        "<table style='width:100%; border-collapse: collapse; font-size: 12px;'>"
-        "<thead><tr style='border-bottom: 1px solid var(--border); color: var(--muted);'>"
-        "<th align='left'>ID</th><th align='left'>Bench</th><th align='left'>Name</th>"
-        "<th align='left'>GPU</th><th align='left'>Ended</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
-        "<div class='meta'>Last 5 Completed runs on this hardware. Source: "
-        "<code>/api/{mp,mm}-exam/list</code> filtered + sorted by end_at desc.</div>"
+        f"<div class='meta'>Live state from <code>/api/comparison/list</code> filtered "
+        f"<code>hardware.vendor=='{VENDOR_FILTER}'</code> + <code>status=='Running'</code>.</div>"
         "</section>"
     )
 
@@ -353,22 +282,14 @@ def render_comparison_panel(runs: list[dict]) -> str:
     )
 
 
-def _kv_row(label: str, value: float | None, fmt: str = "", suffix: str = "") -> str:
-    if value is None:
-        rendered = "—"
-    else:
-        rendered = format(value, fmt) + (f" {suffix}" if suffix else "")
-    return f"<div class='kv'><span>{label}</span><b>{rendered}</b></div>"
-
-
-def render_gpu_card(rows: list[dict], hist: list[deque], smi_text: str) -> str:
+def render_npu_card(rows: list[dict], hist: list[deque], rbln_text: str) -> str:
     sub_rows: list[str] = []
     for r in rows:
         idx = r.get("index")
-        sub_rows.append(_kv_row(f"L40 #{idx} Temp",  r.get("temp_c"),   ".2f", "°C"))
-        sub_rows.append(_kv_row(f"L40 #{idx} Power", r.get("power_w"),  ".1f", "W"))
-        sub_rows.append(_kv_row(f"L40 #{idx} Util",  r.get("util_pct"), ".0f", "%"))
-    kv_block = "".join(sub_rows) or "<div class='kv'><span>State</span><b>nvidia-smi unavailable</b></div>"
+        sub_rows.append(_kv_row(f"RBLN #{idx} Temp",  r.get("temp_c"),   ".0f", "°C"))
+        sub_rows.append(_kv_row(f"RBLN #{idx} Power", r.get("power_w"),  ".1f", "W"))
+        sub_rows.append(_kv_row(f"RBLN #{idx} Util",  r.get("util_pct"), ".1f", "%"))
+    kv_block = "".join(sub_rows) or "<div class='kv'><span>State</span><b>rbln-stat unavailable</b></div>"
 
     sparks = []
     for i, hbuf in enumerate(hist[:2]):
@@ -376,20 +297,52 @@ def render_gpu_card(rows: list[dict], hist: list[deque], smi_text: str) -> str:
         powers = [s.get("power_w") for s in hbuf]
         sparks.append(
             f"<figure>{render_sparkline(temps, stroke='#f78166')}"
-            f"<figcaption>L40 #{i} Temp · 60min</figcaption></figure>"
+            f"<figcaption>RBLN #{i} Temp · 60min</figcaption></figure>"
         )
         sparks.append(
-            f"<figure>{render_sparkline(powers, stroke='#58a6ff')}"
-            f"<figcaption>L40 #{i} Power · 60min</figcaption></figure>"
+            f"<figure>{render_sparkline(powers, stroke=VENDOR_COLOR)}"
+            f"<figcaption>RBLN #{i} Power · 60min</figcaption></figure>"
         )
     spark_block = "<div class='spark'>" + "".join(sparks) + "</div>" if sparks else ""
 
     return (
         "<section class='card'>"
-        f"<h3>GPU ({GPU_LABEL} ×{len(rows) if rows else '?'})</h3>"
+        f"<h3>NPU ({NPU_LABEL} ×{len(rows) if rows else '?'})</h3>"
         f"{kv_block}"
         f"{spark_block}"
-        f"<pre style='margin-top:8px;'>{html.escape(smi_text)}</pre>"
+        f"<pre style='margin-top:8px;'>{html.escape(rbln_text)}</pre>"
+        "</section>"
+    )
+
+
+def render_recent_runs_panel(runs: list[dict]) -> str:
+    if not runs:
+        return ""
+    rows = []
+    for r in runs:
+        eid = html.escape(str(r.get("id", "?")))
+        name = html.escape(str(r.get("name", "?"))[:40])
+        bench = html.escape(str(r.get("benchmark", "?")))
+        completed = html.escape(str(r.get("completed_at") or r.get("started_at", "?"))[:19])
+        metrics = r.get("metrics") if isinstance(r.get("metrics"), dict) else {}
+        tt = metrics.get("tt100t_seconds")
+        tt_str = (f"{float(tt) * 1000:.0f} ms"
+                  if isinstance(tt, (int, float)) and tt < 100
+                  else f"{tt:.0f} ms" if isinstance(tt, (int, float))
+                  else "—")
+        rows.append(
+            f"<tr><td>#{eid}</td><td>{bench}</td><td>{name}</td>"
+            f"<td>{tt_str}</td><td>{completed}</td></tr>"
+        )
+    return (
+        "<section class='card'>"
+        f"<h3>Recent activity — last completed {NPU_LABEL} runs</h3>"
+        "<table style='width:100%; border-collapse: collapse; font-size: 12px;'>"
+        "<thead><tr style='border-bottom: 1px solid var(--border); color: var(--muted);'>"
+        "<th align='left'>ID</th><th align='left'>Bench</th><th align='left'>Name</th>"
+        "<th align='left'>TT100T</th><th align='left'>Completed</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+        f"<div class='meta'>Last 5 Completed runs on {NPU_LABEL}. Source: <code>/api/comparison/list</code> filtered <code>hardware.vendor=='{VENDOR_FILTER}'</code>.</div>"
         "</section>"
     )
 
@@ -402,12 +355,12 @@ def _badge(label: str, ok: bool, suffix: str = "") -> str:
 
 
 def render_html() -> str:
-    rows, hist, smi_text = _get_telemetry_snapshot()
-    nvidia_ok = bool(rows)
+    rows, hist, rbln_text = _get_telemetry_snapshot()
+    rbln_ok = bool(rows)
     backend_ok = True
-    active_exams: list[dict] = []
+    active_runs: list[dict] = []
     try:
-        active_exams = fetch_active_l40_exams()
+        active_runs = fetch_active_atomplus_exams()
     except Exception:
         backend_ok = False
     try:
@@ -417,32 +370,32 @@ def render_html() -> str:
         backend_ok = False
 
     badges = [
-        _badge("nvidia-smi", nvidia_ok),
+        _badge("rbln-stat", rbln_ok),
         _badge("backend api", backend_ok, BACKEND_URL.replace("http://", "")),
-        _badge("exam discovery", True, f"{len(active_exams)} active"),
+        _badge("exam discovery", True, f"{len(active_runs)} active"),
     ]
 
-    active_cards = "\n".join(render_active_exam_card(e) for e in active_exams)
+    active_cards = "\n".join(render_active_exam_card(r) for r in active_runs)
     if not active_cards:
         active_cards = (
             "<section class='card' style='opacity:0.65;'>"
-            f"<h3>No {GPU_FILTER} MLPerf benchmarks active</h3>"
+            f"<h3>No {NPU_LABEL} benchmarks active</h3>"
             "<div class='kv'><span>State</span><b>idle</b></div>"
-            "<div class='meta'>Live state from <code>/api/mp-exam/list</code>; this card lights up "
-            f"green when any MLPerf exam with <code>gpu_type</code> containing <code>{GPU_FILTER}</code> "
-            "and <code>status=Running</code> is detected.</div>"
+            "<div class='meta'>Live state from <code>/api/comparison/list</code>; this card "
+            f"lights up purple when any run with <code>hardware.vendor=='{VENDOR_FILTER}'</code> "
+            "and <code>status='Running'</code> is detected.</div>"
             "</section>"
         )
 
     comparison_panel = render_comparison_panel(comparison_runs)
-    gpu_card = render_gpu_card(rows, hist, smi_text)
-    recent_runs_panel = render_recent_runs_panel(fetch_recent_l40_runs(limit=5))
+    npu_card = render_npu_card(rows, hist, rbln_text)
+    recent_runs_panel = render_recent_runs_panel(fetch_recent_atomplus_runs(limit=5))
 
     return f"""<!doctype html>
 <html lang='en'>
 <head>
 <meta charset='utf-8'>
-<title>{NODE_NAME} L40 GPU bench dashboard</title>
+<title>{NODE_NAME} Atom+ NPU bench dashboard</title>
 <meta http-equiv='refresh' content='5'>
 <style>
   :root {{
@@ -480,20 +433,20 @@ def render_html() -> str:
 </style>
 </head>
 <body>
-  <h1>{NODE_NAME} L40 GPU bench dashboard <span class='meta'>· auto-refresh 5s · {dt.datetime.now():%H:%M:%S}</span></h1>
+  <h1>{NODE_NAME} {NPU_LABEL} NPU bench dashboard <span class='meta'>· auto-refresh 5s · {dt.datetime.now():%H:%M:%S}</span></h1>
   <div>{''.join(badges)}</div>
 
   {comparison_panel}
 
   <div class='grid'>
     {active_cards}
-    {gpu_card}
+    {npu_card}
   </div>
 
   {recent_runs_panel}
 
   <div class='footer'>
-    Served by <code>gpu_bench_dashboard_l40.py</code> on port {PORT}. Stop with <code>sudo systemctl stop gpu-bench-dashboard-l40.service</code> or kill the python process. Page refreshes every 5s. No state is written to disk; telemetry is in-memory ring buffer (60 min @ 5 s).
+    Served by <code>atomplus_bench_dashboard.py</code> on port {PORT}. Stop with <code>sudo systemctl stop atomplus-bench-dashboard.service</code> or kill the python process. Page refreshes every 5s. Telemetry source: <code>rbln-stat</code> snapshot every 5s; in-memory ring buffer of last 60 min.
   </div>
 </body>
 </html>"""
@@ -518,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
-    def log_message(self, fmt, *args):  # silence noisy default access log
+    def log_message(self, fmt, *args):
         return
 
 
@@ -526,7 +479,7 @@ def main() -> None:
     poller = threading.Thread(target=_telemetry_poller, daemon=True)
     poller.start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"gpu_bench_dashboard_l40 listening on :{PORT}", flush=True)
+    print(f"atomplus_bench_dashboard listening on :{PORT}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

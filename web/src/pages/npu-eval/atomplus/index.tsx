@@ -16,7 +16,11 @@ import { ComparisonApi } from '@/api/domains/comparison';
 import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { StatusEnum } from '@/enums/status.enum';
 import { Tt100tBadge } from '@/components/Tt100tBadge';
-import { HardwareIdentityCard, LiveBenchDashboard } from '@/components/benchmark-page';
+import {
+  HardwareIdentityCard,
+  LiveBenchDashboard,
+  getAtomPlusLiveBenchUrl,
+} from '@/components/benchmark-page';
 import type { ComparisonRunRow } from '@/api/domains/comparison';
 import type { NpuExamCreateBody } from '@/api/types/npu-eval.types.d';
 
@@ -24,13 +28,9 @@ import type { NpuExamCreateBody } from '@/api/types/npu-eval.types.d';
 
 const VENDOR_COLOR = '#A855F7'; // Rebellions purple — contract §11
 
-// NPU realtime dashboard: absolute URL so iframe loads the SPA page correctly.
-// No external Streamlit/Grafana is deployed for Atom+ — the in-app npu-realtime
-// page embeds both RNGD and Atom+ device cards and is the canonical live view.
-// deviation: height=900 per contract §17 rule 1 (same as RNGD default).
-const NPU_REALTIME_URL =
-  (import.meta.env.VITE__APP_NPU_REALTIME_URL as string | undefined) ||
-  `${window.location.protocol}//${window.location.host}/dashboard/npu-realtime`;
+// Atom+ live bench dashboard: served by atomplus_bench_dashboard.py on node5
+// at port 30892. URL is env-aware via getAtomPlusLiveBenchUrl() (env var
+// VITE__APP_ATOMPLUS_LIVE_BENCH_URL with hardcoded fallback).
 
 const statusColor = (status: string) => {
   switch (status) {
@@ -405,7 +405,7 @@ const AtomPlusNpuEvalPage = () => {
 
       <LiveBenchDashboard
         title="Live Bench Dashboard (node5 — Atom+)"
-        src={NPU_REALTIME_URL}
+        src={getAtomPlusLiveBenchUrl()}
         height={900}
         idle={activeRuns.length === 0}
         idleLabel="No NPU benchmark currently running on Rebellions Atom+ devices"

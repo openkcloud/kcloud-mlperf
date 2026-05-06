@@ -16,6 +16,13 @@ export function getL40LiveBenchUrl(): string {
   );
 }
 
+export function getAtomPlusLiveBenchUrl(): string {
+  return (
+    (import.meta.env.VITE__APP_ATOMPLUS_LIVE_BENCH_URL as string | undefined) ??
+    'http://10.254.202.111:30892/'
+  );
+}
+
 export type DashboardState = 'loading' | 'ready' | 'error' | 'unavailable';
 
 export function deriveState(url: string, loadError: boolean): DashboardState {

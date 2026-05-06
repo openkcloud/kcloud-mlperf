@@ -14,7 +14,7 @@ import {
   Typography
 } from '@mui/material';
 
-import { LiveBenchDashboard, getGpuPrometheusUrl } from '@/components/benchmark-page';
+import { LiveBenchDashboard, getL40LiveBenchUrl } from '@/components/benchmark-page';
 import { useRealtimeExams } from '@/hooks/useRealtimeExams';
 
 // ----------------------------------------------------------------------
@@ -264,7 +264,7 @@ const MMLUPage = () => {
 
       <LiveBenchDashboard
         title="Live GPU Dashboard (MMLU-Pro — L40)"
-        src={getGpuPrometheusUrl()}
+        src={getL40LiveBenchUrl()}
         height={900}
         idle={!isMmluActive}
         idleLabel="No MMLU-Pro benchmark currently running on GPU devices"
