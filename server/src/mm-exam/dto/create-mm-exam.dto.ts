@@ -94,6 +94,12 @@ export class CreateMmExamDto {
   @Min(0)
   retry_num: number;
 
+  // Optional — generation length / eval output limit (default 128).
+  @IsOptional()
+  @IsInt()
+  @Min(16)
+  max_tokens?: number;
+
   // Required
   @IsString()
   @IsNotEmpty()

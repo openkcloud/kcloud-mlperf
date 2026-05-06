@@ -112,6 +112,12 @@ export class CreateMpExamDto {
   @Min(0)
   retry_num: number;
 
+  // Optional — generation length (default 128). Wired through to operator job env.
+  @IsOptional()
+  @IsInt()
+  @Min(16)
+  max_output_tokens?: number;
+
   // Required
   @IsString()
   @IsNotEmpty()
