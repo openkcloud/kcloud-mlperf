@@ -2,6 +2,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,6 +16,8 @@ import { TestScenarioEnum } from '../enums/test-scenario.enum';
 import { UpdateMpExamResultDto } from './dto/update-mp-exam-result.dto';
 import { PaginationQueryDto } from '../common-dto/pagination-query.dto';
 import { MpExamModeEnum } from 'src/enums/mp-exam-mode.enum';
+import { MpExam } from '../entities/mp-exam.entity';
+import { canonicalize } from '../comparison/config-fingerprint';
 
 const TPS_BEST_VALUES: Record<TestScenarioEnum, number> = {
   [TestScenarioEnum.OFFLINE]: 146_960,
@@ -23,10 +26,107 @@ const TPS_BEST_VALUES: Record<TestScenarioEnum, number> = {
 
 @Injectable()
 export class MpExamResultService {
+  private readonly logger = new Logger(MpExamResultService.name);
+
   constructor(
     @InjectRepository(MpExamResult)
     private readonly mpExamResultRepo: Repository<MpExamResult>,
   ) {}
+
+  private async writeResultJson(params: {
+    exam: MpExam;
+    repeatCount: number;
+    result: CreateMpExamResultDto & {
+      result_vram_peak?: number | null;
+      result_gpu_util?: number | null;
+      result_tt100t?: number | null;
+    };
+    startedAt: string;
+    endAt: string;
+  }): Promise<void> {
+    const { exam, repeatCount, result, startedAt, endAt } = params;
+    try {
+      const start = new Date(startedAt).getTime();
+      const end = new Date(endAt).getTime();
+      const elapsed =
+        isNaN(start) || isNaN(end) ? 0 : Math.max(0, (end - start) / 1000);
+
+      const fingerprint = canonicalize({
+        benchmark: 'mlperf',
+        model: exam.model,
+        dataset: exam.dataset,
+        precision: exam.precision,
+        batch_size: exam.batch_size,
+        data_number: exam.data_number,
+        decoding: { temperature: 1.0 },
+        scenario: exam.scenario,
+        max_output_tokens: null,
+      });
+
+      const runId = `mlperf-${exam.id}-${repeatCount}`;
+      const logsPath = path.join(
+        'results',
+        `mlperf-${exam.id}`,
+        `${repeatCount}`,
+      );
+      const artifactPath = path.join(logsPath, 'exam_result.zip');
+
+      const payload = {
+        run_id: runId,
+        hardware: exam.gpu_type,
+        vendor: 'nvidia',
+        benchmark: 'mlperf',
+        model: exam.model,
+        precision: exam.precision,
+        started_at: startedAt,
+        completed_at: endAt,
+        status: 'completed',
+        failure_reason: null,
+        tt100t_seconds: result.result_tt100t ?? null,
+        elapsed_seconds: elapsed,
+        throughput_tokens_per_sec: result.result_perf_tps ?? null,
+        raw_metrics: {
+          result_perf_tps: result.result_perf_tps ?? null,
+          result_perf_sps: result.result_perf_sps ?? null,
+          result_perf_tps_best: result.result_perf_tps_best ?? null,
+          result_perf_sps_best: result.result_perf_sps_best ?? null,
+          result_perf_valid: result.result_perf_valid ?? null,
+          result_perf_latency: result.result_perf_latency ?? null,
+          result_perf_serv_ttft: result.result_perf_serv_ttft ?? null,
+          result_perf_serv_tpot: result.result_perf_serv_tpot ?? null,
+          result_acc_rg_1: result.result_acc_rg_1 ?? null,
+          result_acc_rg_2: result.result_acc_rg_2 ?? null,
+          result_acc_rg_l: result.result_acc_rg_l ?? null,
+          result_acc_rg_lsum: result.result_acc_rg_lsum ?? null,
+          result_vram_peak: result.result_vram_peak ?? null,
+          result_gpu_util: result.result_gpu_util ?? null,
+        },
+        logs_path: logsPath,
+        artifact_path: artifactPath,
+        config_fingerprint: fingerprint,
+      };
+
+      const dir = path.join(
+        process.cwd(),
+        '..',
+        'results',
+        `mlperf-${exam.id}`,
+      );
+      await fsPromise.mkdir(dir, { recursive: true });
+      await fsPromise.writeFile(
+        path.join(dir, 'result.json'),
+        JSON.stringify(payload, null, 2),
+        'utf8',
+      );
+      this.logger.log(
+        `Wrote result.json for mlperf-${exam.id} repeat=${repeatCount}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to write result.json for mlperf-${exam.id}: ${(err as Error).message}`,
+      );
+    }
+  }
 
   private getNumber(regex: RegExp, text: string): number | null {
     const match = text.match(regex);
@@ -195,6 +295,7 @@ export class MpExamResultService {
     repeatCount: number;
     testScenario: TestScenarioEnum;
     mode: MpExamModeEnum;
+    exam?: MpExam;
   }) {
     try {
       const response: MpExamResult[] = [];
@@ -210,6 +311,15 @@ export class MpExamResultService {
           i,
         );
 
+        const merged = {
+          ...summaryData,
+          ...addedResultData,
+          result_perf_tps_best: TPS_BEST_VALUES[params.testScenario],
+          result_perf_sps_best:
+            (summaryData as { result_perf_sps_best?: number | null })
+              .result_perf_sps_best ?? null,
+        };
+
         const existedExamResult = await this.mpExamResultRepo.findOne({
           where: {
             exam_id: params.examId,
@@ -218,19 +328,21 @@ export class MpExamResultService {
         });
 
         if (existedExamResult) {
-          await this.update(existedExamResult.id, {
-            ...summaryData,
-            ...addedResultData,
-          });
+          await this.update(existedExamResult.id, merged);
         } else {
-          const result = this.mpExamResultRepo.create({
-            ...summaryData,
-            ...addedResultData,
-            result_perf_tps_best: TPS_BEST_VALUES[params.testScenario],
-          });
-
+          const result = this.mpExamResultRepo.create(merged);
           const examResult = await this.mpExamResultRepo.save(result);
           response.push(examResult);
+        }
+
+        if (params.exam) {
+          await this.writeResultJson({
+            exam: params.exam,
+            repeatCount: i,
+            result: merged,
+            startedAt: params.exam.started_at ?? new Date().toISOString(),
+            endAt: params.exam.end_at ?? new Date().toISOString(),
+          });
         }
       }
 

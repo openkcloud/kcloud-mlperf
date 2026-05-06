@@ -212,6 +212,7 @@ export class MmExamService implements OnModuleInit {
       await this.mmExamResultService.create({
         examId: data.id,
         repeatCount: data.retry_num,
+        exam: data,
       });
     }
 
@@ -330,6 +331,7 @@ export class MmExamService implements OnModuleInit {
       await this.mmExamResultService.create({
         examId: id,
         repeatCount: exam.retry_num,
+        exam,
       });
     }
 

@@ -16,6 +16,7 @@ import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { NpuEvalPageLinks } from '@/contexts/RouterContext/router.links';
 import { StatusEnum } from '@/enums/status.enum';
 import { Tt100tBadge } from '@/components/Tt100tBadge';
+import { HardwareIdentityCard, LiveBenchDashboard } from '@/components/benchmark-page';
 import type { NpuExamCreateBody, NpuExamDetails } from '@/api/types/npu-eval.types.d';
 
 // ----------------------------------------------------------------------
@@ -221,21 +222,15 @@ const RngdNpuEvalPage = () => {
 
   return (
     <Box>
-      {/* Hardware Identity Card */}
-      <Paper sx={{ p: 2, mb: 3, border: '1px solid rgba(249,115,22,0.25)', bgcolor: 'rgba(249,115,22,0.03)' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#F97316' }}>Hardware Identity</Typography>
-            <Typography variant="body2">Vendor: FuriosaAI &nbsp;|&nbsp; Model: RNGD &nbsp;|&nbsp; Node: node4</Typography>
-            {rngdInfo && (
-              <Typography variant="caption" color="text.secondary">
-                {rngdInfo.memory_gb}GB HBM3 &nbsp;|&nbsp; {rngdInfo.compute_tflops} TFLOPS &nbsp;|&nbsp; {rngdInfo.npu_count} NPU(s) detected
-              </Typography>
-            )}
-          </Box>
-          <Chip label="FuriosaAI RNGD" sx={{ bgcolor: 'rgba(249,115,22,0.12)', color: '#F97316', fontWeight: 700, border: '1px solid rgba(249,115,22,0.3)' }} />
-        </Box>
-      </Paper>
+      <HardwareIdentityCard
+        vendor="FuriosaAI"
+        model="RNGD"
+        node="node4"
+        count={rngdInfo?.npu_count ?? 1}
+        vendorColor="#F97316"
+        badgeLabel="FuriosaAI RNGD"
+        extraInfo={rngdInfo ? `${rngdInfo.memory_gb}GB HBM3 | ${rngdInfo.compute_tflops} TFLOPS | ${rngdInfo.npu_count} NPU(s) detected` : undefined}
+      />
 
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -436,20 +431,11 @@ const RngdNpuEvalPage = () => {
         </Paper>
       )}
 
-      {/* Live Bench Dashboard (node4) */}
-      <Paper sx={{ p: 2, mt: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="h6">Live Bench Dashboard (node4 — RNGD)</Typography>
-          <Typography variant="caption">
-            <a href="http://10.254.202.114:30890/" target="_blank" rel="noopener noreferrer" style={{ color: '#3aa3ff', textDecoration: 'none' }}>
-              open in new tab ↗
-            </a>
-          </Typography>
-        </Box>
-        <Box component="iframe" src="http://10.254.202.114:30890/" title="node4 RNGD bench dashboard"
-          sx={{ width: '100%', height: 900, border: 0, borderRadius: 1, bgcolor: '#0e1117', display: 'block' }}
-        />
-      </Paper>
+      <LiveBenchDashboard
+        title="Live Bench Dashboard (node4 — RNGD)"
+        src="http://10.254.202.114:30890/"
+        height={900}
+      />
 
       {/* Delete Dialog */}
       <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>

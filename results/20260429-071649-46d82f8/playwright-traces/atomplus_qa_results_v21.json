@@ -1,0 +1,169 @@
+{
+  "ts": "2026-04-29T23:38:29.659Z",
+  "api_baseline": {
+    "/comparison/list": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/list?hardware=npu": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ],
+      "total_npu_runs": 48,
+      "atomplus_runs": [
+        {
+          "id": 68,
+          "model": "Qwen/Qwen2.5-7B-Instruct",
+          "tt100t": 3.7134262761101127,
+          "status": "Completed"
+        },
+        {
+          "id": 67,
+          "model": "Qwen/Qwen2.5-0.5B-Instruct",
+          "tt100t": 0.7583864480257034,
+          "status": "Completed"
+        }
+      ]
+    },
+    "/comparison/candidates?runId=67": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/candidates?runId=68": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/mlperf/72/67": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/comparison/mlperf/72/68": {
+      "status": 404,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/devices": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    },
+    "/realtime/exams/snapshot": {
+      "status": 200,
+      "top_keys": [
+        "code",
+        "status",
+        "message",
+        "data"
+      ]
+    }
+  },
+  "route_audits": [
+    {
+      "route": "/",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/\nCall log:\n  - navigating to \"http://10.254.177.41:30001/\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/ : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/dashboard/gpu-realtime",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/dashboard/gpu-realtime\nCall log:\n  - navigating to \"http://10.254.177.41:30001/dashboard/gpu-realtime\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/dashboard/gpu-realtime : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/dashboard/npu-realtime",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/dashboard/npu-realtime\nCall log:\n  - navigating to \"http://10.254.177.41:30001/dashboard/npu-realtime\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/dashboard/npu-realtime : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/npu-eval/rngd",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/npu-eval/rngd\nCall log:\n  - navigating to \"http://10.254.177.41:30001/npu-eval/rngd\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/npu-eval/rngd : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/npu-eval/atomplus",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/npu-eval/atomplus\nCall log:\n  - navigating to \"http://10.254.177.41:30001/npu-eval/atomplus\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/npu-eval/atomplus : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/mlperf/device-comparison",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/mlperf/device-comparison\nCall log:\n  - navigating to \"http://10.254.177.41:30001/mlperf/device-comparison\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/mlperf/device-comparison : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/mmlu/device-comparison",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/mmlu/device-comparison\nCall log:\n  - navigating to \"http://10.254.177.41:30001/mmlu/device-comparison\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/mmlu/device-comparison : net::ERR_CONNECTION_REFUSED"
+      ]
+    },
+    {
+      "route": "/npu-eval/device-comparison",
+      "navOk": false,
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/npu-eval/device-comparison\nCall log:\n  - navigating to \"http://10.254.177.41:30001/npu-eval/device-comparison\", waiting until \"networkidle\"\n",
+      "consoleErrors": [],
+      "networkErrors": [
+        "GET http://10.254.177.41:30001/npu-eval/device-comparison : net::ERR_CONNECTION_REFUSED"
+      ]
+    }
+  ],
+  "comparison_flow": {
+    "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://10.254.177.41:30001/npu-eval/device-comparison\nCall log:\n  - navigating to \"http://10.254.177.41:30001/npu-eval/device-comparison\", waiting until \"networkidle\"\n"
+  }
+}

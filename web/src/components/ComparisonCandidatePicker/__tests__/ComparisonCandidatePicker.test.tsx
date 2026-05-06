@@ -72,7 +72,7 @@ describe('ComparisonCandidatePicker', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('RNGD-run-1')).toBeInTheDocument();
+      expect(screen.getByText(/RNGD-run-1/)).toBeInTheDocument();
     });
 
     expect(mockGetCandidates).toHaveBeenCalledWith(1, { benchmark: 'mlperf' });
@@ -101,8 +101,8 @@ describe('ComparisonCandidatePicker', () => {
       <ComparisonCandidatePicker runId={1} benchmark="mlperf" onSelect={handleSelect} />
     );
 
-    await waitFor(() => screen.getByText('RNGD-run-1'));
-    fireEvent.click(screen.getByText('RNGD-run-1'));
+    await waitFor(() => screen.getByText(/RNGD-run-1/));
+    fireEvent.click(screen.getByText(/RNGD-run-1/));
 
     expect(handleSelect).toHaveBeenCalledWith(candidate);
   });
@@ -120,7 +120,7 @@ describe('ComparisonCandidatePicker', () => {
       <ComparisonCandidatePicker runId={1} benchmark="mlperf" onSelect={() => {}} />
     );
 
-    await waitFor(() => screen.getByText('Strict-run'));
+    await waitFor(() => screen.getByText(/Strict-run/));
 
     const headings = screen.getAllByRole('heading', { hidden: true }).map((h) => h.textContent);
     const strictIdx = headings.findIndex((h) => h?.includes('Strict'));
@@ -152,7 +152,7 @@ describe('ComparisonCandidatePicker', () => {
       <ComparisonCandidatePicker runId={1} onSelect={() => {}} />
     );
 
-    await waitFor(() => screen.getByText('RNGD-run-1'));
+    await waitFor(() => screen.getByText(/RNGD-run-1/));
     expect(screen.getAllByTestId('tt100t-badge').length).toBe(2);
   });
 });

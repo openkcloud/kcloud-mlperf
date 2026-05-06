@@ -148,7 +148,11 @@ describe('NPU Realtime slots (e2e)', () => {
     deviceRegistryMock.getDevices.mockResolvedValue(NOMINAL_DEVICES);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), RealtimeModule, GpuSweepModule],
+      imports: [
+        ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }),
+        RealtimeModule,
+        GpuSweepModule,
+      ],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(sweepRepoMock)
@@ -161,7 +165,10 @@ describe('NPU Realtime slots (e2e)', () => {
       .overrideProvider(getRepositoryToken(MpExamResult))
       .useValue(mpResultMock)
       .overrideProvider(getRepositoryToken(MmExamResult))
-      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .useValue({
+        find: jest.fn().mockResolvedValue([]),
+        findOne: jest.fn().mockResolvedValue(null),
+      })
       .overrideProvider(getRepositoryToken(NpuExam))
       .useValue(npuExamMock)
       .overrideProvider(getRepositoryToken(NpuExamResult))
@@ -169,9 +176,15 @@ describe('NPU Realtime slots (e2e)', () => {
       .overrideProvider(DeviceRegistryService)
       .useValue(deviceRegistryMock)
       .overrideProvider(MpExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .overrideProvider(MmExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .compile();
 
     app = moduleFixture.createNestApplication();

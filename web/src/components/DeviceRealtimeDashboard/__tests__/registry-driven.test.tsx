@@ -181,8 +181,8 @@ describe('DeviceRealtimeDashboard (registry-driven)', () => {
 
     renderWithClient(<DeviceRealtimeDashboard deviceType="all" />);
 
-    expect(screen.getByText(/RNGD/)).toBeInTheDocument();
-    expect(screen.getByText(/Atom\+/)).toBeInTheDocument();
+    expect(screen.getAllByText(/RNGD/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Atom\+/).length).toBeGreaterThanOrEqual(1);
     // Distinct vendor chips
     expect(screen.getAllByText('FuriosaAI').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Rebellions').length).toBeGreaterThanOrEqual(1);

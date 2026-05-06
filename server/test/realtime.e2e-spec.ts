@@ -47,7 +47,11 @@ describe('Realtime SSE (e2e)', () => {
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), RealtimeModule, GpuSweepModule],
+      imports: [
+        ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }),
+        RealtimeModule,
+        GpuSweepModule,
+      ],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(repoMock())
@@ -68,9 +72,15 @@ describe('Realtime SSE (e2e)', () => {
       .overrideProvider(DeviceRegistryService)
       .useValue({ getDevices: jest.fn().mockResolvedValue([]) })
       .overrideProvider(MpExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .overrideProvider(MmExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .compile();
 
     app = moduleFixture.createNestApplication();

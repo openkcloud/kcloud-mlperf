@@ -70,25 +70,45 @@ const STATE_CHIP: Record<DeviceState, { label: string; color: string }> = {
 type StatusChipProps = { status: string };
 
 const StatusChip = ({ status }: StatusChipProps) => {
-  const map: Record<string, { label: string; color: string }> = {
+  const map: Record<string, { label: string; color: string; strikethrough?: boolean }> = {
     Running: { label: 'Running', color: '#16A34A' },
     running: { label: 'Running', color: '#16A34A' },
     Completed: { label: 'Completed', color: '#4F46E5' },
+    completed: { label: 'Completed', color: '#4F46E5' },
+    Queued: { label: 'Queued', color: '#D97706' },
+    queued: { label: 'Queued', color: '#D97706' },
     Pending: { label: 'Pending', color: '#D97706' },
     Preparing: { label: 'Preparing', color: '#0284C7' },
     preparing: { label: 'Preparing', color: '#0284C7' },
     Idle: { label: 'Idle', color: '#64748B' },
     idle: { label: 'Idle', color: '#64748B' },
     Failed: { label: 'Failed', color: '#DC2626' },
+    failed: { label: 'Failed', color: '#DC2626' },
     error: { label: 'Error', color: '#DC2626' },
-    Stopped: { label: 'Stopped', color: '#9333EA' }
+    Stopped: { label: 'Stopped', color: '#9333EA' },
+    // Stale: RUNNING in DB but heartbeat >2 min ago — rendered gray
+    Stale: { label: 'Stale', color: '#64748B' },
+    stale: { label: 'Stale', color: '#64748B' },
+    // Unavailable: hardware absent from device registry — red strike
+    Unavailable: { label: 'Unavailable', color: '#DC2626', strikethrough: true },
+    unavailable: { label: 'Unavailable', color: '#DC2626', strikethrough: true },
+    Unknown: { label: 'Unknown', color: '#64748B' },
+    unknown: { label: 'Unknown', color: '#64748B' },
+    'Pending Join': { label: 'Pending Join', color: '#D97706' },
+    pending_join: { label: 'Pending Join', color: '#D97706' }
   };
   const cfg = map[status] ?? { label: status, color: '#64748B' };
   return (
     <Chip
       label={cfg.label}
       size="small"
-      sx={{ bgcolor: cfg.color, color: '#fff', fontWeight: 600, fontSize: '0.6875rem' }}
+      sx={{
+        bgcolor: cfg.color,
+        color: '#fff',
+        fontWeight: 600,
+        fontSize: '0.6875rem',
+        ...(cfg.strikethrough ? { textDecoration: 'line-through' } : {})
+      }}
     />
   );
 };
@@ -124,6 +144,7 @@ const DeviceCard = ({ device, slot }: DeviceCardProps) => {
   const vendorColor = getVendorColor(VENDOR_DISPLAY[device.vendor] ?? device.vendor);
   const status = slot?.status ?? (device.state === 'ready' ? 'Idle' : 'Pending');
   const isRunning = status.toLowerCase() === 'running';
+  const isStale = status.toLowerCase() === 'stale';
   const badgeText = device.type === 'npu' ? 'NPU' : device.type === 'cpu' ? 'CPU' : 'GPU';
   const label = deviceLabel(device);
   const isPending = device.state === 'pending_join' || device.k8s_node_status === 'Absent';
@@ -240,6 +261,18 @@ const DeviceCard = ({ device, slot }: DeviceCardProps) => {
           sx={{ mt: 1.5, display: 'block', color: STATE_CHIP.pending_join.color, fontWeight: 600 }}
         >
           Awaiting cluster join — slot reserved.
+        </Typography>
+      )}
+
+      {isStale && (
+        <Typography
+          variant="caption"
+          sx={{ mt: 1.5, display: 'block', color: '#64748B', fontWeight: 600 }}
+        >
+          No heartbeat for &gt;2 min — benchmark may have crashed.
+          {slot?.last_seen
+            ? ` Last seen: ${new Date(slot.last_seen).toLocaleTimeString()}`
+            : ''}
         </Typography>
       )}
 

@@ -292,11 +292,17 @@ describe('ComparisonController (e2e)', () => {
       expect(l40).toBeDefined();
       expect(l40.hardware.type).toBe('gpu');
       expect(l40.hardware.vendor).toBe('nvidia');
+      expect(l40.hardware.canonical).toBe('L40');
       expect(l40.benchmark).toBe('mlperf');
       expect(l40.metrics.tt100t_seconds).toBe(1.588);
       expect(l40.metrics.tps).toBe(62.94);
       expect(Array.isArray(l40.artifacts)).toBe(true);
       expect(l40.artifacts.length).toBeGreaterThan(0);
+      expect(typeof l40.config_fingerprint).toBe('string');
+      expect(l40.config_fingerprint.length).toBe(64);
+      expect(typeof l40.drift_flag).toBe('boolean');
+      expect(l40.failure_reason).toBeNull();
+      expect(typeof l40.elapsed_seconds).toBe('number');
 
       // A40 row
       const a40 = body.runs.find(
@@ -306,6 +312,7 @@ describe('ComparisonController (e2e)', () => {
       expect(a40).toBeDefined();
       expect(a40.benchmark).toBe('mmlu');
       expect(a40.metrics.accuracy_pct).toBe(64.5);
+      expect(a40.hardware.canonical).toBe('A40');
 
       // RNGD (furiosa)
       const rngd = body.runs.find(
@@ -314,6 +321,7 @@ describe('ComparisonController (e2e)', () => {
       expect(rngd).toBeDefined();
       expect(rngd.hardware.type).toBe('npu');
       expect(rngd.hardware.vendor).toBe('furiosa');
+      expect(rngd.hardware.canonical).toBe('RNGD');
       expect(rngd.status).toBe(StatusEnum.RUNNING);
 
       // Atom+ (rebellions)
@@ -323,7 +331,9 @@ describe('ComparisonController (e2e)', () => {
       expect(atom).toBeDefined();
       expect(atom.hardware.type).toBe('npu');
       expect(atom.hardware.vendor).toBe('rebellions');
+      expect(atom.hardware.canonical).toBe('Atom+');
       expect(atom.status).toBe(StatusEnum.ERROR);
+      expect(atom.failure_reason).toBe('inference server unreachable');
     });
 
     // ---------- empty state ----------
@@ -551,6 +561,165 @@ describe('ComparisonController (e2e)', () => {
       expect(rngd.hardware.vendor).not.toBe('rebellions');
       expect(atom.hardware.vendor).toBe('rebellions');
       expect(atom.hardware.vendor).not.toBe('furiosa');
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Export endpoints
+  // -------------------------------------------------------------------
+
+  describe('GET /api/comparison/export.csv', () => {
+    it('returns CSV with correct header and data rows', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/export.csv')
+        .expect(200);
+
+      const csv: string = res.text;
+      const lines = csv.split('\n').filter((l) => l.length > 0);
+      // Header line
+      expect(lines[0]).toContain('id');
+      expect(lines[0]).toContain('vendor');
+      expect(lines[0]).toContain('hardware');
+      expect(lines[0]).toContain('benchmark');
+      expect(lines[0]).toContain('tt100t_seconds');
+      expect(lines[0]).toContain('config_fingerprint');
+      expect(lines[0]).toContain('drift_flag');
+      // At least one data row
+      expect(lines.length).toBeGreaterThan(1);
+    });
+
+    it('respects limit param', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/export.csv?limit=1')
+        .expect(200);
+
+      const lines = res.text.split('\n').filter((l) => l.length > 0);
+      // header + 1 data row
+      expect(lines.length).toBe(2);
+    });
+
+    it('returns only header when no runs match filters', async () => {
+      await bootApp({ mp: [], mm: [], npu: [] });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/export.csv')
+        .expect(200);
+
+      const lines = res.text.split('\n').filter((l) => l.length > 0);
+      expect(lines.length).toBe(1); // header only
+    });
+  });
+
+  describe('GET /api/comparison/export.json', () => {
+    it('returns JSON with runs array containing ComparisonRunRow shape', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/export.json')
+        .expect(200);
+
+      const body = res.body;
+      expect(typeof body.total).toBe('number');
+      expect(body.total).toBeGreaterThan(0);
+      expect(Array.isArray(body.runs)).toBe(true);
+
+      const first = body.runs[0];
+      expect(typeof first.id).toBe('number');
+      expect(['nvidia', 'furiosa', 'rebellions', 'unknown']).toContain(
+        first.vendor,
+      );
+      expect(['mlperf-inference', 'mmlu-pro']).toContain(first.benchmark);
+      expect(['completed', 'failed', 'running', 'pending']).toContain(
+        first.status,
+      );
+      expect(typeof first.config_fingerprint).toBe('string');
+      expect(first.config_fingerprint.length).toBe(64);
+      expect(typeof first.drift_flag).toBe('boolean');
+    });
+
+    it('respects limit param', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/export.json?limit=2')
+        .expect(200);
+
+      expect(res.body.runs.length).toBe(2);
+    });
+
+    it('returns empty runs array when no data', async () => {
+      await bootApp({ mp: [], mm: [], npu: [] });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/export.json')
+        .expect(200);
+
+      expect(res.body.total).toBe(0);
+      expect(res.body.runs).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // New fields: elapsed_seconds, failure_reason, config_fingerprint, drift_flag
+  // -------------------------------------------------------------------
+
+  describe('new ComparisonRunRow fields', () => {
+    it('failure_reason is populated for ERROR runs', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=npu')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      const atom = body.runs.find(
+        (r: { hardware: { model: string } }) => r.hardware.model === 'Atom+',
+      );
+      expect(atom.failure_reason).toBe('inference server unreachable');
+    });
+
+    it('elapsed_seconds is computed for completed runs with start+end timestamps', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?benchmark=mlperf&hardware=gpu')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      const l40 = body.runs[0];
+      // 10:00 → 10:30 = 1800 seconds
+      expect(l40.elapsed_seconds).toBe(1800);
+    });
+
+    it('drift_flag is false when only one run per (benchmark, model, hardware) group', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      // Fixture has unique hardware per run — no drift expected
+      for (const run of body.runs as Array<{ drift_flag: boolean }>) {
+        expect(run.drift_flag).toBe(false);
+      }
+    });
+
+    it('config_fingerprint is a 64-char hex string', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      for (const run of body.runs as Array<{ config_fingerprint: string }>) {
+        expect(run.config_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+      }
     });
   });
 });

@@ -83,24 +83,45 @@ describe('GpuSweep Calibration (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), GpuSweepModule],
+      imports: [
+        ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }),
+        GpuSweepModule,
+      ],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(sweepRepoMock)
       .overrideProvider(getRepositoryToken(GpuSweepCell))
       .useValue(cellRepoMock)
       .overrideProvider(getRepositoryToken(MpExam))
-      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .useValue({
+        find: jest.fn().mockResolvedValue([]),
+        findOne: jest.fn().mockResolvedValue(null),
+      })
       .overrideProvider(getRepositoryToken(MpExamResult))
-      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .useValue({
+        find: jest.fn().mockResolvedValue([]),
+        findOne: jest.fn().mockResolvedValue(null),
+      })
       .overrideProvider(getRepositoryToken(MmExam))
-      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .useValue({
+        find: jest.fn().mockResolvedValue([]),
+        findOne: jest.fn().mockResolvedValue(null),
+      })
       .overrideProvider(getRepositoryToken(MmExamResult))
-      .useValue({ find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null) })
+      .useValue({
+        find: jest.fn().mockResolvedValue([]),
+        findOne: jest.fn().mockResolvedValue(null),
+      })
       .overrideProvider(MpExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .overrideProvider(MmExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .compile();
 
     app = moduleFixture.createNestApplication();

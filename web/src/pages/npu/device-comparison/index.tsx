@@ -5,7 +5,6 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -28,6 +27,7 @@ import { ArrowBack } from '@mui/icons-material';
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/DeviceDashboardHeader';
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
 import { ComparisonCandidatePicker } from '@/components/ComparisonCandidatePicker';
+import { ComparisonRunTable } from '@/components/ComparisonRunTable';
 import { ComparisonApi } from '@/api/domains/comparison';
 import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate } from '@/api/domains/comparison';
 
@@ -45,21 +45,14 @@ const NpuDeviceComparisonPage = () => {
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
 
-  const {
-    data,
-    isLoading,
-    error,
-    refetch
-  } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['comparison', 'list', 'all'],
     queryFn: () => ComparisonApi.list({ hardware: 'all' }),
     refetchInterval: 30_000
   });
 
   const runs = data?.runs ?? [];
-
-  const diagnosticReason: ComparisonDiagnosticReason =
-    data?.diagnostic?.reason ?? 'no_runs_exist';
+  const diagnosticReason: ComparisonDiagnosticReason = data?.diagnostic?.reason ?? 'no_runs_exist';
 
   const handleSelectA = (run: ComparisonRunRow) => {
     setSelectedA(run);
@@ -103,12 +96,6 @@ const NpuDeviceComparisonPage = () => {
         </Alert>
       )}
 
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          <CircularProgress />
-        </Box>
-      )}
-
       {isEmpty && (
         <ComparisonDiagnosticPanel
           reason={diagnosticReason}
@@ -121,81 +108,46 @@ const NpuDeviceComparisonPage = () => {
         />
       )}
 
-      {!isLoading && !error && runs.length > 0 && (
-        <>
-          {selectedA && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <Button
-                size="small"
-                startIcon={<ArrowBack />}
-                onClick={() => { setSelectedA(null); setSelectedB(null); setPickerOpen(false); }}
-              >
-                Change Run A
-              </Button>
-              <Typography variant="body2" color="text.secondary">
-                Run A: <strong>#{selectedA.id} {selectedA.name}</strong>
-              </Typography>
-              {selectedB && (
-                <Typography variant="body2" color="text.secondary">
-                  &nbsp;vs Run B: <strong>#{selectedB.id} {selectedB.name}</strong>
-                </Typography>
-              )}
-              {compareLoading && <CircularProgress size={16} sx={{ ml: 1 }} />}
-            </Box>
+      {selectedA && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Button
+            size="small"
+            startIcon={<ArrowBack />}
+            onClick={() => { setSelectedA(null); setSelectedB(null); setPickerOpen(false); }}
+          >
+            Change Run A
+          </Button>
+          <Typography variant="body2" color="text.secondary">
+            Run A: <strong>#{selectedA.id} {selectedA.name}</strong>
+          </Typography>
+          {selectedB && (
+            <Typography variant="body2" color="text.secondary">
+              &nbsp;vs Run B: <strong>#{selectedB.id} {selectedB.name}</strong>
+            </Typography>
           )}
-
-          <TableContainer component={Paper} sx={{ maxHeight: 520 }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell>ID</TableCell>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Hardware</TableCell>
-                  <TableCell>Benchmark</TableCell>
-                  <TableCell>Date</TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {runs.map((run) => {
-                  const isSelected = selectedA?.id === run.id;
-                  return (
-                    <TableRow
-                      key={run.id}
-                      hover
-                      selected={isSelected}
-                      onClick={() => handleSelectA(run)}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell>{run.id}</TableCell>
-                      <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {run.name}
-                      </TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={0.5}>
-                          <Chip label={run.hardware.type.toUpperCase()} size="small" />
-                          <Chip label={run.hardware.model} size="small" variant="outlined" />
-                        </Stack>
-                      </TableCell>
-                      <TableCell>
-                        <Chip label={run.benchmark.toUpperCase()} size="small" variant="outlined" />
-                      </TableCell>
-                      <TableCell>
-                        {run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}
-                      </TableCell>
-                      <TableCell>
-                        <Button size="small" variant={isSelected ? 'contained' : 'outlined'}>
-                          {isSelected ? 'Selected' : 'Pick'}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </>
+          {compareLoading && <CircularProgress size={16} sx={{ ml: 1 }} />}
+        </Box>
       )}
+
+      <ComparisonRunTable
+        runs={runs}
+        isLoading={isLoading}
+        onSelectRun={handleSelectA}
+        selectedId={selectedA?.id}
+        showBenchmark
+        showVendor
+        exportParams={{ hardware: 'all' }}
+        renderRowAction={(run) => (
+          <Button
+            size="small"
+            variant={selectedA?.id === run.id ? 'contained' : 'outlined'}
+            onClick={(e) => { e.stopPropagation(); handleSelectA(run); }}
+          >
+            {selectedA?.id === run.id ? 'Selected' : 'Pick'}
+          </Button>
+        )}
+        onClearFilters={() => refetch()}
+      />
 
       <Drawer
         anchor="right"

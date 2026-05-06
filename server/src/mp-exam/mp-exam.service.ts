@@ -217,6 +217,7 @@ export class MpExamService implements OnModuleInit {
         repeatCount: data.retry_num,
         testScenario: data.scenario as TestScenarioEnum,
         mode: data.mode as MpExamModeEnum,
+        exam: data,
       });
     }
 
@@ -339,6 +340,7 @@ export class MpExamService implements OnModuleInit {
         repeatCount: exam.retry_num,
         testScenario: exam.scenario as TestScenarioEnum,
         mode: exam.mode as MpExamModeEnum,
+        exam,
       });
     }
 

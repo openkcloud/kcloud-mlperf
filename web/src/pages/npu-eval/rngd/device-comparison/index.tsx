@@ -2,13 +2,28 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead,
-  TableRow, Typography, useTheme
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Paper,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+  useTheme
 } from '@mui/material';
 
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/DeviceDashboardHeader';
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
+import { ComparisonRunTable } from '@/components/ComparisonRunTable';
 import { ComparisonApi } from '@/api/domains/comparison';
 import type { ComparisonRunRow, ComparisonDiagnosticReason } from '@/api/domains/comparison';
 
@@ -70,12 +85,6 @@ const RngdDeviceComparisonPage = () => {
         <Alert severity="error" sx={{ mb: 2 }}>Failed to load exam data. Please refresh and try again.</Alert>
       )}
 
-      {isLoading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          <CircularProgress />
-        </Box>
-      )}
-
       {isEmpty && (
         <ComparisonDiagnosticPanel
           reason={diagnosticReason}
@@ -88,7 +97,7 @@ const RngdDeviceComparisonPage = () => {
         />
       )}
 
-      {!isLoading && !error && runs.length > 0 && (
+      {!isEmpty && (
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
             <Typography variant="body2" color="text.secondary">
@@ -108,88 +117,79 @@ const RngdDeviceComparisonPage = () => {
             </Button>
           </Box>
 
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
-            <Paper sx={{ flex: 1, p: 2, overflow: 'auto', maxHeight: 520 }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'flex-start' }}>
+            <Box sx={{ flex: 1, width: '100%' }}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                 FuriosaAI RNGD Runs
               </Typography>
-              {rngdRuns.length === 0 ? (
+              {rngdRuns.length === 0 && !isLoading ? (
                 <ComparisonDiagnosticPanel
                   reason="hardware_not_ready"
                   message="No completed RNGD runs found."
                   onAction={() => navigate('/npu-eval/rngd')}
                 />
               ) : (
-                <TableContainer>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ID</TableCell>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Hardware</TableCell>
-                        <TableCell>Benchmark</TableCell>
-                        <TableCell>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {rngdRuns.map((run) => {
-                        const selected = selectedRngd?.id === run.id;
-                        return (
-                          <TableRow key={run.id} hover selected={selected} onClick={() => setSelectedRngd(selected ? null : run)} sx={{ cursor: 'pointer' }}>
-                            <TableCell>{run.id}</TableCell>
-                            <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{run.name}</TableCell>
-                            <TableCell><Chip label={run.hardware.model} size="small" variant="outlined" /></TableCell>
-                            <TableCell><Chip label={run.benchmark.toUpperCase()} size="small" variant="outlined" /></TableCell>
-                            <TableCell>{run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <ComparisonRunTable
+                  runs={rngdRuns}
+                  isLoading={isLoading}
+                  onSelectRun={(run) => setSelectedRngd(prev => prev?.id === run.id ? null : run)}
+                  selectedId={selectedRngd?.id}
+                  showBenchmark
+                  showVendor={false}
+                  exportParams={{ hardware: 'npu' }}
+                  renderRowAction={(run) => (
+                    <Button
+                      size="small"
+                      variant={selectedRngd?.id === run.id ? 'contained' : 'outlined'}
+                      color="warning"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedRngd(prev => prev?.id === run.id ? null : run);
+                      }}
+                    >
+                      {selectedRngd?.id === run.id ? 'Selected' : 'Pick'}
+                    </Button>
+                  )}
+                  onClearFilters={() => refetch()}
+                />
               )}
-            </Paper>
+            </Box>
 
-            <Paper sx={{ flex: 1, p: 2, overflow: 'auto', maxHeight: 520 }}>
+            <Box sx={{ flex: 1, width: '100%' }}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                 MLPerf GPU Runs
               </Typography>
-              {gpuRuns.length === 0 ? (
+              {gpuRuns.length === 0 && !isLoading ? (
                 <ComparisonDiagnosticPanel
                   reason="hardware_not_ready"
                   message="No completed MLPerf GPU runs found."
                   onAction={() => navigate('/ml-perf')}
                 />
               ) : (
-                <TableContainer>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ID</TableCell>
-                        <TableCell>Name</TableCell>
-                        <TableCell>Hardware</TableCell>
-                        <TableCell>TPS</TableCell>
-                        <TableCell>Date</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {gpuRuns.map((run) => {
-                        const selected = selectedGpu?.id === run.id;
-                        return (
-                          <TableRow key={run.id} hover selected={selected} onClick={() => setSelectedGpu(selected ? null : run)} sx={{ cursor: 'pointer' }}>
-                            <TableCell>{run.id}</TableCell>
-                            <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{run.name}</TableCell>
-                            <TableCell><Chip label={run.hardware.model} size="small" variant="outlined" /></TableCell>
-                            <TableCell>{run.metrics.tps?.toFixed(1) ?? '—'}</TableCell>
-                            <TableCell>{run.completed_at ? new Date(run.completed_at).toLocaleDateString() : '—'}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <ComparisonRunTable
+                  runs={gpuRuns}
+                  isLoading={isLoading}
+                  onSelectRun={(run) => setSelectedGpu(prev => prev?.id === run.id ? null : run)}
+                  selectedId={selectedGpu?.id}
+                  showBenchmark
+                  showVendor
+                  exportParams={{ hardware: 'gpu' }}
+                  renderRowAction={(run) => (
+                    <Button
+                      size="small"
+                      variant={selectedGpu?.id === run.id ? 'contained' : 'outlined'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedGpu(prev => prev?.id === run.id ? null : run);
+                      }}
+                    >
+                      {selectedGpu?.id === run.id ? 'Selected' : 'Pick'}
+                    </Button>
+                  )}
+                  onClearFilters={() => refetch()}
+                />
               )}
-            </Paper>
+            </Box>
           </Stack>
         </>
       )}
@@ -203,11 +203,15 @@ const RngdDeviceComparisonPage = () => {
               <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
                 <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: '3px solid #F97316' }}>
                   <Typography variant="subtitle2" fontWeight={700}>RNGD: {selectedRngd?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedRngd?.hardware.model} (FuriosaAI)</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedRngd?.hardware.model} (FuriosaAI)
+                  </Typography>
                 </Paper>
                 <Paper variant="outlined" sx={{ flex: 1, p: 2, borderTop: `3px solid ${theme.palette.secondary.main}` }}>
                   <Typography variant="subtitle2" fontWeight={700}>GPU: {selectedGpu?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{selectedGpu?.hardware.model}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedGpu?.hardware.model}
+                  </Typography>
                 </Paper>
               </Stack>
               <TableContainer component={Paper} variant="outlined">

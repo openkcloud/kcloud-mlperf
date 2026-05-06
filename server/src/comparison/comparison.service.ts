@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { canonicalize, CanonicalRunConfig } from './config-fingerprint';
 import { MpExam } from '../entities/mp-exam.entity';
 import { MpExamResult } from '../entities/mp-exam-result.entity';
 import { MmExam } from '../entities/mm-exam.entity';
@@ -25,11 +26,31 @@ export type HardwareFilter = 'gpu' | 'npu' | 'all';
 export type HardwareType = 'gpu' | 'npu';
 export type HardwareVendor = 'nvidia' | 'furiosa' | 'rebellions' | 'unknown';
 
+/** Canonical hardware label shown in the UI. */
+export type CanonicalHardwareLabel = 'L40' | 'A40' | 'RNGD' | 'Atom+' | string;
+
 export interface NormalizedHardware {
   type: HardwareType;
   vendor: HardwareVendor;
   model: string;
+  /** Canonical label normalised from gpu_type / npu_type */
+  canonical: CanonicalHardwareLabel;
   node: string | null;
+}
+
+/** Flat row shape consumed by the comparison frontend table and export endpoints. */
+export interface ComparisonRunRow {
+  id: number;
+  vendor: HardwareVendor;
+  hardware: CanonicalHardwareLabel;
+  benchmark: 'mlperf-inference' | 'mmlu-pro';
+  model: string;
+  tt100t_seconds: number | null;
+  elapsed_seconds: number | null;
+  status: 'completed' | 'failed' | 'running' | 'pending';
+  failure_reason: string | null;
+  config_fingerprint: string;
+  drift_flag: boolean;
 }
 
 export interface NormalizedMetrics {
@@ -48,6 +69,7 @@ export interface NormalizedRun {
   status: StatusEnum;
   started_at: string | null;
   completed_at: string | null;
+  elapsed_seconds: number | null;
   metrics: NormalizedMetrics;
   artifacts: string[];
   // Settings used for candidate comparability matching.
@@ -58,6 +80,9 @@ export interface NormalizedRun {
   data_number: number | null;
   max_output_tokens: number | null;
   source_table: 'mp_exam' | 'mm_exam' | 'npu_exam';
+  failure_reason: string | null;
+  config_fingerprint: string;
+  drift_flag: boolean;
 }
 
 export type EmptyReason =
@@ -155,6 +180,7 @@ export class ComparisonService {
     benchmark: BenchmarkFilter;
     hardware: HardwareFilter;
     node: string | null;
+    limit?: number;
   }): Promise<ListResponse | DiagnosticEnvelope> {
     let mpExams: MpExam[] = [];
     let mmExams: MmExam[] = [];
@@ -185,6 +211,8 @@ export class ComparisonService {
       ...mmExams.map((e) => this.normalizeMmExam(e)),
       ...npuExams.map((e) => this.normalizeNpuExam(e)),
     ];
+
+    this.applyDriftFlags(allNormalized);
 
     const totalRuns = allNormalized.length;
 
@@ -233,11 +261,92 @@ export class ComparisonService {
       return bTs - aTs;
     });
 
+    const runs =
+      filters.limit && filters.limit > 0
+        ? filtered.slice(0, filters.limit)
+        : filtered;
+
     return {
       empty: false,
       total: filtered.length,
-      runs: filtered,
+      runs,
     };
+  }
+
+  // ---------------------------------------------------------------------
+  // Export helpers — used by GET /api/comparison/export.csv|json
+  // ---------------------------------------------------------------------
+
+  async exportRows(filters: {
+    benchmark: BenchmarkFilter;
+    hardware: HardwareFilter;
+    node: string | null;
+    limit?: number;
+  }): Promise<ComparisonRunRow[]> {
+    const result = await this.list(filters);
+    if (result.empty) return [];
+    return result.runs.map((r) => this.toRunRow(r));
+  }
+
+  toRunRow(run: NormalizedRun): ComparisonRunRow {
+    return {
+      id: run.id,
+      vendor: run.hardware.vendor,
+      hardware: run.hardware.canonical,
+      benchmark: run.benchmark === 'mlperf' ? 'mlperf-inference' : 'mmlu-pro',
+      model: run.model,
+      tt100t_seconds: run.metrics.tt100t_seconds,
+      elapsed_seconds: run.elapsed_seconds,
+      status: this.mapRunStatus(run.status),
+      failure_reason: run.failure_reason,
+      config_fingerprint: run.config_fingerprint,
+      drift_flag: run.drift_flag,
+    };
+  }
+
+  rowsToCsv(rows: ComparisonRunRow[]): string {
+    const headers: (keyof ComparisonRunRow)[] = [
+      'id',
+      'vendor',
+      'hardware',
+      'benchmark',
+      'model',
+      'tt100t_seconds',
+      'elapsed_seconds',
+      'status',
+      'failure_reason',
+      'config_fingerprint',
+      'drift_flag',
+    ];
+    const escape = (v: unknown): string => {
+      if (v == null) return '';
+      const s = String(v);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [
+      headers.join(','),
+      ...rows.map((r) => headers.map((h) => escape(r[h])).join(',')),
+    ];
+    return lines.join('\n');
+  }
+
+  private mapRunStatus(
+    status: StatusEnum,
+  ): 'completed' | 'failed' | 'running' | 'pending' {
+    switch (status) {
+      case StatusEnum.COMPLETED:
+        return 'completed';
+      case StatusEnum.ERROR:
+        return 'failed';
+      case StatusEnum.RUNNING:
+      case StatusEnum.PREPARING:
+        return 'running';
+      default:
+        return 'pending';
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -387,6 +496,18 @@ export class ComparisonService {
     const tps = latest?.result_perf_tps ?? null;
     const sps = latest?.result_perf_sps ?? null;
 
+    const cfg: CanonicalRunConfig = {
+      benchmark: 'mlperf',
+      model: exam.model,
+      dataset: exam.dataset ?? '',
+      precision: exam.precision ?? '',
+      batch_size: exam.batch_size ?? 0,
+      data_number: exam.data_number ?? 0,
+      decoding: { temperature: 0 },
+      scenario: exam.scenario ?? null,
+      max_output_tokens: null,
+    };
+
     return {
       id: exam.id,
       benchmark: 'mlperf',
@@ -396,6 +517,7 @@ export class ComparisonService {
       status: this.coerceStatus(exam.status),
       started_at: exam.started_at ?? null,
       completed_at: exam.end_at ?? null,
+      elapsed_seconds: this.calcElapsed(exam.started_at, exam.end_at),
       metrics: {
         tt100t_seconds: tt100t,
         tps,
@@ -410,6 +532,9 @@ export class ComparisonService {
       data_number: exam.data_number ?? null,
       max_output_tokens: null,
       source_table: 'mp_exam',
+      failure_reason: exam.error_log || null,
+      config_fingerprint: canonicalize(cfg),
+      drift_flag: false,
     };
   }
 
@@ -418,6 +543,18 @@ export class ComparisonService {
 
     const accuracy =
       latest?.result_acc_total != null ? latest.result_acc_total : null;
+
+    const cfg: CanonicalRunConfig = {
+      benchmark: 'mmlu',
+      model: exam.model,
+      dataset: exam.dataset ?? '',
+      precision: exam.precision ?? '',
+      batch_size: exam.batch_size ?? 0,
+      data_number: exam.data_number ?? 0,
+      decoding: { temperature: 0 },
+      scenario: null,
+      max_output_tokens: null,
+    };
 
     return {
       id: exam.id,
@@ -428,6 +565,7 @@ export class ComparisonService {
       status: this.coerceStatus(exam.status),
       started_at: exam.started_at ?? null,
       completed_at: exam.end_at ?? null,
+      elapsed_seconds: this.calcElapsed(exam.started_at, exam.end_at),
       metrics: {
         tt100t_seconds: null,
         tps: null,
@@ -442,12 +580,27 @@ export class ComparisonService {
       data_number: exam.data_number ?? null,
       max_output_tokens: null,
       source_table: 'mm_exam',
+      failure_reason: exam.error_log || null,
+      config_fingerprint: canonicalize(cfg),
+      drift_flag: false,
     };
   }
 
   private normalizeNpuExam(exam: NpuExam): NormalizedRun {
     const latest = this.latestResult(exam.results || []);
     const benchmark = exam.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+
+    const cfg: CanonicalRunConfig = {
+      benchmark,
+      model: exam.model,
+      dataset: exam.dataset ?? '',
+      precision: exam.precision ?? '',
+      batch_size: exam.batch_size ?? 0,
+      data_number: exam.data_number ?? 0,
+      decoding: { temperature: 0 },
+      scenario: null,
+      max_output_tokens: exam.max_output_tokens ?? null,
+    };
 
     return {
       id: exam.id,
@@ -458,6 +611,7 @@ export class ComparisonService {
       status: this.coerceStatus(exam.status),
       started_at: exam.started_at ?? null,
       completed_at: exam.end_at ?? null,
+      elapsed_seconds: this.calcElapsed(exam.started_at, exam.end_at),
       metrics: {
         tt100t_seconds: latest?.result_tt100t ?? null,
         tps: latest?.result_tps ?? null,
@@ -472,6 +626,9 @@ export class ComparisonService {
       data_number: exam.data_number ?? null,
       max_output_tokens: exam.max_output_tokens ?? null,
       source_table: 'npu_exam',
+      failure_reason: exam.error_log || null,
+      config_fingerprint: canonicalize(cfg),
+      drift_flag: false,
     };
   }
 
@@ -482,6 +639,45 @@ export class ComparisonService {
     return results.reduce((acc, cur) =>
       cur.result_number > acc.result_number ? cur : acc,
     );
+  }
+
+  private canonicalizeHardwareLabel(raw: string): CanonicalHardwareLabel {
+    const upper = raw.toUpperCase().trim();
+    if (upper.includes('L40')) return 'L40';
+    if (upper.includes('A40')) return 'A40';
+    if (upper.includes('RNGD')) return 'RNGD';
+    if (upper.includes('ATOM+') || upper === 'ATOM+') return 'Atom+';
+    if (upper.includes('ATOM')) return 'Atom+';
+    return raw.trim() || 'Unknown';
+  }
+
+  private calcElapsed(
+    startedAt: string | null | undefined,
+    endAt: string | null | undefined,
+  ): number | null {
+    if (!startedAt || !endAt) return null;
+    const start = Date.parse(startedAt);
+    const end = Date.parse(endAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return null;
+    }
+    return Math.round((end - start) / 1000);
+  }
+
+  private applyDriftFlags(runs: NormalizedRun[]): void {
+    const groups = new Map<string, NormalizedRun[]>();
+    for (const run of runs) {
+      const key = `${run.benchmark}|${run.model.trim().toLowerCase()}|${run.hardware.canonical}`;
+      const grp = groups.get(key);
+      if (grp) grp.push(run);
+      else groups.set(key, [run]);
+    }
+    for (const grp of groups.values()) {
+      const fingerprints = new Set(grp.map((r) => r.config_fingerprint));
+      if (fingerprints.size > 1) {
+        for (const r of grp) r.drift_flag = true;
+      }
+    }
   }
 
   // Hardware classification:
@@ -501,6 +697,7 @@ export class ComparisonService {
         type: 'npu',
         vendor,
         model: model || 'Unknown',
+        canonical: this.canonicalizeHardwareLabel(model),
         node,
       };
     }
@@ -510,6 +707,7 @@ export class ComparisonService {
       type: 'gpu',
       vendor: model ? 'nvidia' : 'unknown',
       model: model || 'Unknown',
+      canonical: this.canonicalizeHardwareLabel(model),
       node,
     };
   }
@@ -575,7 +773,11 @@ export class ComparisonService {
 
   async findCandidates(
     runId: number,
-    opts?: { benchmark?: BenchmarkFilter; hardware?: HardwareFilter },
+    opts?: {
+      benchmark?: BenchmarkFilter;
+      hardware?: HardwareFilter;
+      tt100tComparable?: boolean;
+    },
   ): Promise<CandidatesResponse | CandidatesEmptyEnvelope> {
     let mpExams: MpExam[] = [];
     let mmExams: MmExam[] = [];
@@ -629,14 +831,10 @@ export class ComparisonService {
 
     const benchmarkFilter = opts?.benchmark ?? 'all';
     const hardwareFilter = opts?.hardware ?? 'all';
+    // tt100tComparable defaults true: cross-model TT100T comparison is the primary
+    // cross-vendor use case (Atom+ vs RNGD vs GPU). Callers can opt out via false.
+    const allowTt100tCrossModel = opts?.tt100tComparable !== false;
 
-    // Apples-to-apples: same model is preferred (strict). However the user's
-    // primary use case is cross-vendor TT100T comparison (Atom+ vs RNGD vs GPU)
-    // where exact model rarely matches across hardware. Relax to "same model
-    // OR both have a TT100T number we can compare directly". classifyComparability
-    // assigns a lower comparability_score when models differ, so cross-model
-    // candidates fall into the 'related' bucket — visible to the user, not
-    // promoted to strict.
     const sourceHasTt100t =
       source.metrics.tt100t_seconds !== null &&
       source.metrics.tt100t_seconds !== undefined;
@@ -644,13 +842,7 @@ export class ComparisonService {
       if (r.id === source.id && r.source_table === source.source_table) {
         return false;
       }
-      // Drop cross-benchmark only when the user explicitly filtered to one.
-      // Otherwise, allow tt100t-based cross-benchmark (Atom+ tt100t vs MLPerf
-      // perf runs) — the user wants TT100T apples-to-apples even across families.
-      if (
-        benchmarkFilter !== 'all' &&
-        r.benchmark !== benchmarkFilter
-      ) {
+      if (benchmarkFilter !== 'all' && r.benchmark !== benchmarkFilter) {
         return false;
       }
       if (hardwareFilter !== 'all' && r.hardware.type !== hardwareFilter) {
@@ -658,16 +850,15 @@ export class ComparisonService {
       }
       const sameModel =
         this.normalizeModel(r.model) === this.normalizeModel(source.model);
-      const tt100tComparable =
-        sourceHasTt100t &&
+      const candidateHasTt100t =
         r.metrics.tt100t_seconds !== null &&
         r.metrics.tt100t_seconds !== undefined;
       const sameBenchmark = r.benchmark === source.benchmark;
-      // Keep if same model+benchmark (strict path), same model (cross-benchmark),
-      // or different model but same tt100t metric (cross-class).
       if (sameModel && sameBenchmark) return true;
       if (sameModel) return true;
-      if (tt100tComparable) return true;
+      // Cross-model TT100T: include when both have tt100t and caller hasn't opted out.
+      if (allowTt100tCrossModel && sourceHasTt100t && candidateHasTt100t)
+        return true;
       return false;
     });
 

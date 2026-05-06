@@ -33,6 +33,9 @@ export type ComparisonRunRow = {
   completed_at: string | null;
   metrics: ComparisonMetrics;
   artifacts: string[];
+  drift_flag?: boolean;
+  drift_fields?: string[];
+  failure_reason?: string | null;
 };
 
 export type ComparisonListParams = {
@@ -130,6 +133,24 @@ export const CandidatesApi = {
   }
 } as const;
 
+// Flat export shape from W6 backend (export.csv / export.json endpoints).
+// The list endpoint still returns ComparisonRunRow (nested shape).
+export type HardwareVendor = 'nvidia' | 'furiosa' | 'rebellions' | 'unknown';
+
+export type FlatComparisonRunRow = {
+  id: number;
+  vendor: HardwareVendor;
+  hardware: string;
+  benchmark: 'mlperf-inference' | 'mmlu-pro' | string;
+  model: string;
+  tt100t_seconds: number | null;
+  elapsed_seconds: number | null;
+  status: 'completed' | 'failed' | 'running' | 'pending';
+  failure_reason: string | null;
+  config_fingerprint: string;
+  drift_flag: boolean;
+};
+
 // ----------------------------------------------------------------------
 
 export const ComparisonApi = {
@@ -156,5 +177,14 @@ export const ComparisonApi = {
       params
     });
     return data;
+  },
+
+  exportUrl: (params?: ComparisonListParams & { format?: 'csv' | 'json'; limit?: number }): string => {
+    const { format = 'csv', ...rest } = params ?? {};
+    const base = `/api/comparison/export.${format}`;
+    const qs = new URLSearchParams(
+      Object.entries(rest).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])
+    ).toString();
+    return qs ? `${base}?${qs}` : base;
   }
 } as const;

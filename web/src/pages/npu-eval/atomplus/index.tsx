@@ -1,13 +1,17 @@
-import { Box, Paper, Typography, Alert, AlertTitle, Chip, Divider, Link } from '@mui/material';
-import { CheckCircle as CheckCircleIcon, Memory as MemoryIcon, Extension as ExtensionIcon, Science as ScienceIcon, Storage as StorageIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, Alert, AlertTitle, Chip, Divider, Link, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, CircularProgress, Button } from '@mui/material';
+import { CheckCircle as CheckCircleIcon, Memory as MemoryIcon, Extension as ExtensionIcon, Science as ScienceIcon, Storage as StorageIcon, CompareArrows as CompareIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 
 import { DevicesApi } from '@/api/domains/devices.domains';
+import { ComparisonApi } from '@/api/domains/comparison';
 import { DevicesQueryKeys } from '@/contexts/QueryContext/query.keys';
+import { Tt100tBadge } from '@/components/Tt100tBadge';
+import type { ComparisonRunRow } from '@/api/domains/comparison';
 
 // ----------------------------------------------------------------------
 
-// Atom+ readiness milestones (RUN_ID 20260429-071649-46d82f8 — see reports/atomplus_cluster_gap_fix_report.md).
 const READINESS_ITEMS = [
   {
     Icon: ExtensionIcon,
@@ -31,6 +35,19 @@ const READINESS_ITEMS = [
 
 // ----------------------------------------------------------------------
 
+const statusColor = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'completed': return 'success';
+    case 'running': return 'info';
+    case 'pending': return 'warning';
+    case 'error': return 'error';
+    case 'stopped': return 'warning';
+    default: return 'default';
+  }
+};
+
+// ----------------------------------------------------------------------
+
 const HardwareIdentityCard = () => {
   const { data: deviceData } = useQuery({
     queryKey: DevicesQueryKeys.list(),
@@ -44,77 +61,29 @@ const HardwareIdentityCard = () => {
   return (
     <Paper
       sx={{
-        p: 3,
+        p: 2,
         mb: 3,
-        border: '1px solid rgba(234,179,8,0.3)',
-        background: 'linear-gradient(135deg, rgba(234,179,8,0.04) 0%, rgba(251,191,36,0.02) 100%)',
+        border: '1px solid rgba(234,179,8,0.25)',
+        bgcolor: 'rgba(234,179,8,0.03)',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
-        <MemoryIcon sx={{ color: '#CA8A04', fontSize: 28 }} />
-        <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ color: '#0F172A', lineHeight: 1.2 }}>
-            Hardware Identity
-          </Typography>
-          <Typography variant="caption" sx={{ color: '#64748B' }}>
-            Physical device verified via rbln-smi on node5
-          </Typography>
-        </Box>
-        <Box sx={{ ml: 'auto' }}>
-          <Chip
-            label="Hardware Present"
-            size="small"
-            sx={{
-              bgcolor: 'rgba(22,163,74,0.1)',
-              color: '#15803D',
-              fontWeight: 600,
-              border: '1px solid rgba(22,163,74,0.25)',
-            }}
-          />
-        </Box>
-      </Box>
-
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: 2,
-        }}
-      >
-        {[
-          { label: 'Vendor', value: 'Rebellions' },
-          { label: 'Model', value: 'Atom+' },
-          { label: 'Node', value: 'node5' },
-          { label: 'NPU Count', value: '2' },
-          { label: 'Device ID', value: 'RBLN-CA22' },
-          { label: 'Discovery', value: 'rbln-smi' },
-        ].map(({ label, value }) => (
-          <Box key={label}>
-            <Typography variant="caption" sx={{ color: '#94A3B8', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.6rem' }}>
-              {label}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#CA8A04' }}>Hardware Identity</Typography>
+          <Typography variant="body2">Vendor: Rebellions &nbsp;|&nbsp; Model: Atom+ &nbsp;|&nbsp; Node: node5</Typography>
+          {rebellionsDevices.length > 0 && (
+            <Typography variant="caption" color="text.secondary">
+              {rebellionsDevices.length} device{rebellionsDevices.length !== 1 ? 's' : ''} in /api/devices &nbsp;|&nbsp; Device ID: RBLN-CA22 &nbsp;|&nbsp; NPU Count: 2
             </Typography>
-            <Typography variant="body2" fontWeight={700} sx={{ color: '#0F172A', mt: 0.25 }}>
-              {value}
+          )}
+          {rebellionsDevices.length === 0 && (
+            <Typography variant="caption" color="text.secondary">
+              Device ID: RBLN-CA22 &nbsp;|&nbsp; NPU Count: 2 &nbsp;|&nbsp; Discovery: rbln-smi
             </Typography>
-          </Box>
-        ))}
+          )}
+        </Box>
+        <Chip label="Rebellions Atom+" sx={{ bgcolor: 'rgba(234,179,8,0.12)', color: '#CA8A04', fontWeight: 700, border: '1px solid rgba(234,179,8,0.3)' }} />
       </Box>
-
-      {rebellionsDevices.length > 0 && (
-        <>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 600 }}>
-            Live registry ({rebellionsDevices.length} device{rebellionsDevices.length !== 1 ? 's' : ''} returned from /api/devices)
-          </Typography>
-          {rebellionsDevices.map((d: { id?: number | string; vendor?: string; model?: string; node?: string }, i: number) => (
-            <Box key={d.id ?? i} sx={{ mt: 0.75 }}>
-              <Typography variant="caption" sx={{ color: '#475569', fontFamily: 'monospace' }}>
-                vendor={d.vendor} model={d.model} node={d.node}
-              </Typography>
-            </Box>
-          ))}
-        </>
-      )}
     </Paper>
   );
 };
@@ -193,25 +162,127 @@ const ReadinessSummary = () => (
 
 // ----------------------------------------------------------------------
 
-const EmptyRunList = () => (
-  <Paper
-    sx={{
-      p: 4,
-      textAlign: 'center',
-      border: '1px dashed rgba(148,163,184,0.4)',
-      bgcolor: 'rgba(248,250,252,0.8)',
-    }}
-  >
-    <MemoryIcon sx={{ fontSize: 48, color: '#CBD5E1', mb: 1.5 }} />
-    <Typography variant="h6" fontWeight={600} sx={{ color: '#475569', mb: 0.75 }}>
-      No Atom+ runs yet
-    </Typography>
-    <Typography variant="body2" sx={{ color: '#94A3B8', maxWidth: 480, mx: 'auto' }}>
-      Once the Rebellions device plugin is deployed and the benchmark pipeline is operational on node5, completed
-      and in-progress runs will appear here.
-    </Typography>
-  </Paper>
-);
+const RunTable = () => {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['comparison', 'list', 'atomplus-runs'],
+    queryFn: () => ComparisonApi.list({ hardware: 'all' }),
+    refetchInterval: 10_000,
+  });
+
+  const atomRuns: ComparisonRunRow[] = (data?.runs ?? []).filter(
+    (r) => r.hardware.vendor === 'rebellions'
+  );
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+        <CircularProgress size={32} />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mb: 2 }}>Failed to load Atom+ runs. Please refresh.</Alert>
+    );
+  }
+
+  if (atomRuns.length === 0) {
+    return (
+      <Paper sx={{ p: 4, textAlign: 'center', border: '1px dashed rgba(148,163,184,0.4)', bgcolor: 'rgba(248,250,252,0.8)' }}>
+        <MemoryIcon sx={{ fontSize: 48, color: '#CBD5E1', mb: 1.5 }} />
+        <Typography variant="h6" fontWeight={600} sx={{ color: '#475569', mb: 0.75 }}>
+          No Atom+ runs yet
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#94A3B8', maxWidth: 480, mx: 'auto' }}>
+          Completed and in-progress Atom+ benchmark runs will appear here once submitted.
+        </Typography>
+      </Paper>
+    );
+  }
+
+  return (
+    <TableContainer component={Paper}>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>ID</TableCell>
+            <TableCell>Name</TableCell>
+            <TableCell>Benchmark</TableCell>
+            <TableCell>Model</TableCell>
+            <TableCell>Precision</TableCell>
+            <TableCell>NPU</TableCell>
+            <TableCell>Dataset</TableCell>
+            <TableCell>TT100T (&lt;1.1s)</TableCell>
+            <TableCell>TPS</TableCell>
+            <TableCell>Status</TableCell>
+            <TableCell>Completed</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {atomRuns.map((run) => (
+            <TableRow key={run.id} hover>
+              <TableCell>{run.id}</TableCell>
+              <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {run.name}
+              </TableCell>
+              <TableCell>
+                <Chip label={run.benchmark.toUpperCase()} size="small" variant="outlined" />
+              </TableCell>
+              <TableCell sx={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {run.model}
+              </TableCell>
+              <TableCell>{(run as ComparisonRunRow & { precision?: string }).precision ?? '—'}</TableCell>
+              <TableCell>{run.hardware.model}</TableCell>
+              <TableCell>
+                <Chip
+                  label={(run as ComparisonRunRow & { data_number?: number }).data_number === 0 ? 'Full' : ((run as ComparisonRunRow & { data_number?: number }).data_number?.toLocaleString() ?? '—')}
+                  size="small"
+                  variant="outlined"
+                />
+              </TableCell>
+              <TableCell>
+                <Tt100tBadge value={run.metrics.tt100t_seconds ?? null} />
+              </TableCell>
+              <TableCell>
+                {run.metrics.tps != null ? run.metrics.tps.toFixed(1) : '—'}
+              </TableCell>
+              <TableCell>
+                <Chip
+                  label={run.status}
+                  size="small"
+                  color={statusColor(run.status) as any}
+                />
+              </TableCell>
+              <TableCell>
+                {run.completed_at ? dayjs(run.completed_at).format('MM/DD HH:mm') : '—'}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+};
+
+// ----------------------------------------------------------------------
+
+const ComparisonEntryCard = () => {
+  const navigate = useNavigate();
+  return (
+    <Box sx={{ mt: 0.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+      <Button
+        variant="outlined"
+        size="small"
+        sx={{ color: '#CA8A04', borderColor: '#CA8A04' }}
+        onClick={() => navigate('/npu-eval/atomplus/device-comparison')}
+      >
+        <CompareIcon sx={{ mr: 0.5, fontSize: 18 }} />
+        Atom+ vs GPU Comparison
+      </Button>
+    </Box>
+  );
+};
 
 // ----------------------------------------------------------------------
 
@@ -239,12 +310,15 @@ const LiveBenchDashboard = () => (
   </Paper>
 );
 
+// ----------------------------------------------------------------------
+
 const AtomPlusPage = () => (
   <Box>
     <Box sx={{ mb: 3 }}>
       <Typography variant="h5" fontWeight={700} sx={{ color: '#0F172A' }}>
         Rebellions Atom+ NPU Eval
       </Typography>
+      <ComparisonEntryCard />
       <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
         node5 &mdash; RBLN-CA22 &times; 2 &mdash; Ready, scheduler-allocatable, TT100T PASS
       </Typography>
@@ -252,7 +326,7 @@ const AtomPlusPage = () => (
 
     <HardwareIdentityCard />
     <ReadinessSummary />
-    <EmptyRunList />
+    <RunTable />
     <LiveBenchDashboard />
   </Box>
 );

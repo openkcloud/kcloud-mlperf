@@ -92,7 +92,11 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }), RealtimeModule, GpuSweepModule],
+      imports: [
+        ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true }),
+        RealtimeModule,
+        GpuSweepModule,
+      ],
     })
       .overrideProvider(getRepositoryToken(GpuSweep))
       .useValue(makeRepoMock())
@@ -113,9 +117,15 @@ describe('DeviceRegistryService DI wiring regression (e2e)', () => {
       .overrideProvider(DeviceRegistryService)
       .useValue(deviceRegistryMock)
       .overrideProvider(MpExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .overrideProvider(MmExamService)
-      .useValue({ findAll: jest.fn().mockResolvedValue([]), scheduleExam: jest.fn() })
+      .useValue({
+        findAll: jest.fn().mockResolvedValue([]),
+        scheduleExam: jest.fn(),
+      })
       .compile();
 
     app = moduleFixture.createNestApplication();

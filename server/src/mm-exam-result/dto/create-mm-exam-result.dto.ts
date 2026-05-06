@@ -64,4 +64,8 @@ export class CreateMmExamResultDto {
   @IsNumber()
   @Min(0)
   result_acc_history: number;
+
+  @IsNumber()
+  @Min(0)
+  result_acc_math: number;
 }

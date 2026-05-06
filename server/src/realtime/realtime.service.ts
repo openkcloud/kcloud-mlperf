@@ -26,14 +26,40 @@ export interface IGpuSweepService {
 // Wire shape consumed by the frontend
 export type MetricsStatus = 'available' | 'unavailable' | 'pending';
 
+/**
+ * SlotState rules:
+ *  'running'     — job in DB as RUNNING + last metric/heartbeat <2 min ago
+ *  'stale'       — job in DB as RUNNING but no heartbeat for >=2 min (zombie)
+ *  'idle'        — no active job
+ *  'preparing'   — job in DB as PREPARING
+ *  'error'       — job in DB as ERROR
+ *  'pending_join'— node not yet in k8s cluster
+ *  'unavailable' — hardware absent from device registry
+ *  'unknown'     — fallback
+ */
+export type SlotState =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'preparing'
+  | 'completed'
+  | 'failed'
+  | 'stale'
+  | 'unavailable'
+  | 'unknown'
+  | 'error'
+  | 'pending_join';
+
 export interface RealtimeSlot {
   device_type: 'gpu' | 'npu';
   vendor: 'nvidia' | 'furiosa' | 'rebellions';
   model: string;
   node: string;
   slot_id: number;
-  status: 'idle' | 'running' | 'preparing' | 'error' | 'pending_join';
+  status: SlotState;
   pending_join_reason?: string;
+  /** ISO timestamp of the last heartbeat/metric — populated when status is 'stale'. */
+  last_seen: string | null;
   current_exam: {
     id: number;
     kind: 'mp' | 'mm' | 'npu';
@@ -52,6 +78,9 @@ export interface RealtimeSlot {
    */
   metrics_status: MetricsStatus;
 }
+
+/** Jobs with no result heartbeat older than this are considered stale. */
+const STALE_THRESHOLD_MS = 2 * 60 * 1000;
 
 export interface RealtimeSweepProgress {
   completed: number;
@@ -174,6 +203,7 @@ export class RealtimeService implements OnModuleDestroy {
             slot_id: device.slot_id,
             status: 'pending_join' as const,
             pending_join_reason: `Node ${device.node} has not joined the k8s cluster (k8s_node_status=Absent)`,
+            last_seen: null,
             current_exam: null,
             last_known_metric: { tps: null, tt100t_seconds: null },
             last_metric_timestamp: null,
@@ -326,30 +356,13 @@ export class RealtimeService implements OnModuleDestroy {
         node: device.node,
         slot_id: device.slot_id,
         status: 'idle',
+        last_seen: null,
         current_exam: null,
         last_known_metric: { tps: null, tt100t_seconds: null },
         last_metric_timestamp: null,
         metrics_status: 'unavailable',
       };
     }
-
-    const status =
-      activeExam.status === StatusEnum.RUNNING
-        ? ('running' as const)
-        : activeExam.status === StatusEnum.PREPARING
-          ? ('preparing' as const)
-          : activeExam.status === StatusEnum.ERROR
-            ? ('error' as const)
-            : ('idle' as const);
-
-    const elapsedSeconds = activeExam.started_at
-      ? Math.max(
-          0,
-          Math.floor(
-            (Date.now() - new Date(activeExam.started_at).getTime()) / 1000,
-          ),
-        )
-      : 0;
 
     const kind: 'mp' | 'mm' = mpExam ? 'mp' : 'mm';
     const exam_name: string | null = activeExam.name ?? null;
@@ -358,6 +371,7 @@ export class RealtimeService implements OnModuleDestroy {
     let tt100t_seconds: number | null = null;
     let last_metric_timestamp: string | null = null;
     let metrics_status: MetricsStatus = 'unavailable';
+    let last_seen: string | null = null;
 
     if (kind === 'mp') {
       const result = resultByExamId.get(activeExam.id);
@@ -371,16 +385,43 @@ export class RealtimeService implements OnModuleDestroy {
             : typeof created === 'string'
               ? new Date(created).toISOString()
               : null;
+        last_seen = last_metric_timestamp;
         metrics_status =
           tps !== null || tt100t_seconds !== null ? 'available' : 'pending';
       } else {
-        // running/preparing mp-exam with no result rows yet — pending, not faked
         metrics_status = 'pending';
       }
     } else {
       // mm exams have no streaming perf metrics — be explicit about why.
       metrics_status = 'unavailable';
     }
+
+    // TTL check: a RUNNING exam with no result heartbeat in the last
+    // STALE_THRESHOLD_MS is shown as 'stale', not 'running'.
+    let status: SlotState;
+    if (activeExam.status === StatusEnum.RUNNING) {
+      const heartbeatAge = last_seen
+        ? Date.now() - new Date(last_seen).getTime()
+        : activeExam.started_at
+          ? Date.now() - new Date(activeExam.started_at).getTime()
+          : Infinity;
+      status = heartbeatAge >= STALE_THRESHOLD_MS ? 'stale' : 'running';
+    } else if (activeExam.status === StatusEnum.PREPARING) {
+      status = 'preparing';
+    } else if (activeExam.status === StatusEnum.ERROR) {
+      status = 'error';
+    } else {
+      status = 'idle';
+    }
+
+    const elapsedSeconds = activeExam.started_at
+      ? Math.max(
+          0,
+          Math.floor(
+            (Date.now() - new Date(activeExam.started_at).getTime()) / 1000,
+          ),
+        )
+      : 0;
 
     return {
       device_type: 'gpu',
@@ -389,6 +430,7 @@ export class RealtimeService implements OnModuleDestroy {
       node: device.node,
       slot_id: device.slot_id,
       status,
+      last_seen,
       current_exam: {
         id: activeExam.id,
         kind,
@@ -406,7 +448,29 @@ export class RealtimeService implements OnModuleDestroy {
     npuActives: NpuExam[],
     npuResultByExamId: Map<number, NpuExamResult>,
   ): RealtimeSlot {
-    const activeExam = npuActives.find((e) => e.npu_type === device.model);
+    // Normalize model names for matching: strip vendor prefix and lowercase.
+    // e.g. 'RNGD' == 'rngd', 'Atom+' == 'atom+', 'ATOM' == 'atom'.
+    const normNpu = (s: string | null | undefined): string =>
+      (s ?? '').toLowerCase().trim();
+    const deviceModelN = normNpu(device.model);
+
+    // Vendor guard: only match exams whose npu_type resolves to the same vendor.
+    // furiosa.ai → RNGD family; rebellions.ai → ATOM/Atom+ family.
+    const vendorPrefixes: Record<string, string[]> = {
+      furiosa: ['rngd'],
+      rebellions: ['atom'],
+    };
+    const allowedPrefixes = vendorPrefixes[device.vendor] ?? [];
+    const vendorMatch = (npuType: string): boolean => {
+      const n = normNpu(npuType);
+      // Exact match takes priority; then prefix check prevents cross-leakage.
+      if (n === deviceModelN) return true;
+      return allowedPrefixes.some(
+        (p) => n.startsWith(p) && deviceModelN.startsWith(p),
+      );
+    };
+
+    const activeExam = npuActives.find((e) => vendorMatch(e.npu_type));
 
     if (!activeExam) {
       return {
@@ -416,30 +480,13 @@ export class RealtimeService implements OnModuleDestroy {
         node: device.node,
         slot_id: device.slot_id,
         status: 'idle',
+        last_seen: null,
         current_exam: null,
         last_known_metric: { tps: null, tt100t_seconds: null },
         last_metric_timestamp: null,
         metrics_status: 'unavailable',
       };
     }
-
-    const status =
-      activeExam.status === StatusEnum.RUNNING
-        ? ('running' as const)
-        : activeExam.status === StatusEnum.PREPARING
-          ? ('preparing' as const)
-          : activeExam.status === StatusEnum.ERROR
-            ? ('error' as const)
-            : ('idle' as const);
-
-    const elapsedSeconds = activeExam.started_at
-      ? Math.max(
-          0,
-          Math.floor(
-            (Date.now() - new Date(activeExam.started_at).getTime()) / 1000,
-          ),
-        )
-      : 0;
 
     const result = npuResultByExamId.get(activeExam.id);
     const tps = result?.result_tps ?? null;
@@ -456,11 +503,39 @@ export class RealtimeService implements OnModuleDestroy {
             : null;
     }
 
+    const last_seen = last_metric_timestamp;
+
     const metrics_status: MetricsStatus = result
       ? tps !== null || tt100t_seconds !== null
         ? 'available'
         : 'pending'
       : 'pending';
+
+    // TTL check: same rule as GPU — RUNNING with no heartbeat for >=2 min → stale.
+    let status: SlotState;
+    if (activeExam.status === StatusEnum.RUNNING) {
+      const heartbeatAge = last_seen
+        ? Date.now() - new Date(last_seen).getTime()
+        : activeExam.started_at
+          ? Date.now() - new Date(activeExam.started_at).getTime()
+          : Infinity;
+      status = heartbeatAge >= STALE_THRESHOLD_MS ? 'stale' : 'running';
+    } else if (activeExam.status === StatusEnum.PREPARING) {
+      status = 'preparing';
+    } else if (activeExam.status === StatusEnum.ERROR) {
+      status = 'error';
+    } else {
+      status = 'idle';
+    }
+
+    const elapsedSeconds = activeExam.started_at
+      ? Math.max(
+          0,
+          Math.floor(
+            (Date.now() - new Date(activeExam.started_at).getTime()) / 1000,
+          ),
+        )
+      : 0;
 
     return {
       device_type: 'npu',
@@ -469,6 +544,7 @@ export class RealtimeService implements OnModuleDestroy {
       node: device.node,
       slot_id: device.slot_id,
       status,
+      last_seen,
       current_exam: {
         id: activeExam.id,
         kind: 'npu',

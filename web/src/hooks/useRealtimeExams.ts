@@ -8,14 +8,29 @@ import { httpClient } from '@/libs/http-client';
 
 type WireMetricsStatus = 'available' | 'unavailable' | 'pending';
 
+type WireSlotState =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'preparing'
+  | 'completed'
+  | 'failed'
+  | 'stale'
+  | 'unavailable'
+  | 'unknown'
+  | 'error'
+  | 'pending_join';
+
 type WireRealtimeSlot = {
   device_type: 'gpu' | 'npu';
   vendor: 'nvidia' | 'furiosa' | 'rebellions';
   model: string;
   node: string;
   slot_id: number;
-  status: 'idle' | 'running' | 'preparing' | 'error' | 'pending_join';
+  status: WireSlotState;
   pending_join_reason?: string;
+  /** ISO timestamp of last heartbeat; populated when status is 'stale'. */
+  last_seen: string | null;
   current_exam: {
     id: number;
     kind: 'mp' | 'mm' | 'npu';
@@ -66,6 +81,8 @@ export type RealtimeExamSlot = {
   metrics_status: MetricsStatus;
   /** ISO8601 timestamp of the last emitted metric, or null. */
   last_metric_timestamp: string | null;
+  /** ISO8601 timestamp of last heartbeat; set when status is 'Stale'. */
+  last_seen: string | null;
   /** Set when status is 'Pending Join' — explains why the device is offline. */
   pending_join_reason: string | null;
 };
@@ -99,10 +116,16 @@ const EMPTY_SNAPSHOT: RealtimeSnapshot = {
 
 // -----------------------------------------------------------------------
 
-const STATUS_LABEL: Record<WireRealtimeSlot['status'], string> = {
+const STATUS_LABEL: Record<WireSlotState, string> = {
   idle: 'Idle',
+  queued: 'Queued',
   running: 'Running',
   preparing: 'Preparing',
+  completed: 'Completed',
+  failed: 'Failed',
+  stale: 'Stale',
+  unavailable: 'Unavailable',
+  unknown: 'Unknown',
   error: 'Failed',
   pending_join: 'Pending Join',
 };
@@ -134,6 +157,7 @@ export function adaptSnapshot(wire: WireRealtimeSnapshot): RealtimeSnapshot {
       sweep_cell_id: null,
       metrics_status: s.metrics_status,
       last_metric_timestamp: s.last_metric_timestamp,
+      last_seen: s.last_seen ?? null,
       pending_join_reason: s.pending_join_reason ?? null,
     })),
   };

@@ -1,0 +1,8 @@
+run_id,hardware,vendor,benchmark,model,precision,scenario,started_at,completed_at,status,failure_reason,tt100t_seconds,elapsed_seconds,throughput_tokens_per_sec,result_perf_sps,result_acc_total,result_vram_peak,result_gpu_util,config_fingerprint
+mlperf-1-1,NVIDIA-L40,nvidia,mlperf,meta-llama/Llama-3.1-8B-Instruct,FP16,Offline,2026-04-29T07:16:49+09:00,2026-04-29T07:46:49+09:00,completed,,1.588,1800,62.94,1.4,,38.2,0.87,unfingerprinted
+mlperf-2-1,NVIDIA-A40,nvidia,mlperf,meta-llama/Llama-3.1-8B-Instruct,FP16,Offline,2026-04-29T09:00:00+09:00,2026-04-29T09:52:00+09:00,completed,,2.14,3120,46.7,1.03,,35.6,0.91,unfingerprinted
+mlperf-3-1,NVIDIA-A6000,nvidia,mlperf,meta-llama/Llama-3.1-8B-Instruct,FP16,Offline,2026-04-29T10:00:00+09:00,2026-04-29T10:48:00+09:00,completed,,2.01,2880,49.7,1.10,,42.1,0.89,unfingerprinted
+mlperf-npu-rngd-1,RNGD,furiosa,mlperf,meta-llama/Llama-3.1-8B-Instruct,FP8,Offline,2026-04-29T11:00:00+09:00,2026-04-29T11:25:00+09:00,completed,,0.92,1500,87.1,2.3,,,, unfingerprinted
+mmlu-1-1,NVIDIA-L40,nvidia,mmlu,meta-llama/Llama-3.1-8B-Instruct,FP16,,2026-04-29T12:00:00+09:00,2026-04-29T12:45:00+09:00,completed,,,2700,,,0.6429,,, unfingerprinted
+mmlu-2-1,NVIDIA-A40,nvidia,mmlu,meta-llama/Llama-3.1-8B-Instruct,FP16,,2026-04-29T13:00:00+09:00,2026-04-29T13:50:00+09:00,completed,,,3000,,,0.6385,,, unfingerprinted
+mlperf-atomplus-failed-1,Atom+,rebellions,mlperf,meta-llama/Llama-3.1-8B-Instruct,INT8,Offline,2026-04-29T14:00:00+09:00,2026-04-29T14:02:00+09:00,failed,BackoffLimitExceeded: job atomplus-mlperf-1 exceeded backoff limit after 3 retries,,120,,,,,, unfingerprinted

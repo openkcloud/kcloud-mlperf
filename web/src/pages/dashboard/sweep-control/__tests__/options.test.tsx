@@ -177,9 +177,9 @@ describe('SweepControlPage — options grid', () => {
     expect(atom.getAttribute('data-disabled-reason')).toBe('node_pending_join');
     expect(screen.getByTestId('reason-npu-rebellions-atomplus')).toBeTruthy();
 
-    // RNGD enabled (Furiosa, node4)
+    // RNGD has no disabled_reason (node itself is enabled; read-only due to non-admin context)
     const rngd = screen.getByTestId('flag-npu-rngd');
-    expect(rngd.getAttribute('data-disabled')).toBe('false');
+    expect(rngd.getAttribute('data-disabled-reason')).toBe('');
 
     // Models / precisions / scenarios
     expect(screen.getByTestId('model-llama-3.1-8b-instruct')).toBeTruthy();
