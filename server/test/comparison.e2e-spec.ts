@@ -722,4 +722,227 @@ describe('ComparisonController (e2e)', () => {
       }
     });
   });
+
+  // -------------------------------------------------------------------
+  // Task #11 required tests
+  // -------------------------------------------------------------------
+
+  describe('comparable-load: GPU ↔ NPU pair loads with hardware-optimized class', () => {
+    it('GPU L40 mlperf run finds RNGD NPU sibling as hardware-optimized', async () => {
+      const fixtures = bootstrapWith({
+        mp: [
+          makeMpExam({
+            id: 1,
+            gpu_type: 'NVIDIA-L40',
+            precision: 'BF16',
+            dataset: 'cnn_eval.json',
+            model: 'Llama-3.1-8B-Instruct',
+            results: [
+              {
+                id: 10,
+                exam_id: 1,
+                result_number: 1,
+                result_perf_tps: 62.94,
+                result_perf_sps: 1.4,
+                result_tt100t: 1.588,
+              } as MpExamResult,
+            ],
+          }),
+        ],
+        npu: [
+          makeNpuExam({
+            id: 200,
+            npu_type: 'RNGD',
+            precision: 'FP8',
+            benchmark: 'mlperf',
+            dataset: 'CNN-DailyMail',
+            // vendor-prefixed model name — normalizer should strip it
+            model: 'meta-llama/Llama-3.1-8B-Instruct',
+            status: StatusEnum.COMPLETED,
+            end_at: '2026-04-28T12:30:00+09:00',
+            results: [
+              {
+                id: 300,
+                exam_id: 200,
+                result_number: 1,
+                result_tt100t: 0.92,
+                result_tps: 87.1,
+                result_sps: 2.3,
+                result_accuracy: 0,
+              } as NpuExamResult,
+            ],
+          }),
+        ],
+      });
+      await bootApp(fixtures);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/candidates?runId=1')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+      expect(body.source.id).toBe(1);
+      expect(body.totals.hardware_optimized).toBeGreaterThanOrEqual(1);
+      const npu = body.candidates.hardware_optimized.find(
+        (c: { id: number }) => c.id === 200,
+      );
+      expect(npu).toBeDefined();
+      expect(npu.hardware.type).toBe('npu');
+      expect(npu.comparability_class).toBe('hardware-optimized');
+    });
+  });
+
+  describe('non-comparable-filtered: different model is NOT grouped as hardware-optimized', () => {
+    it('NPU run with different model is classified as related, not hardware-optimized', async () => {
+      const fixtures = bootstrapWith({
+        mp: [
+          makeMpExam({
+            id: 1,
+            gpu_type: 'NVIDIA-L40',
+            precision: 'BF16',
+            dataset: 'cnn_eval.json',
+            model: 'Llama-3.1-8B-Instruct',
+            results: [],
+          }),
+        ],
+        npu: [
+          makeNpuExam({
+            id: 200,
+            npu_type: 'RNGD',
+            precision: 'FP8',
+            benchmark: 'mlperf',
+            dataset: 'CNN-DailyMail',
+            model: 'Qwen/Qwen2.5-7B-Instruct',
+            status: StatusEnum.COMPLETED,
+            end_at: '2026-04-28T12:30:00+09:00',
+            results: [
+              {
+                id: 300,
+                exam_id: 200,
+                result_number: 1,
+                result_tt100t: 0.5,
+                result_tps: 100,
+                result_sps: 1,
+                result_accuracy: 0,
+              } as NpuExamResult,
+            ],
+          }),
+        ],
+      });
+      await bootApp(fixtures);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/candidates?runId=1')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      // Different model: should NOT appear in hardware_optimized
+      expect(body.candidates.hardware_optimized).toHaveLength(0);
+    });
+  });
+
+  describe('no-data-with-reason: empty state returns diagnostic message', () => {
+    it('returns reason and message when run has no comparable siblings', async () => {
+      await bootApp({
+        mp: [makeMpExam({ id: 7, model: 'unique-model-xyz', results: [] })],
+        mm: [],
+        npu: [],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/candidates?runId=7')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(true);
+      expect(body.reason).toBe('no_siblings_found');
+      expect(typeof body.message).toBe('string');
+      expect(body.message.length).toBeGreaterThan(0);
+      expect(body.source.run_id).toBe(7);
+      expect(body.totals.siblings_considered).toBe(0);
+    });
+
+    it('returns source_run_not_found with message when runId does not exist', async () => {
+      await bootApp({ mp: [], mm: [], npu: [] });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/candidates?runId=9999')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(true);
+      expect(body.reason).toBe('source_run_not_found');
+      expect(typeof body.message).toBe('string');
+      expect(body.message).toContain('9999');
+    });
+  });
+
+  describe('failed-runs-visible: ERROR runs appear in list with failure details', () => {
+    it('failed NPU run appears in /list with status=ERROR and failure_reason populated', async () => {
+      await bootApp(bootstrapWith());
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/list?hardware=npu')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+
+      const failedRun = body.runs.find(
+        (r: { status: string }) => r.status === StatusEnum.ERROR,
+      );
+      expect(failedRun).toBeDefined();
+      expect(failedRun.failure_reason).toBeTruthy();
+      expect(typeof failedRun.config_fingerprint).toBe('string');
+      expect(failedRun.config_fingerprint.length).toBe(64);
+    });
+
+    it('failed run is still returned as a candidate sibling (users need to see it)', async () => {
+      const fixtures = bootstrapWith({
+        mp: [
+          makeMpExam({
+            id: 1,
+            gpu_type: 'NVIDIA-L40',
+            precision: 'BF16',
+            dataset: 'cnn_eval.json',
+            model: 'Llama-3.1-8B-Instruct',
+            results: [],
+          }),
+        ],
+        npu: [
+          makeNpuExam({
+            id: 200,
+            npu_type: 'RNGD',
+            precision: 'FP8',
+            benchmark: 'mlperf',
+            dataset: 'CNN-DailyMail',
+            model: 'meta-llama/Llama-3.1-8B-Instruct',
+            status: StatusEnum.ERROR,
+            error_log: 'inference timeout',
+            results: [],
+          }),
+        ],
+      });
+      await bootApp(fixtures);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/comparison/candidates?runId=1')
+        .expect(200);
+
+      const body = res.body.data ?? res.body;
+      expect(body.empty).toBe(false);
+      const allCandidates = [
+        ...body.candidates.strict,
+        ...body.candidates.hardware_optimized,
+        ...body.candidates.related,
+      ];
+      const failedCandidate = allCandidates.find(
+        (c: { id: number }) => c.id === 200,
+      );
+      expect(failedCandidate).toBeDefined();
+      expect(failedCandidate.failure_reason).toBe('inference timeout');
+      expect(failedCandidate.status).toBe(StatusEnum.ERROR);
+    });
+  });
 });

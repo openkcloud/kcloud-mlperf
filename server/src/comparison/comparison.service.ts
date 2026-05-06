@@ -850,12 +850,22 @@ export class ComparisonService {
       }
       const sameModel =
         this.normalizeModel(r.model) === this.normalizeModel(source.model);
+      const sameDataset =
+        this.normalizeDataset(r.dataset) ===
+        this.normalizeDataset(source.dataset);
       const candidateHasTt100t =
         r.metrics.tt100t_seconds !== null &&
         r.metrics.tt100t_seconds !== undefined;
       const sameBenchmark = r.benchmark === source.benchmark;
       if (sameModel && sameBenchmark) return true;
       if (sameModel) return true;
+      // Cross-HW same dataset: enables GPU↔NPU hardware-optimized grouping
+      if (
+        sameBenchmark &&
+        sameDataset &&
+        r.hardware.type !== source.hardware.type
+      )
+        return true;
       // Cross-model TT100T: include when both have tt100t and caller hasn't opted out.
       if (allowTt100tCrossModel && sourceHasTt100t && candidateHasTt100t)
         return true;
@@ -953,8 +963,8 @@ export class ComparisonService {
       this.normalizeModel(source.model) ===
       this.normalizeModel(candidate.model);
     const sameDataset =
-      this.normalizeStr(source.dataset) ===
-      this.normalizeStr(candidate.dataset);
+      this.normalizeDataset(source.dataset) ===
+      this.normalizeDataset(candidate.dataset);
     const samePrecision =
       this.normalizeStr(source.precision) ===
       this.normalizeStr(candidate.precision);
@@ -989,12 +999,14 @@ export class ComparisonService {
       sameBenchmark &&
       sameModel &&
       sameDataset &&
-      differentHardwareType &&
-      !samePrecision
+      differentHardwareType
     ) {
       cls = 'hardware-optimized';
+      const precisionNote = samePrecision
+        ? `same precision (${source.precision ?? '∅'})`
+        : `precision differs (${source.precision ?? '∅'} vs ${candidate.precision ?? '∅'})`;
       reasons.push(
-        `same benchmark/model/dataset; precision differs (${source.precision ?? '∅'} vs ${candidate.precision ?? '∅'}) due to ${source.hardware.type.toUpperCase()} vs ${candidate.hardware.type.toUpperCase()} hardware`,
+        `same benchmark/model/dataset; ${precisionNote}; ${source.hardware.type.toUpperCase()} vs ${candidate.hardware.type.toUpperCase()} hardware`,
       );
     } else {
       cls = 'related';
@@ -1060,7 +1072,24 @@ export class ComparisonService {
 
   private normalizeModel(model: string | null | undefined): string {
     if (!model) return '';
-    return model.trim().toLowerCase();
+    // Strip org/vendor prefixes: "meta-llama/Llama-3.1-8B-Instruct" → "llama-3.1-8b-instruct"
+    // Also strip vendor-specific suffixes like "-fp8" added by furiosa-ai.
+    const bare = model.trim().split('/').pop() ?? '';
+    return bare.toLowerCase().replace(/-fp8$/i, '');
+  }
+
+  private normalizeDataset(dataset: string | null | undefined): string {
+    if (!dataset) return '';
+    const s = dataset.trim().toLowerCase();
+    // Canonicalize CNN-DailyMail variants: cnn_eval.json, cnn-dailymail, cnn_dailymail → cnn-dailymail
+    if (
+      s === 'cnn_eval.json' ||
+      s === 'cnn_dailymail' ||
+      s === 'cnn-dailymail'
+    ) {
+      return 'cnn-dailymail';
+    }
+    return s;
   }
 
   private normalizeStr(s: string | null | undefined): string {
