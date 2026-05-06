@@ -1,5 +1,5 @@
 export const mlExamPrecisionList = [
-  // FP8 weights + auto compute. See mlperf fake-data.ts comment.
+  // 'auto' is the dtype path for FP8 weights — see mlperf fake-data.ts.
   { value: 'auto', label: 'FP8 (auto)' },
   { value: 'bfloat16', label: 'bfloat16' },
   { value: 'float16', label: 'float16' },

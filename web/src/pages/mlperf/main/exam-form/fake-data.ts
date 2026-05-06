@@ -1,9 +1,6 @@
-
-
 export const precisionList = [
-  // FP8 weights + auto compute. vLLM rejects literal 'fp8' as a dtype value,
-  // so we send 'auto' which resolves to native FP8 on sm_89 (L40) or Marlin
-  // BF16-fallback on sm_86 (A40). See docs/reports/fp8_compute_precision_explainer.md.
+  // vLLM rejects literal 'fp8' as a dtype; 'auto' resolves to native FP8 on sm_89 (L40)
+  // or Marlin BF16-fallback on sm_86 (A40). See fp8_compute_precision_explainer.md.
   { value: 'auto', label: 'FP8 (auto)' },
   { value: 'bfloat16', label: 'bfloat16' },
   { value: 'float16', label: 'float16' },
@@ -52,7 +49,3 @@ export const cpuCoreList = [
   { value: 56, label: '56 Cores' },
   { value: 64, label: '64 Cores' }
 ];
-
-
-
-// ----------------------------------------------------------------------
