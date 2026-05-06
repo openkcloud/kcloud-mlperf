@@ -176,7 +176,12 @@ export const MpExamForm = memo(
     }));
 
     useEffect(() => {
-      setValue('minDuration', selectedScenario.value === 'offline' ? 600_000 : 120_000);
+      // Demo-friendly defaults: 0 = no min-duration enforcement, exam ends as
+      // soon as data_number samples are processed. For an official MLPerf
+      // submission set this to 600_000 (offline) / 120_000 (server) per
+      // MLCommons rules — but those values cause 10-sample smoke runs to
+      // take 10+ min. The user can still type any value into the input.
+      setValue('minDuration', 0);
     }, [selectedScenario, setValue]);
 
     // Clear dataset when model changes
