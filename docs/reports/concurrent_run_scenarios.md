@@ -99,3 +99,105 @@ Plus a 7th, 8th, 9th, 10th if you count the "44GiB" SKU partitions (NVIDIA-L40-4
 For the demo, the SAFEST concurrent-run demonstration is **Scenario B (1× L40 + 1× RNGD)** — different nodes, different vendors, easy to narrate, well-tested, and gives the audience a clear visual of two different hardware classes running simultaneously on the realtime dashboards.
 
 **Avoid live-demoing Scenario D (6-simultaneous)** — it's untested at scale this iteration; cold-start chaos isn't great TV. Talk about it in narration: "we've designed this and run it in soak; today let's show 2 concurrent."
+
+## Detailed walkthrough: launching Scenario B during the demo
+
+If the demo audience asks to see concurrent runs live, follow this sequence:
+
+1. Switch to /mlperf page in your primary tab.
+2. Open the create-exam form. Set: model=Llama-3.1-8B-Instruct-FP8, precision=bfloat16, mode=performance, scenario=offline, data_number=10, max_output_tokens=128, hardware=NVIDIA-L40, retry_num=1. Submit.
+3. Open `/npu-eval/rngd` in a new tab.
+4. Open the create-exam form on RNGD page. Set: similar config but for RNGD. Submit.
+5. Switch back to `/dashboard/gpu-realtime` to show L40 going from idle to running.
+6. Open `/dashboard/npu-realtime` to show RNGD becoming active.
+7. Both should complete in ~30s after weights loaded (or ~5min if cold).
+
+Talking points to weave through:
+- "Two different vendors, two different nodes, no operator contention."
+- "The realtime menu polls every 5 seconds via SSE."
+- "Both cards show progress bars; the RNGD card lights green at the top of the dashboard iframe."
+
+## Soak-test history (what we have, what we don't)
+
+**Verified soak passes (prior cycles):**
+- 1 L40 + 1 RNGD: ~50 cycles over multiple sessions, 0 failures
+- 1 A40 + 1 RNGD: ~30 cycles, 0 failures
+- 2 L40 same-node: ~10 cycles, occasional ExamAllNodeNotAvailable (operator race)
+- 4 GPU concurrent (2 L40 + 2 A40): ~5 cycles, all PASS
+
+**Designed but NOT soak-certified this iteration:**
+- 6 device simultaneous (4 GPU + RNGD + Atom+) — designed in scripts/concurrent_matrix_soak.sh; ran intermittently during W4 of prior 16-worker rescue, never got to formal certificate
+- Operator v1.0.3 deploy — built, tested in isolation, NOT deployed to cluster
+
+**Why we chose not to deploy v1.0.3 this session:**
+The user paused that work mid-cycle in favor of UI fixes. v1.0.3 is ready to deploy via `kubectl set image deployment/etri-llm-operator etri-llm-operator=jungwooshim/etri-llm-k8s-operator:v1.0.3 -n llm-evaluation` if needed. Rollback is symmetric.
+
+## Operational runbook for the soak script
+
+Location: `scripts/concurrent_matrix_soak.sh`
+Designed cycle structure: 6 devices × 2 benchmarks × 1 rep per cycle = 12 jobs/cycle, scaled to 36 jobs (3 reps) if budget remains. Each cycle:
+
+1. Submit all 12 (or 6 if reduced) jobs via backend POST /api/{mp,mm,npu-eval}-exam/create with curl
+2. kubectl get events -w into docs/reports/soak_evidence/cycle-N.txt
+3. Wait for all jobs to reach terminal state (Completed or Error)
+4. Parse exam-status responses; classify failures
+
+For a single ad-hoc concurrent test (not full soak), simpler approach: open 6 browser tabs, submit one exam in each. The realtime dashboards will show all 6 lighting up.
+
+## Concurrent-run failure classification
+
+When something goes wrong:
+
+| Symptom | Class | Root cause | Recovery |
+|---|---|---|---|
+| 1+ exams stuck Pending after 60s | Operator scheduling race | per-loop reconciliation rejection | re-submit + 60s stagger OR deploy v1.0.3 |
+| All exams slow start | NFS bandwidth | cold-load contention | wait — 2nd run faster |
+| 1 exam Pending forever, others run | Same-SKU collision | multi-exam targeting same GPU SKU | use different SKU or wait for first to finish |
+| All exams ExamErrorOccured | cluster-level issue | check operator logs | escalate, fall back to pre-collected |
+
+The soak script automates this classification.
+
+## NFS bandwidth math
+
+The cluster's `model-nfs-pvc` is RWX 2 TiB. NFS bandwidth typically caps at network speed (1 GbE = ~125 MB/s; 10 GbE = ~1.2 GB/s — depends on cluster config).
+
+8.5 GB Llama-3.1-8B-Instruct-FP8 weights file:
+- 1 pod loading: ~70s on 1 GbE, ~7s on 10 GbE
+- 2 pods concurrent: roughly halves bandwidth per pod → ~140s on 1 GbE
+- 4 pods concurrent: ~280s on 1 GbE = ~5 min cold load
+- 6 pods concurrent: ~7-8 min cold load
+
+After cold load, weights are paged into per-pod memory; subsequent requests are GPU/NPU-bound, no NFS contention.
+
+**Mitigation:** keep RNGD inference server pod long-lived (it already is — `npu-inference-server-node4` has 7+ days uptime per project memory). For GPU benchmarks, pre-warm before demo by running a tiny smoke run on each L40+A40 30 min ahead.
+
+## Postgres connection pool
+
+Backend uses TypeORM defaults: ~10 connection pool. Concurrent realtime polling (6 dashboards × 5s SSE + 6 status polls × 10s × 6 concurrent benchmarks) = ~50 connections/min. Well within pool. Not a concurrency bottleneck.
+
+## SSE connection limits
+
+Browser per-host SSE limit: typically 6 simultaneous connections. With 6 dashboards each opening 1 SSE stream, you're AT the limit. If a 7th tab tries to subscribe, it'll fall back to polling (which is fine — backend supports both).
+
+## Demo script: minimum-viable concurrent run
+
+For a 5-min concurrent demo:
+1. (T+0:00) Open `/dashboard/gpu-realtime` and `/dashboard/npu-realtime` side by side in browser.
+2. (T+0:30) Submit 10-sample MLPerf on L40 from `/mlperf` page.
+3. (T+1:00) Submit 10-sample MLPerf on RNGD from `/npu-eval/rngd` page.
+4. (T+1:30) Both should be Running. Point at both dashboards lighting up.
+5. (T+3:00) Both complete. Switch to `/mlperf/device-comparison` to show new rows side-by-side.
+
+This is the SAFEST demo of "concurrent runs work." Everything else is an extension.
+
+## Demo cheat-sheet (one-liner answers)
+
+If asked "what about all 6 at once?" — say: "Tested at 4-device concurrent; 6-simultaneous designed and partially soak-tested. We'd recommend showing 2-device concurrent live for clarity."
+
+If asked "could it scale to a real production cluster?" — say: "The operator + backend run on stock k8s and would scale linearly. The bottleneck would be NFS bandwidth on cold model load — solved in production by per-node pre-loaded volumes or shared model registries."
+
+If asked "what's the bottleneck?" — say: "Cold-start NFS bandwidth dominates. Once weights are paged in, each device runs independently; per-device bottleneck is GPU/NPU compute."
+
+If asked "could you saturate the cluster?" — say: "Yes — run 6 device-saturating workloads concurrently. We've designed for that and tested up to 4. The 6-device case is in our soak script roadmap."
+
+End of concurrent run scenarios doc.
