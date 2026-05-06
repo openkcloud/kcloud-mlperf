@@ -51,6 +51,7 @@ export interface ComparisonRunRow {
   failure_reason: string | null;
   config_fingerprint: string;
   drift_flag: boolean;
+  is_canonical: boolean;
 }
 
 export interface NormalizedMetrics {
@@ -83,6 +84,9 @@ export interface NormalizedRun {
   failure_reason: string | null;
   config_fingerprint: string;
   drift_flag: boolean;
+  // W7 contract: subset runs (data_number 1..13367) are excluded from canonical comparison.
+  // data_number=0 means full dataset (13368 samples), which is canonical.
+  is_canonical: boolean;
 }
 
 export type EmptyReason =
@@ -301,6 +305,7 @@ export class ComparisonService {
       failure_reason: run.failure_reason,
       config_fingerprint: run.config_fingerprint,
       drift_flag: run.drift_flag,
+      is_canonical: run.is_canonical,
     };
   }
 
@@ -317,6 +322,7 @@ export class ComparisonService {
       'failure_reason',
       'config_fingerprint',
       'drift_flag',
+      'is_canonical',
     ];
     const escape = (v: unknown): string => {
       if (v == null) return '';
@@ -535,6 +541,7 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
+      is_canonical: this.isCanonicalRun('mlperf', exam.data_number ?? null),
     };
   }
 
@@ -583,6 +590,7 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
+      is_canonical: this.isCanonicalRun('mmlu', exam.data_number ?? null),
     };
   }
 
@@ -629,6 +637,7 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
+      is_canonical: this.isCanonicalRun(benchmark, exam.data_number ?? null),
     };
   }
 
@@ -1076,6 +1085,14 @@ export class ComparisonService {
     // Also strip vendor-specific suffixes like "-fp8" added by furiosa-ai.
     const bare = model.trim().split('/').pop() ?? '';
     return bare.toLowerCase().replace(/-fp8$/i, '');
+  }
+
+  // W7 contract: data_number=0 means full dataset (canonical). 1..13367 = subset (not canonical).
+  // data_number >= 13368 is also canonical (explicit full count).
+  private isCanonicalRun(benchmark: 'mlperf' | 'mmlu', dataNbr: number | null): boolean {
+    if (benchmark === 'mmlu') return true; // MMLU always uses full dataset
+    const n = dataNbr ?? 0;
+    return n === 0 || n >= 13368;
   }
 
   private normalizeDataset(dataset: string | null | undefined): string {
