@@ -265,27 +265,21 @@ def render_comparison_panel(runs: list[dict]) -> str:
     )
 
 
+def _kv_row(label: str, value: float | None, fmt: str = "", suffix: str = "") -> str:
+    if value is None:
+        rendered = "—"
+    else:
+        rendered = format(value, fmt) + (f" {suffix}" if suffix else "")
+    return f"<div class='kv'><span>{label}</span><b>{rendered}</b></div>"
+
+
 def render_gpu_card(rows: list[dict], hist: list[deque], smi_text: str) -> str:
-    sub_rows = []
+    sub_rows: list[str] = []
     for r in rows:
-        sub_rows.append(
-            f"<div class='kv'><span>L40 #{r.get('index')} Temp</span>"
-            f"<b>{r.get('temp_c'):.2f} °C</b></div>"
-            if r.get('temp_c') is not None else
-            f"<div class='kv'><span>L40 #{r.get('index')} Temp</span><b>—</b></div>"
-        )
-        sub_rows.append(
-            f"<div class='kv'><span>L40 #{r.get('index')} Power</span>"
-            f"<b>{r.get('power_w'):.1f} W</b></div>"
-            if r.get('power_w') is not None else
-            f"<div class='kv'><span>L40 #{r.get('index')} Power</span><b>—</b></div>"
-        )
-        sub_rows.append(
-            f"<div class='kv'><span>L40 #{r.get('index')} Util</span>"
-            f"<b>{r.get('util_pct'):.0f} %</b></div>"
-            if r.get('util_pct') is not None else
-            f"<div class='kv'><span>L40 #{r.get('index')} Util</span><b>—</b></div>"
-        )
+        idx = r.get("index")
+        sub_rows.append(_kv_row(f"L40 #{idx} Temp",  r.get("temp_c"),   ".2f", "°C"))
+        sub_rows.append(_kv_row(f"L40 #{idx} Power", r.get("power_w"),  ".1f", "W"))
+        sub_rows.append(_kv_row(f"L40 #{idx} Util",  r.get("util_pct"), ".0f", "%"))
     kv_block = "".join(sub_rows) or "<div class='kv'><span>State</span><b>nvidia-smi unavailable</b></div>"
 
     sparks = []

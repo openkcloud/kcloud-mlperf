@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { getGpuPrometheusUrl, deriveState, PrometheusIframeDashboard } from '../PrometheusIframeDashboard';
+import {
+  getGpuPrometheusUrl,
+  getL40LiveBenchUrl,
+  deriveState,
+  PrometheusIframeDashboard,
+} from '../PrometheusIframeDashboard';
 
 // ---------------------------------------------------------------------------
 // Unit tests for pure helpers
@@ -17,6 +22,23 @@ describe('getGpuPrometheusUrl', () => {
       'http://10.254.177.41:30091';
     expect(getGpuPrometheusUrl()).toBe('http://10.254.177.41:30091');
     (import.meta.env as Record<string, unknown>).VITE__APP_GPU_PROMETHEUS_URL = original;
+  });
+});
+
+describe('getL40LiveBenchUrl', () => {
+  it('returns the env var value when set', () => {
+    const original = import.meta.env.VITE__APP_L40_LIVE_BENCH_URL;
+    (import.meta.env as Record<string, unknown>).VITE__APP_L40_LIVE_BENCH_URL =
+      'http://override.example:9999/';
+    expect(getL40LiveBenchUrl()).toBe('http://override.example:9999/');
+    (import.meta.env as Record<string, unknown>).VITE__APP_L40_LIVE_BENCH_URL = original;
+  });
+
+  it('returns the hardcoded node2 fallback when env var is unset', () => {
+    const original = import.meta.env.VITE__APP_L40_LIVE_BENCH_URL;
+    delete (import.meta.env as Record<string, unknown>).VITE__APP_L40_LIVE_BENCH_URL;
+    expect(getL40LiveBenchUrl()).toBe('http://10.254.184.195:30891/');
+    (import.meta.env as Record<string, unknown>).VITE__APP_L40_LIVE_BENCH_URL = original;
   });
 });
 
