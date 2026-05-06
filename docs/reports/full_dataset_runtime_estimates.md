@@ -83,3 +83,33 @@ These are small but non-zero — round all numbers up by ~5-10 min to be safe.
 - TPS numbers: `docs/reports/final_acceptance_matrix.md` rows 12, 13; `docs/reports/benchmark_results_real.csv` for per-row historical data.
 - `docs/reports/fp8_compute_precision_explainer.md` for why each HW gets the TPS it does.
 - `docs/reports/tt_n_extrapolation_analysis.md` for the per-N latency story.
+
+## Cluster-wide concurrent full-dataset estimate
+
+If you ran the FULL 13368-sample dataset on all 4 HW SIMULTANEOUSLY (one full run per HW, no retries), the total cluster wall-clock would be **~9 hours** (bottlenecked by the slowest HW = A40 at 8.5h, plus ~30 min cold-start staggering and per-pod NFS contention).
+
+If you wanted 3-retry runs concurrently, ~27 hours cluster-wide (A40 dominates).
+
+For the demo, this is moot — we use 100-sample subsets. But if asked "could you run all 4 at once for a thorough benchmark?", the answer is: ~9 hours cluster wall-clock, ~24-27 hours for compliance-quality 3-retry.
+
+## Additional caveat — KV-cache eviction at high N
+
+For very long output runs (N > 1000), the KV cache grows linearly with output length. vLLM may evict older sequences if cache pressure rises. Practically: 100-128-token runs don't hit this; multi-thousand-token runs would. Not relevant to our demo configuration.
+
+## Why we don't recommend live full-dataset demo
+
+A live full-dataset run on stage would take 6-9 hours. No demo can hold an audience that long. The right pattern is:
+- **Pre-collect the full numbers** in overnight runs (we have these from prior overnight cycles).
+- **Demo a 100-sample subset live** to show the system actually works.
+- **Reference the full numbers** in the comparison page or a slide.
+
+The 100-sample subset is statistically meaningful enough for relative-rank comparison (TPS variance ~3-5%) — the full dataset adds precision but doesn't change the rank order, per `tt_n_extrapolation_analysis.md`.
+
+## Sample-count sensitivity
+
+For comparison purposes, 100 samples is on the lower end but adequate. Industry practice:
+- **MLPerf official:** uses full 13368 (compliance requires it).
+- **Internal benchmarking:** 100-500 samples is standard (cheap iteration).
+- **Quick smoke:** 10-20 samples (catches major regressions, not for publication).
+
+Our demo uses 100 — the published comparison rows are 100×3 (3 retries averaged for stability).

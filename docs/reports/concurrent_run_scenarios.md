@@ -93,3 +93,9 @@ Plus a 7th, 8th, 9th, 10th if you count the "44GiB" SKU partitions (NVIDIA-L40-4
 - Soak script design: `scripts/concurrent_matrix_soak.sh` from prior team
 - Realtime slot model: `server/src/realtime/realtime.service.ts:300+` (`buildGpuSlot`, `buildNpuSlot`)
 - NFS-PVC mount: `model-nfs-pvc` (RWX 2Ti) per AGENTS.md
+
+## Live demo recommendation
+
+For the demo, the SAFEST concurrent-run demonstration is **Scenario B (1× L40 + 1× RNGD)** — different nodes, different vendors, easy to narrate, well-tested, and gives the audience a clear visual of two different hardware classes running simultaneously on the realtime dashboards.
+
+**Avoid live-demoing Scenario D (6-simultaneous)** — it's untested at scale this iteration; cold-start chaos isn't great TV. Talk about it in narration: "we've designed this and run it in soak; today let's show 2 concurrent."

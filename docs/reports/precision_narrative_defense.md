@@ -87,3 +87,26 @@ The table doesn't hide the precision delta — it shows it next to the latency n
 - `docs/reports/final_acceptance_matrix.md` row 13 — Atom+ BF16-fallback PASS-with-disclosure
 - `project_fp8_and_mmlu_fix.md` — RCA + dtype="auto" methodology
 - MLCommons inference rules: https://github.com/mlcommons/inference (general reference)
+
+## Additional defenses you might need
+
+### Critique 6: "You used different model files (RedHatAI vs neuralmagic vs vendor-specific)"
+
+**Response:** All checkpoints derive from the same neuralmagic-quantized base. RedHatAI (formerly neuralmagic) maintains the canonical FP8 release. RNGD/Atom+ vendors compile or wrap that model into their inference runtime — same weights, different serving stack.
+
+### Critique 7: "Why didn't you use TensorRT-LLM for NVIDIA?"
+
+**Response:** vLLM is the most widely-deployed open-source production stack for NVIDIA. TensorRT-LLM is faster on H100 specifically (FP8 TRT optimizations) but adds complexity and is not vendor-neutral. We chose vLLM for parity with FuriosaAI/Rebellions stacks (all "open-source production runtimes").
+
+### Critique 8: "Are these your own SDK builds or shipped versions?"
+
+**Response:** Shipped versions: vLLM 0.8.4 from PyPI, furiosa-llm via FuriosaAI's standard installer, optimum-rbln 0.9.3.post1 from Rebellions' SDK. No custom builds.
+
+## Audience FAQ — quick references during demo
+
+| If asked... | Quote this |
+|---|---|
+| "Why not identical compute precision?" | "Impossible — A40 lacks FP8 tensor cores. We compare best-available production paths." |
+| "Why publish this if it's not MLPerf?" | "Internal benchmarking using MLPerf methodology. Not a submission." |
+| "Did you double-blind the SDKs?" | "No — published vendor SDKs only. No custom kernels." |
+| "Latency vs throughput tradeoff?" | "We measure latency (TT100T) for single-stream serving. Multi-tenant throughput is a separate measurement." |

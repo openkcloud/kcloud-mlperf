@@ -83,3 +83,39 @@ MMLU-Pro doesn't have a min_duration concept. The `mm-exam` DTO has no `min_dura
 - Loki reporter: scrapes `vllm:request_success_total` per pod — reports raw cumulative count, no awareness of min_duration
 - Frontend ETA: `web/src/helpers/calculate-remaining-time.helper.ts` (uses `(a/b)` ratio from backend → divide-by-zero / over-estimate without backend clamp)
 - Live evidence: exam #150 served `8/10` (89.8%) at ~9 min elapsed — verified post v26 deploy
+
+## Update — frontend v32 default change (post-audit reconciliation)
+
+The "should we change the default?" section above suggested 60000ms. The actual frontend v32 fix went further: **default = 0** (no min-duration enforcement at all for new submissions).
+
+Reasoning for going to 0 instead of 60000:
+- A demo audience watching a 30s smoke run will be confused if they see "running 60 seconds for 10 samples done in 5s" — the default-60000 still produces dead air.
+- A user who wants compliance can type `600000` into the form input.
+- An accuracy-mode run completely ignores min_duration anyway.
+
+Tradeoff: a user who *forgets* to set min_duration for a real MLPerf-compliance run won't get the expected 600000 floor. Mitigation: form should add a tooltip "Set to 600000 for MLPerf compliance" — flagged as future work.
+
+## Per-mode summary table (refined)
+
+| Mode | min_duration default (post-v32) | What it means | When to use |
+|---|---|---|---|
+| accuracy | 0 (ignored anyway) | Run all N samples once; report accuracy | Smoke + compliance accuracy runs |
+| performance | 0 (was 600000) | Run for at least max(N samples, 0ms) — effectively just N samples | Smoke runs, demos |
+| performance + manual 600000 | 600000 | MLCommons compliance — at least 10min runtime | Official-style runs |
+| performance + manual 60000 | 60000 | 1-min sanity check | Mid-length validation |
+
+## Backend v26 + v27 interaction
+
+Backend v26 added the `min(samples_done/N, elapsed/min_duration)` clamp in `getMpExamStatus`. With the v32 form fix (min_duration=0 default), the elapsed-ratio cap is `elapsed/0 = ∞` which the code's `Math.min(1, ratio)` clamps to 1.0 (100%). So when min_duration=0, the new clamp is a no-op and progress is purely sample-based — exactly what a smoke user wants.
+
+Backend v27 added auto-refresh in list endpoints: any Running row triggers a grpc status poll on each list call (capped at 5 concurrent, sub-second). So the "exam Completed but DB still says Running" stale-state bug is also fixed for the list view.
+
+## Full pipeline of fixes
+
+| Layer | Fix | Version | What it does |
+|---|---|---|---|
+| Backend DTO | accept max_output_tokens / max_tokens | v24 | unblocks form submission with new fields |
+| Backend status | clamp values to data_number | v25 | sane ETA for short N |
+| Backend status | clamp progress to min(samples, time) | v26 | progress reflects time when min_duration > 0 |
+| Backend list | auto-refresh Running rows | v27 | DB stays in sync without per-row polling |
+| Frontend form | minDuration default = 0 | v32 | smoke runs don't auto-loop for 10 min |
