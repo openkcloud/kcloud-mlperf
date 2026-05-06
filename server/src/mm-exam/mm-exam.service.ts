@@ -164,7 +164,11 @@ export class MmExamService implements OnModuleInit {
         maxTestSamples: `${data.data_number === 0 ? '' : data.data_number}`, // 0 = all samples (empty string = no limit)
         modelName: data.model,
         nTrain: `${data.n_train}`, // default value
-        precision: data.precision,
+        // MMLU image's evaluate_from_local.py argparse rejects 'auto'
+        // (choices=float16/bfloat16/float32). Translate to 'bfloat16' so
+        // the form's "FP8 (auto)" option still works — vLLM still loads
+        // FP8 weights via compressed-tensors, which is the win.
+        precision: data.precision === 'auto' ? 'bfloat16' : data.precision,
         selectedSubjects: data.subject,
         mode: '',
         totalSampleCount: '', // mlperf data number

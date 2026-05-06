@@ -48,7 +48,8 @@ export const MpExamStatusProgressBar = memo<MpExamStatusProgressBarProps>(props 
             variant="determinate"
             color={'secondary'}
             sx={progressBarStyles}
-            value={progressValue(data.result[0].values[0]).percentage}
+            // Cap at 99 while RUNNING — bar jumps to 100 the moment status flips Completed.
+            value={Math.min(progressValue(data.result[0].values[0]).percentage, props.status === StatusEnum.RUNNING ? 99 : 100)}
           />
         )}
       </Box>

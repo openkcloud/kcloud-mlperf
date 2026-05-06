@@ -46,7 +46,10 @@ export const ExamStatusProgressBar = memo<ExamStatusProgressBarProps>(props => {
             variant="determinate"
             color={'secondary'}
             sx={progressBarStyles}
-            value={progressValue(data.result[0].values[0]).percentage}
+            // Cap at 99 while the row is still RUNNING so the user never
+            // sees the visual contradiction "100% Running"; the bar jumps
+            // to 100% the instant useExamStatus flips status to Completed.
+            value={Math.min(progressValue(data.result[0].values[0]).percentage, props.status === 'Running' ? 99 : 100)}
           />
         )}
       </Box>
