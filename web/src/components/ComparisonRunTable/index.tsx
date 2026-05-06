@@ -26,6 +26,24 @@ import { Tt100tBadge } from '@/components/Tt100tBadge';
 
 // ----------------------------------------------------------------------
 
+/** Infer compute precision label from hardware metadata per REV-1. */
+function inferComputePrecision(run: ComparisonRunRow): string {
+  const vendor = (run.hardware?.vendor ?? '').toLowerCase();
+  const model = (run.hardware?.model ?? '').toUpperCase();
+
+  if (vendor === 'furiosa') return 'FP8 (FuriosaAI vendor-native)';
+  if (vendor === 'rebellions') {
+    return run.precision ? `${run.precision} (Rebellions)` : 'BF16-fallback (Rebellions optimum-rbln limitation)';
+  }
+  if (vendor === 'nvidia') {
+    if (model.includes('L40')) return 'FP8 (sm_89 native)';
+    if (model.includes('A40')) return 'BF16 Marlin (FP8 weights dequant)';
+  }
+  return run.precision ?? '—';
+}
+
+// ----------------------------------------------------------------------
+
 const TT100T_GOAL = 1.1;
 
 const VENDOR_COLOR: Record<string, string> = {
@@ -263,6 +281,7 @@ export const ComparisonRunTable = ({
     1 + // TT100T
     1 + // Elapsed
     1 + // Status
+    1 + // Compute Precision
     (renderRowAction ? 1 : 0);
 
   const exportUrl = ComparisonApi.exportUrl(exportParams);
@@ -381,6 +400,11 @@ export const ComparisonRunTable = ({
                   Status
                 </TableSortLabel>
               </TableCell>
+              <TableCell>
+                <Tooltip title="Effective compute precision used at inference time" arrow>
+                  <span>Compute Precision</span>
+                </Tooltip>
+              </TableCell>
               {renderRowAction && <TableCell />}
             </TableRow>
           </TableHead>
@@ -477,6 +501,11 @@ export const ComparisonRunTable = ({
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={run.status} failureReason={run.failure_reason} />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="caption" fontFamily="monospace" sx={{ color: '#475569' }}>
+                      {inferComputePrecision(run)}
+                    </Typography>
                   </TableCell>
                   {renderRowAction && <TableCell>{renderRowAction(run)}</TableCell>}
                 </TableRow>,

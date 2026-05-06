@@ -407,6 +407,8 @@ const AtomPlusNpuEvalPage = () => {
         title="Live Bench Dashboard (node5 — Atom+)"
         src={NPU_REALTIME_URL}
         height={900}
+        idle={activeRuns.length === 0}
+        idleLabel="No NPU benchmark currently running on Rebellions Atom+ devices"
       />
     </Box>
   );

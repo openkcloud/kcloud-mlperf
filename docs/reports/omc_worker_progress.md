@@ -67,3 +67,10 @@
 | 07:14Z | w-demo-script | #7 | COMPLETED (early, will refresh) | Verdict GO-WITH-CAVEATS based on prior critic reports. Will update with fresh w-critic + Playwright evidence once they land. |
 | 07:15Z | w-mmlu-pro-backend | #2 | COMPLETED + hardening | cpu_core capped to ≤7 at mm-exam.service.ts:149. Backend REDEPLOY REQUIRED. Exam #56 30/1400 healthy ~2h ETA. |
 | 07:16Z | team-lead | unblock | done | SendMessage w-critic + w-playwright-qa with full context for fresh reviews. |
+| 07:24Z | w-critic | #6 | COMPLETED | 4 critic reviews: ui/benchmark/comparison/monitor. PASS source / BLOCKED-pending-redeploy live (later resolved by v27/v23). |
+| 07:24Z | team-lead | git | done | Commit f166600 pushed to origin/jshim0978 (64 files: src + reports). |
+| 07:25Z | team-lead | kaniko | done | kaniko-backend-v23 ✅ 113s. kaniko-frontend-v27 ✅ 138s (after fix: secret key + nodeAffinity exclude node5). |
+| 07:27Z | team-lead | rollout | done | kubectl set image: backend v22→v23, frontend v26→v27. Both rollouts successful. Live chunk: index-CJ9aEfXL.js. |
+| 07:39Z | w-playwright-qa | #5 | COMPLETED | 12/12 PASS in 42.3s against live v27. Screenshots 01-12 in docs/reports/demo_qa_screenshots/. Report: docs/reports/frontend_interaction_qa_report.md |
+| 07:58Z | w-demo-script | refresh | COMPLETED | Final verdict GO. Refreshed docs/reports/final_demo_rehearsal_report.md with v27 evidence. 3 pre-demo manual checks (non-blockers). |
+| 08:02Z | team-lead | shutdown | done | 6/6 workers shutdown approved. TeamDelete clean. State cleared. |

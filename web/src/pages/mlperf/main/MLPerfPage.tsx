@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 
 import { LiveBenchDashboard, getGpuPrometheusUrl } from '@/components/benchmark-page';
+import { useRealtimeExams } from '@/hooks/useRealtimeExams';
 
 // ----------------------------------------------------------------------
 
@@ -49,6 +50,8 @@ dayjs.extend(timezone);
 // ----------------------------------------------------------------------
 
 const MLPerfPage = () => {
+  const { snapshot } = useRealtimeExams();
+  const isMlperfActive = snapshot?.slots.some(s => s.device_type === 'gpu' && s.exam_kind === 'mp') ?? false;
   const [modalData, setModalData] = useState<MpExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
@@ -272,6 +275,8 @@ const MLPerfPage = () => {
         title="Live GPU Dashboard (MLPerf — L40)"
         src={getGpuPrometheusUrl()}
         height={900}
+        idle={!isMlperfActive}
+        idleLabel="No MLPerf benchmark currently running on GPU devices"
       />
     </Fragment>
   );

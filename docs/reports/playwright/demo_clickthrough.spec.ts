@@ -14,7 +14,7 @@ import * as path from 'path';
 import { test, expect, Page, ConsoleMessage } from '@playwright/test';
 
 const BASE = process.env.E2E_BASE_URL ?? 'http://10.254.177.41:30001';
-const SS_DIR = path.resolve(__dirname, '../../demo_qa_screenshots');
+const SS_DIR = process.env.SS_DIR ?? '/home/kcloud/etri-llm-exam-solution/docs/reports/demo_qa_screenshots';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ async function openPage(page: Page, route: string): Promise<PageDiag> {
     networkFailures.push(`[netfail] ${req.method()} ${req.url()} — ${req.failure()?.errorText}`)
   );
 
-  await page.goto(BASE + route, { waitUntil: 'networkidle', timeout: 30_000 });
+  await page.goto(BASE + route, { waitUntil: 'load', timeout: 30_000 });
   await page.waitForTimeout(3000);
 
   return { consoleErrors, networkFailures };

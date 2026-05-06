@@ -71,6 +71,8 @@ export type RealtimeExamSlot = {
   node: string;
   exam_id: number | null;
   exam_name: string | null;
+  /** Benchmark kind from the running exam, null when slot is idle. */
+  exam_kind: 'mp' | 'mm' | 'npu' | null;
   /** Capitalized status string used by the StatusChip component. */
   status: string;
   elapsed_seconds: number | null;
@@ -150,6 +152,7 @@ export function adaptSnapshot(wire: WireRealtimeSnapshot): RealtimeSnapshot {
       node: s.node,
       exam_id: s.current_exam?.id ?? null,
       exam_name: s.current_exam?.exam_name ?? null,
+      exam_kind: s.current_exam?.kind ?? null,
       status: STATUS_LABEL[s.status] ?? s.status,
       elapsed_seconds: s.current_exam?.elapsed_seconds ?? null,
       tps: s.last_known_metric.tps,

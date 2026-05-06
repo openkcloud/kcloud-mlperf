@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 
 import { LiveBenchDashboard, getGpuPrometheusUrl } from '@/components/benchmark-page';
+import { useRealtimeExams } from '@/hooks/useRealtimeExams';
 
 // ----------------------------------------------------------------------
 
@@ -47,6 +48,8 @@ dayjs.extend(timezone);
 // ----------------------------------------------------------------------
 
 const MMLUPage = () => {
+  const { snapshot } = useRealtimeExams();
+  const isMmluActive = snapshot?.slots.some(s => s.device_type === 'gpu' && s.exam_kind === 'mm') ?? false;
   const [modalData, setModalData] = useState<MmExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
@@ -263,6 +266,8 @@ const MMLUPage = () => {
         title="Live GPU Dashboard (MMLU-Pro — L40)"
         src={getGpuPrometheusUrl()}
         height={900}
+        idle={!isMmluActive}
+        idleLabel="No MMLU-Pro benchmark currently running on GPU devices"
       />
     </Fragment>
   );
