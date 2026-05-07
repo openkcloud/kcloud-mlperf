@@ -51,7 +51,9 @@ export const useExamStatus = (config: ExamStatusConfig) => {
         return false;
       }
 
-      return 10_000; // per 10 seconds
+      // 3s poll: faster status flip after operator reconciles, so the user
+      // doesn't sit on a 99% bar for the 30s reconcile + 10s old poll window.
+      return 3_000;
     },
     enabled: isEnabled
   });
