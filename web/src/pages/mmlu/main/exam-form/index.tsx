@@ -72,7 +72,7 @@ const initialData: MlExamFormInput = {
   batchSize: 1,
   gpuUtil: 0.8,
   maxTokens: 128,
-  subjects: 'all',
+  subjects: 'computer_science',
   ramSize: 16,
   repetitionCount: 1,
   time: dayjs()
@@ -378,7 +378,10 @@ export const MmluExamForm = memo(
                       size={size}
                       label="Subjects"
                       hasError={Boolean(error)}
-                      helperText={error?.message}
+                      helperText={
+                        error?.message ??
+                        "Use 'all' for full eval (samples × 14 subjects = long), or a single subject like 'computer_science' for a quick demo run."
+                      }
                     />
                   );
                 }}
