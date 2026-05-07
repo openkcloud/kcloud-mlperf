@@ -32,8 +32,11 @@ export const useMpExamStatus = (config: MpExamStatusConfig) => {
     }
   };
 
+  // IDLE included to recover rows that get stuck at IDLE while the K8s
+  // pod runs (operator hasn't fired the first phase update yet).
   const isEnabled =
     status === StatusEnum.UNDEFINED ||
+    status === StatusEnum.IDLE ||
     status === StatusEnum.PENDING ||
     status === StatusEnum.PREPARING ||
     status === StatusEnum.RUNNING;
