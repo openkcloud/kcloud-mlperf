@@ -86,6 +86,12 @@ for hw in "${!boards[@]}"; do
     bash -c "curl -sf -m 5 -o /dev/null 'http://${boards[$hw]}/'"
 done
 
+echo "--- NPU inference servers (must serve real Llama-3.1-8B for benchmarks) ---"
+step "RNGD furiosa-llm  http://10.254.202.114:8000/health" \
+  bash -c "curl -sf -m 5 -o /dev/null 'http://10.254.202.114:8000/health'"
+step "Atom+ vllm-rbln   http://10.254.202.111:30093/health" \
+  bash -c "curl -sf -m 5 -o /dev/null 'http://10.254.202.111:30093/health'"
+
 echo
 if [[ $failed -gt 0 ]]; then
   echo "$FAIL  $failed step(s) failed.  Investigate before demo."
