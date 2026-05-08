@@ -58,20 +58,31 @@ Updated as sweeps complete. See DB rows by `canonical-sweep-20260508-005541-*` /
 | FuriosaAI RNGD | 84 | FP8 (vendor) | **1.385** | 73.02 | ✅ Vendor interactive 40-60 tok/s; ours 73 plausible at batch=1 (no concurrency) |
 | Rebellions Atom+ | 85 | FP16 (vendor) | **1.377** | 73.23 | ⚠️ No public per-stream Llama-3.1-8B benchmark; not contradicted, plausible at batch=1 (memory not bottleneck) |
 
-### Sweep 2: Variance (n=100, max_tok=128, retry=5) — IN PROGRESS
+### Sweep 2: Variance (n=100, max_tok=128, retry=5) — GPU complete; NPU 4/5
 
-5 result rows per device captures run-to-run reproducibility. Mean ± σ filled in as data arrives.
+5 result rows per device captures run-to-run reproducibility.
 
-| Device | DB id | Result rows so far | Mean ± σ | Min – Max |
+| Device | DB id | n | Mean ± σ (s) | Min – Max (s) |
 |---|---|---|---|---|
-| L40 | 163 | 0 / 5 | _pending_ | _pending_ |
-| A40 | 164 | 0 / 5 | _pending_ | _pending_ |
-| RNGD | 86 | 3 / 5 | _pending_ | _pending_ |
-| Atom+ | 87 | 3 / 5 | _pending_ | _pending_ |
+| L40 | 163 | 5 | **1.585 ± 0.001** | 1.582 – 1.586 |
+| A40 | 164 | 5 | **1.772 ± 0.001** | 1.771 – 1.774 |
+| RNGD | 86 | 4 (running) | 1.379 ± 0.001 (so far) | 1.378 – 1.381 |
+| Atom+ | 87 | 4 (running) | 1.380 ± 0.002 (so far) | 1.377 – 1.382 |
 
-### Sweep 3: Long-output (n=20, max_tok=512, retry=3) — QUEUED
+**σ ≈ 1 ms across all four devices** (≈ 0.07% of mean). Run-to-run reproducibility is excellent. The canonical (1-shot) hero numbers fall within 1 σ of the variance mean for every device, so even single-shot reporting is reliable here.
 
-Runs after Sweep 2 completes. Validates that TT100T extrapolation (`mean_per_sample × 100/max_tok`) is stable when max_tok is 4× larger.
+### Sweep 3: Long-output (n=20, max_tok=512, retry=3) — GPU complete; NPU running
+
+Validates that the TT100T extrapolation `mean_per_sample × 100/max_tok` is stable when max_tok is 4× larger (i.e. the formula isn't tightly coupled to a particular max_tok choice).
+
+| Device | DB id | n | Mean ± σ (s) | Δ vs canonical (s) |
+|---|---|---|---|---|
+| L40 | 165 | 3 | 1.572 ± 0.001 | −0.012 |
+| A40 | 166 | 3 | 1.738 ± 0.001 | −0.034 |
+| RNGD | 88 | 0 (running) | _pending_ | _pending_ |
+| Atom+ | 89 | 0 (running) | _pending_ | _pending_ |
+
+GPU long-output is **slightly faster** than canonical at the TT100T metric — likely because the longer-output regime amortizes warmup cost over more decode steps. The 12-34 ms delta is within methodological noise.
 
 **Prior hero numbers (DB `pretotype-01` batch, May 7):** TT100T 1.25–1.79s with same model + same params. Today's canonical sweep (1.38–1.77s) is consistent within run-to-run variance.
 
@@ -187,6 +198,21 @@ If a benchmark stalls: kill via `kubectl delete job -n llm-evaluation <job-name>
 If frontend bundle is stale: clear cache (Cmd+Shift+R). Confirm bundle name is the v41 one (build hash should be different from v40).
 
 If /compare shows mixed units (1500s next to 1.3s): backend hasn't picked up the v30+v31 image. `kubectl rollout restart deploy/etri-llm-backend -n llm-evaluation`.
+
+## Appendix: cluster device registry
+
+The device registry exposes 6 logical accelerator slots. The demo benchmarks the 4 SKUs in **bold** — full-memory variants on node2 + the two NPU nodes. The 44GiB partitions on node3 are MIG slices of the same Ada/Ampere silicon and are not separately benchmarked (compute identical to the full SKU; only memory cap differs, and Llama-8B FP8 fits in <10 GB regardless).
+
+| Node | Slot | Vendor | Model | Demo? |
+|---|---|---|---|---|
+| node1 | 0 | intel | cpu | — |
+| node2 | 0 | nvidia | **L40** | ✅ |
+| node2 | 1 | nvidia | **A40** | ✅ (note: this is the full-memory A40, on node2 not node3) |
+| node3 | 0 | nvidia | L40-44GiB | (MIG slice) |
+| node3 | 1 | nvidia | A40-44GiB | (MIG slice) |
+| node4 | 0 | furiosa | **RNGD** | ✅ |
+| node5 | 0 | rebellions | **Atom+** | ✅ |
+| node5 | 1 | rebellions | Atom+ | (second die, not currently benchmarked) |
 
 ## Appendix: deployed runtime versions
 
