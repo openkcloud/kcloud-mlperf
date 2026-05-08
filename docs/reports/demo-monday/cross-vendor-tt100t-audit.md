@@ -244,15 +244,22 @@ The device registry exposes 6 logical accelerator slots. The demo benchmarks the
 | node5 | 0 | rebellions | **Atom+** | ✅ |
 | node5 | 1 | rebellions | Atom+ | (second die, not currently benchmarked) |
 
-## Appendix: deployed runtime versions
+## Appendix: deployed runtime versions (verified 2026-05-08)
 
 | Component | Version | Source |
 |---|---|---|
-| Backend | etri-llm-backend:v30 | jungwooshim Dockerhub |
-| Frontend | etri-llm-frontend:v32 | jungwooshim Dockerhub |
-| Operator | etri-llm-k8s-operator:v1.0.1 | mondrianai Dockerhub (v1.0.3 built but not deployed) |
+| Backend | `jungwooshim/etri-llm-backend:v33` | per-vendor NPU URL routing + 404-not-500 + tt100t ms→s in comparison/realtime |
+| Frontend | `jungwooshim/etri-llm-frontend:v41` | per-exam page tt100t ms→s + min_duration default 0 + list auto-refresh |
+| Operator | `jungwooshim/etri-llm-k8s-operator:v1.0.1` | (v1.0.3 built but not deployed — scheduling-race fix pending) |
 | Postgres | 15 | helm chart |
-| Kubernetes | v1.28.12 (nodes 1-4) / v1.28.0 (node5) | kubespray |
+| Kubernetes | v1.28.12 (nodes 1–4) / v1.28.0 (node5) | kubespray |
 | GPU operator | v25.10.0 | NVIDIA |
+| vLLM (GPU side) | 0.10.2 | matches node5 host install |
+| furiosa-llm (RNGD) | 2025.3.3 | running model `furiosa-ai/Llama-3.1-8B-Instruct-FP8 v2025.3.0` |
+| vllm-rbln (Atom+) | 0.9.3.post2 | host serve on node5:30093, model from `/home/rebellions/Llama-3.1-8B-Instruct-tp2-dev01/` (TP=2 precompiled) |
+| Rebellions device plugin | `docker.io/rebellions/k8s-device-plugin:v0.3.7` | running on node5; advertises `rebellions.ai/ATOM: 2` |
+| Rebellions driver (KMD) | 2.0.1 | `/dev/rbln0` + `/dev/rbln1` on node5 |
+| optimum-rbln (host) | 0.9.3.post1 | for compile-time path |
+| `rebel` Python bindings | 0.9.3.post1 | matches optimum-rbln + vllm-rbln versions |
 
 <!-- end of live audit -->
