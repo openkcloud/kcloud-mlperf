@@ -25,6 +25,14 @@ dayjs.extend(timezone);
 
 // ----------------------------------------------------------------------
 
+// mp_exam.result_tt100t is stored in milliseconds (the GPU MLPerf k8s job writer's convention).
+// The NPU path stores seconds. See server/src/comparison/comparison.service.ts:511 for the
+// server-side equivalent of this conversion.
+const mpExamTt100tSec = (raw: number | null | undefined): number | null =>
+  raw != null ? raw / 1000 : null;
+
+// ----------------------------------------------------------------------
+
 const TestResultPage = () => {
   const testResult = useTestResult();
   console.log('testResult:', testResult);
@@ -225,7 +233,7 @@ const TestResultPage = () => {
               <PerformanceExamGraph
                 key={activeIndex}
                 result_number={activeIndex}
-                result_tt100t={testResult.results[activeIndex - 1].result_tt100t}
+                result_tt100t={mpExamTt100tSec(testResult.results[activeIndex - 1].result_tt100t)}
                 test_scenario={testResult.scenario}
                 result_perf_tps_best={testResult.results[activeIndex - 1].result_perf_tps_best}
                 result_perf_tps={testResult.results[activeIndex - 1].result_perf_tps}
@@ -272,8 +280,10 @@ const TestResultPage = () => {
                 }
                 result_perf_valid={null}
                 result_tt100t={
-                  testResult.results.reduce((sum, result) => sum + (result.result_tt100t ?? 0), 0) /
-                  testResult.results.length
+                  testResult.results.reduce(
+                    (sum, result) => sum + (mpExamTt100tSec(result.result_tt100t) ?? 0),
+                    0
+                  ) / testResult.results.length
                 }
                 result_perf_latency={
                   testResult.results.reduce(
