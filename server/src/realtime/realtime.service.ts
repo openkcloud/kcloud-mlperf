@@ -377,7 +377,9 @@ export class RealtimeService implements OnModuleDestroy {
       const result = resultByExamId.get(activeExam.id);
       if (result) {
         tps = result.result_perf_tps ?? null;
-        tt100t_seconds = result.result_tt100t ?? null;
+        // mp_exam stores tt100t in milliseconds; divide by 1000 — same convention as comparison.service.ts:511
+        tt100t_seconds =
+          result.result_tt100t != null ? result.result_tt100t / 1000 : null;
         const created = result.created_at;
         last_metric_timestamp =
           created instanceof Date
