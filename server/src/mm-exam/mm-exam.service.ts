@@ -301,6 +301,15 @@ export class MmExamService implements OnModuleInit {
 
   // Get exam status
   async getExamStatus(id: number) {
+    // Short-circuit on unknown id so /status/:id returns 404 (not 500 from gRPC).
+    const exists = await this.mmExamRepo.findOne({
+      where: { id },
+      select: ['id'],
+    });
+    if (!exists) {
+      throw new NotFoundException(`MMLU Exam with id ${id} not found!`);
+    }
+
     const res = await lastValueFrom(
       this.getGrpcExamStatus({
         benchmark: this.examBenchmark,
