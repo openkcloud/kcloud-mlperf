@@ -68,15 +68,25 @@ Sources for the Atom+ FP16 truth: [Rebellions ATOM GenAI white paper (PDF)](http
 
 Updated as sweeps complete. See DB rows by `canonical-sweep-20260508-005541-*` / `variance-20260508-005916-*` / `longout-*` name prefixes.
 
-### Sweep 1: Canonical (n=100, max_tok=128, retry=1) — COMPLETE
+### Sweep 1: Canonical (n=100, max_tok=128, retry=1) — COMPLETE (post-fix)
 
-| Device | DB id | Compute precision | TT100T (s) | TPS | External validation |
-|---|---|---|---|---|---|
-| NVIDIA L40 | 161 | FP8 (native) | **1.584** | 63.12 | ✅ NIM L40S range 71-73 tok/s; ours 63 sits comfortably (L40 < L40S) |
-| NVIDIA A40 | 162 | BF16 (Marlin) | **1.772** | 56.42 | ✅ Predicted 50-58 tok/s (24% bw deficit + Marlin uplift); ours 56 lands inside |
-| FuriosaAI RNGD | 84 | FP8 (vendor) | **1.385** | 73.02 | ✅ Vendor interactive 40-60 tok/s; ours 73 plausible at batch=1 (no concurrency) |
-| Rebellions Atom+ | 85 | RNGD-served (BUG) | ~~1.377~~ | ~~73.23~~ | ❌ Disregard — exam 85 routed to RNGD via the single-URL bug. See exam 92 for the first real Atom+ canonical. |
-| Rebellions Atom+ | **92** (running) | FP16 vendor-compiled (TP=2) | _pending_ | _pending_ | First post-fix run; measured via vllm-rbln on node5:30093 |
+| Device | DB id | Compute precision | TT100T (s) | TPS | TTFT (s) | External validation |
+|---|---|---|---|---|---|---|
+| NVIDIA L40 | 161 | FP8 (native) | **1.584** | 63.12 | _–_ | ✅ NIM L40S range 71-73 tok/s; ours 63 sits comfortably (L40 < L40S) |
+| NVIDIA A40 | 162 | BF16 (Marlin) | **1.772** | 56.42 | _–_ | ✅ Predicted 50-58 tok/s (24% bw deficit + Marlin uplift); ours 56 lands inside |
+| FuriosaAI RNGD | 84 | FP8 (vendor) | **1.385** | 73.02 | _–_ | ✅ Vendor interactive 40-60 tok/s; ours 73 plausible at batch=1 (no concurrency) |
+| Rebellions Atom+ | **92** | FP16 (vllm-rbln, TP=2) | **3.631** | 27.80 | 0.211 | ✅ First true Atom+ measurement. Mechanistically consistent with 256 GB/s vs 1.5 TB/s memory bandwidth and FP16 32 TFLOPS vs FP8 512 TFLOPS silicon spec — Atom+ is 2.6× slower than RNGD as predicted. |
+| Rebellions Atom+ | ~~85~~ | ~~RNGD-served (BUG)~~ | ~~1.377~~ | ~~73.23~~ | ~~–~~ | ❌ Disregarded — exam 85 (and all prior "ATOM" rows ≤ 91) routed to RNGD via the single-URL bug. |
+
+### Honest cross-vendor narrative
+
+The order of TT100T (lowest = fastest) reflects a sensible silicon hierarchy:
+- **RNGD (1.385 s)** has the highest memory bandwidth (1.5 TB/s HBM3) and native FP8 compute (512 TFLOPS).
+- **L40 (1.584 s)** has 864 GB/s GDDR6 + native FP8 (sm_89). 14% slower than RNGD.
+- **A40 (1.772 s)** has 696 GB/s GDDR6 + no FP8 silicon (sm_86 → Marlin BF16 dequant). 28% slower than RNGD.
+- **Atom+ (3.631 s)** has 256 GB/s GDDR6 + no FP8 silicon (FP16 32 TFLOPS only). 2.6× slower than RNGD. Atom+ is a smaller, lower-power chip targeted at a different price point — its single-stream Llama-3.1-8B latency reflects that.
+
+The comparison is precision-honest: **two FP8 native devices (RNGD + L40), one BF16-via-Marlin (A40), one FP16 (Atom+)**. Same Llama-3.1-8B base weights, same MLPerf-style CNN/DailyMail summarization workload, same n=100 samples, same max_tok=128, same single-stream batch=1, same greedy decoding.
 
 ### Sweep 2: Variance (n=100, max_tok=128, retry=5) — final
 
