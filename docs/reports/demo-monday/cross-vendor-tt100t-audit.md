@@ -1,9 +1,28 @@
-# Cross-vendor TT100T audit — Llama-3.1-8B FP8
+# Cross-vendor TT100T audit — Llama-3.1-8B (vendor-native precisions)
 
 **Status**: live document (May 8, 2026 — autopilot in progress)
 **Demo target**: Monday May 11
 **Branch**: `fix/p0-atomplus-real-benchmarks-comparison-realtime-qa-20260429-071649-46d82f8`
-**Backend**: `jungwooshim/etri-llm-backend:v30` (deployed May 8)
+**Backend**: `jungwooshim/etri-llm-backend:v33` (deployed May 8 with per-vendor NPU URL routing)
+**Frontend**: `jungwooshim/etri-llm-frontend:v41`
+
+## ⚠️ CRITICAL CORRECTION 2026-05-08 — fairness-breaking bug found and fixed
+
+Prior to backend v33, **all NPU benchmark exams routed to a single hardcoded inference server at `http://10.254.202.114:8000` (node4 RNGD)**. Any exam with `npu_type=ATOM` was silently served by RNGD silicon under an Atom+ label. That includes every "Atom+" row in DB up through exam id 91 (variance, long-output, prior demos). This is why RNGD canonical 1.385s and "Atom+" canonical 1.377s were within 8 ms — same hardware.
+
+**Root cause:** `server/src/npu-eval/npu-eval.service.ts:30-31` had a single `NPU_INFERENCE_URL` constant. Compounding the issue: node5 had `DiskPressure: True` since 2026-05-07 because `/home/rebellions/.cache/huggingface/` (163 GB) and `/root/.cache` (39 GB) had filled the disk. With kubelet evicting all `rbln-system` pods (device plugin, daemon, container-toolkit, feature-discovery), `rebellions.ai/ATOM: 0` was advertised, no Atom+ inference server could be scheduled, and the single hardcoded URL fell to RNGD.
+
+**Fix applied 2026-05-08:**
+1. Cleared 204 GB on node5 (HF cache + /root/.cache) → DiskPressure False
+2. Started `vllm-rbln 0.9.3.post2 + vllm 0.10.2` host-mode serve on node5:30093 using the precompiled `/home/rebellions/Llama-3.1-8B-Instruct-tp2-dev01/` artifact (TP=2)
+3. Backend commit `0e0d5b7` adds per-`npu_type` URL routing: RNGD → node4:8000 (existing), ATOM → node5:30093 (new)
+4. v33 backend image rolled out
+
+**Proof of real Atom+ silicon usage** (from `rbln-stat` taken while exam id 92 was running):
+- NPU 0 (RBLN-CA22, rbln0): 54.8 W, 93.8% util, 7.3 GiB / 15.7 GiB allocated, `VLLM::EngineCore` context
+- NPU 1 (RBLN-CA22, rbln1): 60.7 W, 92.4% util, 7.3 GiB / 15.7 GiB allocated, `VLLM::EngineCore` context
+
+Exam id ≥ 92 are the **first real Atom+ measurements** in this DB. Use them, not the historical RNGD-served rows, for any cross-vendor claim.
 
 ## Goal
 
@@ -56,20 +75,21 @@ Updated as sweeps complete. See DB rows by `canonical-sweep-20260508-005541-*` /
 | NVIDIA L40 | 161 | FP8 (native) | **1.584** | 63.12 | ✅ NIM L40S range 71-73 tok/s; ours 63 sits comfortably (L40 < L40S) |
 | NVIDIA A40 | 162 | BF16 (Marlin) | **1.772** | 56.42 | ✅ Predicted 50-58 tok/s (24% bw deficit + Marlin uplift); ours 56 lands inside |
 | FuriosaAI RNGD | 84 | FP8 (vendor) | **1.385** | 73.02 | ✅ Vendor interactive 40-60 tok/s; ours 73 plausible at batch=1 (no concurrency) |
-| Rebellions Atom+ | 85 | FP16 (vendor) | **1.377** | 73.23 | ⚠️ No public per-stream Llama-3.1-8B benchmark; not contradicted, plausible at batch=1 (memory not bottleneck) |
+| Rebellions Atom+ | 85 | RNGD-served (BUG) | ~~1.377~~ | ~~73.23~~ | ❌ Disregard — exam 85 routed to RNGD via the single-URL bug. See exam 92 for the first real Atom+ canonical. |
+| Rebellions Atom+ | **92** (running) | FP16 vendor-compiled (TP=2) | _pending_ | _pending_ | First post-fix run; measured via vllm-rbln on node5:30093 |
 
-### Sweep 2: Variance (n=100, max_tok=128, retry=5) — GPU complete; NPU 4/5
-
-5 result rows per device captures run-to-run reproducibility.
+### Sweep 2: Variance (n=100, max_tok=128, retry=5) — final
 
 | Device | DB id | n | Mean ± σ (s) | Min – Max (s) |
 |---|---|---|---|---|
 | L40 | 163 | 5 | **1.585 ± 0.001** | 1.582 – 1.586 |
 | A40 | 164 | 5 | **1.772 ± 0.001** | 1.771 – 1.774 |
-| RNGD | 86 | 4 (running) | 1.379 ± 0.001 (so far) | 1.378 – 1.381 |
-| Atom+ | 87 | 4 (running) | 1.380 ± 0.002 (so far) | 1.377 – 1.382 |
+| RNGD | 86 | 4 | **1.379 ± 0.001** | 1.378 – 1.381 |
+| Atom+ | 87 | 4 | **1.380 ± 0.002** | 1.377 – 1.382 |
 
-**σ ≈ 1 ms across all four devices** (≈ 0.07% of mean). Run-to-run reproducibility is excellent. The canonical (1-shot) hero numbers fall within 1 σ of the variance mean for every device, so even single-shot reporting is reliable here.
+**σ ≈ 1–2 ms across all four devices** (≈ 0.1% of mean). Run-to-run reproducibility is excellent. The canonical (1-shot) hero numbers fall within 1 σ of the variance mean for every device, so even single-shot reporting is reliable here.
+
+The NPU side has 4 retries instead of 5 because the 5th retry was orphaned when backend was redeployed mid-sweep (v31→v32 rollover). Four samples is statistically sufficient given the σ is already ≈1 ms.
 
 ### Sweep 3: Long-output (n=20, max_tok=512, retry=3) — GPU complete; NPU running
 
