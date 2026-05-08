@@ -26,9 +26,29 @@ import * as http from 'http';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// Configurable inference server URL — set via env var or defaults to node4 IP
-const NPU_INFERENCE_URL =
-  process.env.NPU_INFERENCE_URL || 'http://10.254.202.114:8000';
+// Per-vendor inference server URLs.  Different NPUs run different SDKs and
+// must hit their own server — RNGD uses furiosa-llm on node4, Atom+ uses
+// vllm-rbln on node5.  Before the per-vendor split, both paths shared one
+// URL and Atom+ exams were silently served by the RNGD silicon, breaking
+// any cross-vendor comparison.
+const NPU_INFERENCE_URLS: Record<string, string> = {
+  RNGD: process.env.NPU_INFERENCE_URL_RNGD || 'http://10.254.202.114:8000',
+  ATOM: process.env.NPU_INFERENCE_URL_ATOM || 'http://10.254.202.111:30093',
+};
+
+const FALLBACK_NPU_INFERENCE_URL =
+  process.env.NPU_INFERENCE_URL || NPU_INFERENCE_URLS.RNGD;
+
+/** Resolve the inference URL by canonical npu_type label. */
+function inferenceUrlForNpuType(npuType: string | null | undefined): string {
+  if (!npuType) return FALLBACK_NPU_INFERENCE_URL;
+  const upper = npuType.toUpperCase().trim();
+  // Tolerate both 'ATOM' and 'Atom+' family names — anything starting with ATOM
+  // routes to the Rebellions server.
+  if (upper.startsWith('ATOM')) return NPU_INFERENCE_URLS.ATOM;
+  if (upper.startsWith('RNGD')) return NPU_INFERENCE_URLS.RNGD;
+  return FALLBACK_NPU_INFERENCE_URL;
+}
 
 // Dataset base path inside the backend pod (NFS mount)
 const DATASET_BASE_PATH =
@@ -341,17 +361,18 @@ export class NpuEvalService implements OnModuleInit {
       });
 
       const exam = await this.findOne(examId);
+      const inferenceUrl = inferenceUrlForNpuType(exam.npu_type);
       this.logger.log(
-        `NPU exam ${examId}: PREPARING — checking inference server at ${NPU_INFERENCE_URL}`,
+        `NPU exam ${examId} (npu_type=${exam.npu_type}): PREPARING — checking inference server at ${inferenceUrl}`,
       );
 
       // Check inference server health
-      const healthy = await this.checkServerHealth(NPU_INFERENCE_URL);
+      const healthy = await this.checkServerHealth(inferenceUrl);
       if (!healthy) {
         const msg =
-          `Inference server not available at ${NPU_INFERENCE_URL}. ` +
-          `Please start it on node4: furiosa-llm serve ${exam.model} ` +
-          `--host=0.0.0.0 --port=8000 --device=npu:0:*`;
+          `Inference server not available at ${inferenceUrl} ` +
+          `for npu_type=${exam.npu_type}. RNGD path serves furiosa-llm on ` +
+          `node4:8000; Atom+ path serves vllm-rbln on node5:30093.`;
         await this.npuExamRepo.update(examId, {
           status: StatusEnum.ERROR,
           error_log: msg,
@@ -397,7 +418,7 @@ export class NpuEvalService implements OnModuleInit {
         );
 
         const runResult = await this.executeSingleRun(
-          NPU_INFERENCE_URL,
+          inferenceUrl,
           exam.model,
           activeSamples,
           effectiveMaxTokens,
