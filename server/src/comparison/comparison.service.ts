@@ -502,7 +502,13 @@ export class ComparisonService {
   private normalizeMpExam(exam: MpExam): NormalizedRun {
     const latest = this.latestResult(exam.results || []);
 
-    const tt100t = latest?.result_tt100t ?? null;
+    // mp_exam.result_tt100t is written by the GPU MLPerf k8s job in milliseconds
+    // (e.g. `'tt100t': '1584.17'` for an L40 row meaning 1.584 s). The NPU path
+    // (npu_exam_result) already stores seconds (npu-eval.service.ts:522 divides
+    // by 1000 explicitly). Without this conversion the /comparison page renders
+    // GPU rows as ~1500 s next to NPU rows as ~1.3 s — a 1000× scale break.
+    const tt100t =
+      latest?.result_tt100t != null ? latest.result_tt100t / 1000 : null;
     const tps = latest?.result_perf_tps ?? null;
     const sps = latest?.result_perf_sps ?? null;
 
