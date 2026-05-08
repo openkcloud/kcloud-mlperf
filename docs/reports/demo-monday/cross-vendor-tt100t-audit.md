@@ -178,6 +178,23 @@ _pending — research agent in progress, expected within 5 min_
 
 Backend image: `jungwooshim/etri-llm-backend:v29` → `:v30` rolled out 2026-05-08.
 
+## Optimization roadmap to TT100T < 1.1 s (autoresearch iter1, 2026-05-08)
+
+We ran a focused autoresearch mission with 4 parallel `document-specialist` agents to find paths from current measurements to a sub-1.1 s TT100T per device. Findings:
+
+| Device | Current TT100T | Expected post-fix TT100T | Path | Demo-Monday feasible? |
+|---|---|---|---|---|
+| **L40** | 1.585 s | **~0.7 s** | vLLM **Eagle-3 spec decode** (`RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3`, num_speculative_tokens=3) + optional `--kv-cache-dtype fp8` | ✅ HIGH — Eagle-3 acceptance length ~2.5 on summarization, native FP8 silicon (sm_89) |
+| **A40** | 1.772 s | **~0.6 s** | swap base to AWQ-INT4 (`hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4`, Marlin auto) **+** Eagle-3 spec decode | ⚠️ MEDIUM — quantized + speculative integration newer in vLLM |
+| **RNGD** | 1.379 s | **~1.1–1.3 s** | upgrade `furiosa-llm` 2025.3.3 → 2026.2 (hybrid batching scheduler + AoT wiring, +10–20% dispatch efficiency) + `--spare-blocks-ratio=0.0` (was 0.1; became default in 2026.2) + verify `is_offline=False` | ⚠️ MEDIUM — image rebuild + brief inference-server restart |
+| **Atom+** | 3.630 s | **~1.8 s (INT8 TP=2) / ~0.9 s (INT4 TP=2) / ~0.45 s (INT4 TP=4)** | INT4/INT8 quantization via `RBLNQuantizationConfig` (silicon supports INT8 128 TOPS, INT4 256 TOPS, but **not yet exposed in any released `optimum-rbln`** — DRAFT PRs #391, #480 in `rebellions-sw/optimum-rbln`); TP=4 requires 4 dies (current node5 has 2 cards × 1 die = 2 dies max) | ❌ NOT FEASIBLE for May 11 — vendor SDK release dependency |
+
+**Speculative decoding** is the dominant lever for the GPU side. Eagle-3's NeurIPS 2025 paper reports acceptance length 2.50 on CNN/DailyMail summarization — a near-direct match for our workload. The Red Hat production model card benchmarks against vLLM 0.11.0; vLLM 0.10.2 is on our cluster, may need verification of speculative-decoding compat or a vLLM bump.
+
+**Atom+ is bandwidth-bound at the SDK level.** Math: Llama-3.1-8B FP16 weights = 16 GB; ATOM+ aggregate TP=2 bandwidth = 512 GB/s; theoretical decode ceiling = 32 tok/s; measured 27.8 tok/s = 87% MBU. Reducing the weight footprint (INT8 = 8 GB → 64 tok/s ceiling, INT4 = 4 GB → 128 tok/s ceiling) is the only path. `RBLNQuantizationConfig` with `weights="int4"` exists in the SDK source but the public Llama compile path doesn't expose it. Tracking: [optimum-rbln/pull/391](https://github.com/rebellions-sw/optimum-rbln/pulls?q=is%3Apr+391), [optimum-rbln/pull/480](https://github.com/rebellions-sw/optimum-rbln/pulls?q=is%3Apr+480).
+
+Full autoresearch artifacts at `.omc/autoresearch/tt100t-under-1.1s/runs/iter-001/`.
+
 ## Known unfixed (post-demo)
 
 - `realtime.service.ts:380` and `mp-exam-result.service.ts:85` still pass mp_exam.result_tt100t as raw milliseconds into seconds-labeled fields. Affects /dashboard/realtime per-device tile (NOT the /comparison cross-vendor view). Fix is similar `/1000` patch.
