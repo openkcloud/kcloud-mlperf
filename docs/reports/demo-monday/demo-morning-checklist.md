@@ -47,14 +47,16 @@ Expected:
 
 Hero numbers (memorize):
 
-| Device | TT100T | TPS | Compute precision |
-|---|---|---|---|
-| FuriosaAI **RNGD** | **1.385 s** | 73 | FP8 native |
-| Rebellions **Atom+** | **1.377 s** | 73 | FP16 (vendor-recommended) |
-| NVIDIA **L40** | **1.584 s** | 63 | FP8 native (sm_89) |
-| NVIDIA **A40** | **1.772 s** | 56 | BF16 (Marlin W8A16, sm_86) |
+| Device | TT100T (mean ± σ) | TPS | Compute precision | Source DB id |
+|---|---|---|---|---|
+| FuriosaAI **RNGD** | **1.379 ± 0.001 s** | 73 | FP8 native silicon | canonical 84, variance 86 |
+| NVIDIA **L40** | **1.585 ± 0.001 s** | 63 | FP8 native (sm_89) | canonical 161, variance 163 |
+| NVIDIA **A40** | **1.772 ± 0.001 s** | 56 | BF16 Marlin (sm_86 has no FP8) | canonical 162, variance 164 |
+| Rebellions **Atom+** | **3.630 ± 0.014 s** | 27.8 | FP16 (RBLN-CA22 has no FP8) | canonical 92, variance 93 |
 
-Variance σ across 5 reruns: **1 ms each** — extremely tight.
+Note Atom+ is genuinely 2.6× slower than RNGD — that reflects real silicon differences (256 GB/s vs 1.5 TB/s memory bandwidth, FP16 32 TFLOPS vs FP8 512 TFLOPS, different price/power point). Variance σ across 5 reruns is 1 ms for GPU/RNGD, 14 ms for Atom+ — all extremely tight.
+
+**Disregard prior "Atom+" rows in DB with id ≤ 91** — they are RNGD-served measurements from before the per-vendor URL routing fix shipped May 8.
 
 ## Recovery
 

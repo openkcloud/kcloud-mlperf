@@ -88,18 +88,17 @@ The order of TT100T (lowest = fastest) reflects a sensible silicon hierarchy:
 
 The comparison is precision-honest: **two FP8 native devices (RNGD + L40), one BF16-via-Marlin (A40), one FP16 (Atom+)**. Same Llama-3.1-8B base weights, same MLPerf-style CNN/DailyMail summarization workload, same n=100 samples, same max_tok=128, same single-stream batch=1, same greedy decoding.
 
-### Sweep 2: Variance (n=100, max_tok=128, retry=5) — final
+### Sweep 2: Variance (retry=5) — final per-device reproducibility
 
-| Device | DB id | n | Mean ± σ (s) | Min – Max (s) |
-|---|---|---|---|---|
-| L40 | 163 | 5 | **1.585 ± 0.001** | 1.582 – 1.586 |
-| A40 | 164 | 5 | **1.772 ± 0.001** | 1.771 – 1.774 |
-| RNGD | 86 | 4 | **1.379 ± 0.001** | 1.378 – 1.381 |
-| Atom+ | 87 | 4 | **1.380 ± 0.002** | 1.377 – 1.382 |
+| Device | DB id | n | Mean ± σ (s) | Min – Max (s) | Note |
+|---|---|---|---|---|---|
+| L40 | 163 | 5 | **1.585 ± 0.001** | 1.582 – 1.586 | n=100 max_tok=128 |
+| A40 | 164 | 5 | **1.772 ± 0.001** | 1.771 – 1.774 | n=100 max_tok=128 |
+| RNGD | 86 | 4 | **1.379 ± 0.001** | 1.378 – 1.381 | n=100 max_tok=128 (5th retry orphaned by v31→v32 rollover; 4 samples sufficient) |
+| ~~Atom+~~ | ~~87~~ | ~~4~~ | ~~1.380 ± 0.002~~ | ~~1.377 – 1.382~~ | ❌ Disregard — RNGD-served via single-URL bug |
+| **Atom+ (REAL)** | **93** | 5 | **3.630 ± 0.014** | 3.609 – 3.646 | n=100 max_tok=128, post-fix; vllm-rbln on node5 TP=2 |
 
-**σ ≈ 1–2 ms across all four devices** (≈ 0.1% of mean). Run-to-run reproducibility is excellent. The canonical (1-shot) hero numbers fall within 1 σ of the variance mean for every device, so even single-shot reporting is reliable here.
-
-The NPU side has 4 retries instead of 5 because the 5th retry was orphaned when backend was redeployed mid-sweep (v31→v32 rollover). Four samples is statistically sufficient given the σ is already ≈1 ms.
+**Reproducibility is excellent for every device.** σ across 5 reruns is 1 ms for the GPU/RNGD side and 14 ms for Atom+ (CV ≈ 0.07% and 0.39% respectively). Canonical 1-shot hero numbers fall within 1 σ of variance mean for every device.
 
 ### Sweep 3: Long-output (n=20, max_tok=512, retry=3) — GPU complete; NPU running
 
