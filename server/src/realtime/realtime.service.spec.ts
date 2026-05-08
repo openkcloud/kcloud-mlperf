@@ -115,7 +115,7 @@ describe('RealtimeService', () => {
     const resultRow: Partial<MpExamResult> = {
       exam_id: 99,
       result_perf_tps: 62.94,
-      result_tt100t: 1.588,
+      result_tt100t: 1588,
       created_at: new Date('2026-04-28T08:30:00Z'),
     };
 
