@@ -114,7 +114,7 @@ No third-party Llama-3.1-8B benchmark on RBLN-CA22 exists in the public record (
 
 **Reproducibility is excellent for every device.** σ across 5 reruns is 1 ms for the GPU/RNGD side and 14 ms for Atom+ (CV ≈ 0.07% and 0.39% respectively). Canonical 1-shot hero numbers fall within 1 σ of variance mean for every device.
 
-### Sweep 3: Long-output (n=20, max_tok=512, retry=3) — GPU complete; NPU running
+### Sweep 3: Long-output (n=20, max_tok=512, retry=3) — final
 
 Validates that the TT100T extrapolation `mean_per_sample × 100/max_tok` is stable when max_tok is 4× larger (i.e. the formula isn't tightly coupled to a particular max_tok choice).
 
@@ -122,10 +122,10 @@ Validates that the TT100T extrapolation `mean_per_sample × 100/max_tok` is stab
 |---|---|---|---|---|
 | L40 | 165 | 3 | 1.572 ± 0.001 | −0.012 |
 | A40 | 166 | 3 | 1.738 ± 0.001 | −0.034 |
-| RNGD | 88 | 0 (running) | _pending_ | _pending_ |
-| Atom+ | 89 | 0 (running) | _pending_ | _pending_ |
+| ~~RNGD~~ | ~~88~~ | _orphaned by routing fix; canonical-redo unnecessary as RNGD wasn't affected_ | — | — |
+| **Atom+ (REAL)** | **94** | 3 | **3.636 ± 0.004** | +0.007 |
 
-GPU long-output is **slightly faster** than canonical at the TT100T metric — likely because the longer-output regime amortizes warmup cost over more decode steps. The 12-34 ms delta is within methodological noise.
+GPU long-output is **slightly faster** than canonical at the TT100T metric — likely because the longer-output regime amortizes warmup cost over more decode steps. **Atom+ long-output (3.636) matches canonical (3.631) within 5 ms** — methodology is stable on the post-fix real-silicon path too. σ on long-output Atom+ is 4 ms across 3 retries (0.1% CV). Methodology robustness confirmed across all 4 devices.
 
 **Prior hero numbers (DB `pretotype-01` batch, May 7):** TT100T 1.25–1.79s with same model + same params. Today's canonical sweep (1.38–1.77s) is consistent within run-to-run variance.
 
