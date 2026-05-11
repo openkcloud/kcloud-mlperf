@@ -490,8 +490,6 @@ const RngdNpuEvalPage = () => {
         title="Live Bench Dashboard (node4 — RNGD)"
         src="http://10.254.202.114:30890/"
         height={900}
-        idle={rngdSlot === null || rngdSlot.exam_id === null}
-        idleLabel="No NPU benchmark currently running on FuriosaAI RNGD devices"
       />
 
       {/* Delete Dialog */}
