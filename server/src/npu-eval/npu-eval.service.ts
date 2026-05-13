@@ -15,10 +15,16 @@ import { CreateNpuExamDto } from './dto/create-npu-exam.dto';
 import { UpdateNpuExamDto } from './dto/update-npu-exam.dto';
 import { CreateNpuExamResultDto } from './dto/create-npu-exam-result.dto';
 import { PaginationQueryDto } from '../common-dto/pagination-query.dto';
+import { captureReproducibilityMetadata } from '../reproducibility/reproducibility.metadata';
+import { formatSeed } from '../reproducibility/seed-format';
+import { scoreMmluRun, type MmluLetter } from '../mm-exam/mmlu-scoring';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import { StatusEnum } from '../enums/status.enum';
+import { selfFairnessSnapshot } from '../comparison/fairness-assessment';
+import { type HardwareVendor } from '../comparison/comparison.service';
+import { LatencyMeasurementContext } from '../enums/latency-measurement-context.enum';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -31,9 +37,16 @@ dayjs.extend(timezone);
 // vllm-rbln on node5.  Before the per-vendor split, both paths shared one
 // URL and Atom+ exams were silently served by the RNGD silicon, breaking
 // any cross-vendor comparison.
+//
+// ATOM now defaults to the in-cluster Service DNS (vllm-atomplus.npu) backed
+// by the Lane A deployment in app/atomplus/.  The legacy node5:30093 manual
+// bypass is being retired — override via NPU_INFERENCE_URL_ATOM only when
+// running outside the cluster (local dev, smoke harnesses).
 const NPU_INFERENCE_URLS: Record<string, string> = {
   RNGD: process.env.NPU_INFERENCE_URL_RNGD || 'http://10.254.202.114:8000',
-  ATOM: process.env.NPU_INFERENCE_URL_ATOM || 'http://10.254.202.111:30093',
+  ATOM:
+    process.env.NPU_INFERENCE_URL_ATOM ||
+    'http://vllm-atomplus.npu.svc.cluster.local:8000',
 };
 
 const FALLBACK_NPU_INFERENCE_URL =
@@ -125,10 +138,42 @@ export class NpuEvalService implements OnModuleInit {
         createNpuExamDto.started_at = currentTime.format(this.timestampFormat);
       }
 
-      const npuExam = this.npuExamRepo.create({
-        ...createNpuExamDto,
-        status: StatusEnum.PENDING,
+      const reproMeta = captureReproducibilityMetadata();
+      const seedValue = formatSeed(
+        createNpuExamDto.seed,
+        process.env.BENCHMARK_DETERMINISTIC === '1',
+      );
+      const { seed: _dtoSeed, ...npuExamData } = createNpuExamDto;
+      // US-NEXT-1: persist a self-fairness snapshot so the jsonb
+      // `fairness_assessment` column is populated at create-time. NPU runs
+      // capture latency server-side via the SSE token stream, and vendor is
+      // derived from the npu_type label (RNGD → furiosa, Atom+ → rebellions).
+      const npuTypeUpper = (createNpuExamDto.npu_type ?? '')
+        .toUpperCase()
+        .trim();
+      let vendor: HardwareVendor = 'unknown';
+      if (npuTypeUpper.startsWith('ATOM')) {
+        vendor = 'rebellions';
+      } else if (npuTypeUpper.startsWith('RNGD')) {
+        vendor = 'furiosa';
+      }
+      const fairnessAssessment = selfFairnessSnapshot({
+        vendor,
+        precision: createNpuExamDto.precision ?? null,
+        latency_measurement_context:
+          LatencyMeasurementContext.SERVER_TOKEN_STREAM,
       });
+      const examPayload: Partial<NpuExam> = {
+        ...npuExamData,
+        ...reproMeta,
+        status: StatusEnum.PENDING,
+        fairness_assessment: fairnessAssessment as unknown as Record<
+          string,
+          unknown
+        >,
+      };
+      if (seedValue !== null) examPayload.seed_value = seedValue;
+      const npuExam = this.npuExamRepo.create(examPayload);
       const rowData = await this.npuExamRepo.save(npuExam);
 
       // Schedule the benchmark execution
@@ -213,7 +258,8 @@ export class NpuEvalService implements OnModuleInit {
   }
 
   async update(id: number, updateNpuExamDto: UpdateNpuExamDto) {
-    await this.npuExamRepo.update(id, updateNpuExamDto);
+    const { seed: _s, ...updateData } = updateNpuExamDto;
+    await this.npuExamRepo.update(id, updateData);
     return this.findOne(id);
   }
 
@@ -231,6 +277,18 @@ export class NpuEvalService implements OnModuleInit {
       try {
         this.schedulerRegistry.deleteTimeout(`npu-exam-${id}`);
       } catch {}
+
+      // US-NEXT-5: purge partial result rows BEFORE marking the exam stopped so
+      // a re-submitted exam under the same exam_id (or new exam reusing the
+      // logical name) does not inherit stale rows that latestResult() would
+      // pick up via max(result_number).
+      try {
+        await this.npuExamResultRepo.delete({ exam_id: id });
+      } catch (purgeError) {
+        this.logger.error(
+          `Failed to purge npu_exam_result rows for exam ${id} on stop: ${purgeError?.message ?? purgeError}`,
+        );
+      }
 
       const now = dayjs().tz(this.timezone).format(this.timestampFormat);
 
@@ -372,7 +430,8 @@ export class NpuEvalService implements OnModuleInit {
         const msg =
           `Inference server not available at ${inferenceUrl} ` +
           `for npu_type=${exam.npu_type}. RNGD path serves furiosa-llm on ` +
-          `node4:8000; Atom+ path serves vllm-rbln on node5:30093.`;
+          `node4:8000; Atom+ path serves vllm-rbln via ` +
+          `vllm-atomplus.npu.svc.cluster.local:8000 (node5).`;
         await this.npuExamRepo.update(examId, {
           status: StatusEnum.ERROR,
           error_log: msg,
@@ -396,16 +455,34 @@ export class NpuEvalService implements OnModuleInit {
           ? samples.length
           : Math.min(exam.data_number, samples.length);
       const activeSamples = samples.slice(0, numSamples);
-      const effectiveMaxTokens =
-        exam.max_output_tokens === 0 ? 4096 : exam.max_output_tokens;
+
+      // Cap max_tokens to fit within the model's context window. Without this,
+      // vllm-rbln on Atom+ (max_model_len=4096) rejects every request with
+      // HTTP 400 when max_output_tokens=0 falls back to 4096 — input tokens
+      // plus 4096 output exceeds the window. Reserve INPUT_TOKEN_BUDGET for
+      // the prompt (CNN-DailyMail summarization tops out near 700 tokens at
+      // 2000-char slice; MMLU-Pro is smaller). Furiosa RNGD reports 32768.
+      const modelMaxLen = await this.fetchModelMaxLen(inferenceUrl);
+      const INPUT_TOKEN_BUDGET = 1024;
+      const safeUpperBound = Math.max(128, modelMaxLen - INPUT_TOKEN_BUDGET);
+      const requestedMaxTokens =
+        exam.max_output_tokens === 0 ? safeUpperBound : exam.max_output_tokens;
+      const effectiveMaxTokens = Math.min(requestedMaxTokens, safeUpperBound);
 
       this.logger.log(
         `NPU exam ${examId}: RUNNING — ${activeSamples.length} samples, ` +
-          `max_tokens=${effectiveMaxTokens}, ${exam.retry_num} runs`,
+          `max_tokens=${effectiveMaxTokens} (model_max_len=${modelMaxLen}, ` +
+          `requested=${requestedMaxTokens}), ${exam.retry_num} runs`,
       );
 
       // --- Execute benchmark runs ---
       let bestTpsOverall = 0;
+
+      // US-004: load expected MMLU letters once (not per-run) so accuracy
+      // can be computed from each run's collected completions. For mlperf
+      // benchmarks this stays null and accuracy passes through as 0.
+      const mmluExpected =
+        exam.benchmark === 'mmlu' ? this.loadMmluExpectedLetters() : null;
 
       for (let run = 1; run <= exam.retry_num; run++) {
         if (abortController.signal.aborted) {
@@ -431,6 +508,20 @@ export class NpuEvalService implements OnModuleInit {
           bestTpsOverall = runResult.tps;
         }
 
+        // US-004: score MMLU completions when expected letters are available.
+        // Truncate expected to the activeSamples slice we actually ran so
+        // partial / data_number-limited runs score correctly.
+        let accuracyPct = 0;
+        if (mmluExpected && exam.benchmark === 'mmlu') {
+          const sliced = mmluExpected.slice(0, activeSamples.length);
+          if (sliced.length === runResult.completions.length) {
+            accuracyPct = scoreMmluRun(
+              runResult.completions,
+              sliced,
+            ).accuracy_pct;
+          }
+        }
+
         // Store result
         await this.createResult({
           examId,
@@ -442,7 +533,7 @@ export class NpuEvalService implements OnModuleInit {
           sps: runResult.sps,
           latency: runResult.latency,
           tpot: runResult.avgTpot,
-          accuracy: 0,
+          accuracy: accuracyPct,
           npuMemPeak: 0,
           npuUtil: 0,
           npuPower: 0,
@@ -503,12 +594,16 @@ export class NpuEvalService implements OnModuleInit {
     samplesCompleted: number;
     errors: number;
     bestTt100t: number | null;
+    /** US-004: collected completion bodies, in sample order. Empty string for
+     * samples that errored, so the array length equals samples.length. */
+    completions: string[];
   }> {
     const runStart = performance.now();
     let totalTokens = 0;
     let totalTtft = 0;
     let totalTpotSum = 0;
     const tt100tValues: number[] = [];
+    const completions: string[] = [];
     let samplesCompleted = 0;
     let errors = 0;
 
@@ -545,6 +640,7 @@ export class NpuEvalService implements OnModuleInit {
         }
 
         totalTokens += result.tokenCount;
+        completions.push(result.body ?? '');
         samplesCompleted++;
 
         // Progress log every 50 samples
@@ -558,6 +654,7 @@ export class NpuEvalService implements OnModuleInit {
       } catch (err) {
         if (signal.aborted) break;
         errors++;
+        completions.push(''); // keep array aligned with samples for scoring
         this.logger.warn(`  Sample ${idx + 1}: ERROR — ${err.message}`);
       }
     }
@@ -578,7 +675,58 @@ export class NpuEvalService implements OnModuleInit {
       samplesCompleted,
       errors,
       bestTt100t: tt100tValues.length > 0 ? Math.min(...tt100tValues) : null,
+      completions,
     };
+  }
+
+  // US-004: load MMLU expected-letter answers in the same order as
+  // loadDatasetSamples('mmlu') returns prompts. Reads MMLU-Pro JSON/JSONL
+  // files from DATASET_BASE_PATH/mmlu-pro and extracts the `answer` field.
+  // Returns null if the dataset is unavailable (e.g., dev box without NFS),
+  // in which case accuracy stays 0 because expected answers are unknown.
+  private loadMmluExpectedLetters(): MmluLetter[] | null {
+    try {
+      const datasetDir = path.join(DATASET_BASE_PATH, 'mmlu-pro');
+      if (!fs.existsSync(datasetDir) || !fs.statSync(datasetDir).isDirectory())
+        return null;
+      const files = fs.readdirSync(datasetDir).sort();
+      const answers: MmluLetter[] = [];
+      for (const fname of files) {
+        const fpath = path.join(datasetDir, fname);
+        if (fname.endsWith('.jsonl')) {
+          const raw = fs.readFileSync(fpath, 'utf-8');
+          for (const line of raw.split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const item = JSON.parse(line.trim());
+              const a = String(item.answer ?? '').toUpperCase();
+              if (a === 'A' || a === 'B' || a === 'C' || a === 'D')
+                answers.push(a as MmluLetter);
+              else answers.push('A'); // unknown → placeholder; scoring will mark wrong
+            } catch {
+              /* skip malformed line */
+            }
+          }
+        } else if (fname.endsWith('.json')) {
+          try {
+            const data = JSON.parse(fs.readFileSync(fpath, 'utf-8'));
+            if (Array.isArray(data)) {
+              for (const item of data) {
+                const a = String(item.answer ?? '').toUpperCase();
+                if (a === 'A' || a === 'B' || a === 'C' || a === 'D')
+                  answers.push(a as MmluLetter);
+                else answers.push('A');
+              }
+            }
+          } catch {
+            /* skip */
+          }
+        }
+      }
+      return answers.length > 0 ? answers : null;
+    } catch {
+      return null;
+    }
   }
 
   // =====================================================================
@@ -597,6 +745,8 @@ export class NpuEvalService implements OnModuleInit {
     token100Time: number | null;
     startTime: number;
     endTime: number;
+    /** Accumulated completion text (US-004 — required for MMLU scoring). */
+    body: string;
   }> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) {
@@ -617,6 +767,7 @@ export class NpuEvalService implements OnModuleInit {
       let firstTokenTime: number | null = null;
       let token100Time: number | null = null;
       let tokenCount = 0;
+      let accumulatedBody = '';
 
       const onAbort = () => {
         req.destroy();
@@ -660,6 +811,16 @@ export class NpuEvalService implements OnModuleInit {
               if (tokenCount === 100 && token100Time === null) {
                 token100Time = performance.now();
               }
+              // US-004: accumulate the OpenAI-stream delta.content so the
+              // caller can score MMLU answers. Tolerant of malformed JSON
+              // (some servers emit non-OpenAI shapes for first/last frames).
+              try {
+                const payload = JSON.parse(trimmed.slice(6));
+                const delta = payload?.choices?.[0]?.delta?.content;
+                if (typeof delta === 'string') accumulatedBody += delta;
+              } catch {
+                /* ignore non-OpenAI frames */
+              }
             }
           }
         });
@@ -672,6 +833,7 @@ export class NpuEvalService implements OnModuleInit {
             token100Time,
             startTime,
             endTime: performance.now(),
+            body: accumulatedBody,
           });
         });
 
@@ -706,6 +868,57 @@ export class NpuEvalService implements OnModuleInit {
   // =====================================================================
   // Server Health Check
   // =====================================================================
+
+  /**
+   * Fetch the model's max context length from the OpenAI-compatible
+   * `/v1/models` endpoint. Used to safely cap `max_tokens` so requests
+   * never exceed the server's context window (which produces HTTP 400 for
+   * every sample). Tolerates vllm-style (`max_model_len`) and Furiosa-style
+   * (`max_context_len`) fields. Falls back to 4096 if probe fails — matches
+   * the most restrictive deployed model so we never overshoot.
+   */
+  private fetchModelMaxLen(serverUrl: string): Promise<number> {
+    const SAFE_FALLBACK = 4096;
+    return new Promise((resolve) => {
+      const url = new URL(`${serverUrl}/v1/models`);
+      const options: http.RequestOptions = {
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname,
+        method: 'GET',
+        timeout: 10000,
+      };
+      const req = http.request(options, (res) => {
+        if (res.statusCode !== 200) {
+          resolve(SAFE_FALLBACK);
+          return;
+        }
+        let body = '';
+        res.on('data', (c: Buffer) => {
+          body += c.toString();
+        });
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(body);
+            const m = json?.data?.[0] ?? {};
+            const len = Number(
+              m.max_model_len ?? m.max_context_len ?? SAFE_FALLBACK,
+            );
+            resolve(Number.isFinite(len) && len > 0 ? len : SAFE_FALLBACK);
+          } catch {
+            resolve(SAFE_FALLBACK);
+          }
+        });
+        res.on('error', () => resolve(SAFE_FALLBACK));
+      });
+      req.on('error', () => resolve(SAFE_FALLBACK));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(SAFE_FALLBACK);
+      });
+      req.end();
+    });
+  }
 
   private checkServerHealth(serverUrl: string): Promise<boolean> {
     return new Promise((resolve) => {
