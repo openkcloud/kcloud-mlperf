@@ -53,5 +53,15 @@ export default tseslint.config(
     },
   },
 
+  // e2e Playwright specs intentionally use console.log for diagnostic output
+  // when probing the live UI. Production app code is still guarded by the
+  // no-console rule above.
+  {
+    files: ['e2e/**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
   prettierConfig,
 );

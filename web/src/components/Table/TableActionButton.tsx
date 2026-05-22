@@ -128,7 +128,7 @@ export const TableActionButton = memo<TableActionButtonProps>(props => {
           >
             Stop
           </Button>
-          <IconButton size="small" onClick={handleClick} sx={{ width: 28, height: 28 }}>
+          <IconButton size="small" aria-label="More actions" onClick={handleClick} sx={{ width: 28, height: 28 }}>
             <MoreVertIcon sx={{ fontSize: '1rem' }} />
           </IconButton>
           <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
@@ -145,7 +145,7 @@ export const TableActionButton = memo<TableActionButtonProps>(props => {
             <ContentCopyOutlinedIcon sx={{ fontSize: '0.8125rem !important', mr: 0.5 }} />
             Use
           </Button>
-          <IconButton size="small" onClick={handleClick} sx={{ width: 28, height: 28 }}>
+          <IconButton size="small" aria-label="More actions" onClick={handleClick} sx={{ width: 28, height: 28 }}>
             <MoreVertIcon sx={{ fontSize: '1rem' }} />
           </IconButton>
           <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
@@ -176,7 +176,7 @@ export const TableActionButton = memo<TableActionButtonProps>(props => {
             <ContentCopyOutlinedIcon sx={{ fontSize: '0.8125rem !important', mr: 0.5 }} />
             Use
           </Button>
-          <IconButton size="small" onClick={handleClick} sx={{ width: 28, height: 28 }}>
+          <IconButton size="small" aria-label="More actions" onClick={handleClick} sx={{ width: 28, height: 28 }}>
             <MoreVertIcon sx={{ fontSize: '1rem' }} />
           </IconButton>
           <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>
@@ -204,7 +204,7 @@ export const TableActionButton = memo<TableActionButtonProps>(props => {
           >
             Start
           </Button>
-          <IconButton size="small" onClick={handleClick} sx={{ width: 28, height: 28 }}>
+          <IconButton size="small" aria-label="More actions" onClick={handleClick} sx={{ width: 28, height: 28 }}>
             <MoreVertIcon sx={{ fontSize: '1rem' }} />
           </IconButton>
           <Menu anchorEl={anchorEl} open={open} onClose={handleClose}>

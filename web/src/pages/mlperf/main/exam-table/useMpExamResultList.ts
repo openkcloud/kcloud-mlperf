@@ -7,7 +7,7 @@ import { MpExamQueryKeys } from '@/contexts/QueryContext/query.keys.ts';
 
 export const useMpExamResultList = (params: PaginationParams) => {
   const query = useQuery({
-    queryKey: MpExamQueryKeys.list(params.page, params.limit),
+    queryKey: MpExamQueryKeys.list(params.page, params.limit, params.search),
     queryFn: () => MpExamApi.list(params),
     staleTime: Infinity
   });

@@ -211,41 +211,25 @@ export const MmluExamResultTable = memo((props: MmluExamResultTableProps) => {
 
   const handleSearch = (search: string) => {
     setSearchTerm(search);
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
   };
 
   const filteredData = useMemo(() => {
     if (!data?.list) return [];
 
-    const baseList = hideSweepRuns
+    return hideSweepRuns
       ? data.list.filter(item => !item.description?.startsWith('[sweep:'))
       : data.list;
-
-    if (!searchTerm) return baseList;
-
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    return baseList.filter(
-      item =>
-        item.name.toLowerCase().includes(lowerSearchTerm) ||
-        item.model.toLowerCase().includes(lowerSearchTerm) ||
-        item.dataset.toLowerCase().includes(lowerSearchTerm) ||
-        item.gpu_type.toLowerCase().includes(lowerSearchTerm)
-    );
-  }, [data?.list, searchTerm, hideSweepRuns]);
-
-  // const paginatedData = useMemo(() => {
-  //   const startIndex = pagination.pageIndex * pagination.pageSize;
-  //   const endIndex = startIndex + pagination.pageSize;
-  //   return filteredData.slice(startIndex, endIndex);
-  // }, [filteredData, pagination.pageIndex, pagination.pageSize]);
-
-  // const pageCount = Math.ceil(filteredData.length / pagination.pageSize);
+  }, [data?.list, hideSweepRuns]);
 
   return (
     <QueryBoundary query={query} isEmpty={d => !d || d.list.length === 0}>
       <MMLUTable<MmExamResultList>
         data={filteredData}
         columns={createColumns(onUseData)}
-        total={filteredData.length}
+        total={data?.total ?? 0}
+        manualPagination
+        pageCount={data?.total_pages ?? -1}
         state={{
           pagination
         }}

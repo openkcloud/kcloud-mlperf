@@ -299,14 +299,14 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
   }, [searchTerm]);
 
   const { data, refetchMpExamList, query } = useMpExamResultList({
-    page: 1,
-    limit: 10000, // Fetch all items for client-side pagination
+    page: pagination.pageIndex + 1,
+    limit: pagination.pageSize,
     search: apiSearchTerm
   });
 
   const { list: resultsList } = useMpExamResultsList({
     page: 1,
-    limit: 10000
+    limit: 1000 // fetch all results for global best-badge detection
   });
 
   const bestPerfExamId = useMemo(() => {
@@ -323,6 +323,7 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
 
   const handleSearch = (search: string) => {
     setSearchTerm(search);
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
   };
   const bestAccExamId = useMemo(() => {
     if (!resultsList || resultsList.length === 0) return undefined;
@@ -337,62 +338,12 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
   const filteredData = useMemo(() => {
     if (!data?.list) return [];
 
-    const baseList = hideSweepRuns
+    return hideSweepRuns
       ? data.list.filter(item => !item.description?.startsWith('[sweep:'))
       : data.list;
+  }, [data?.list, hideSweepRuns]);
 
-    if (!searchTerm) return baseList;
-
-    const lowerSearchTerm = searchTerm.toLowerCase().trim();
-
-    // Check if searching for "best" or "best tps"
-    if (
-      lowerSearchTerm === 'best' ||
-      lowerSearchTerm === 'best tps' ||
-      lowerSearchTerm === 'best acc' ||
-      lowerSearchTerm === 'best accuracy' ||
-      lowerSearchTerm === 'best performance'
-    ) {
-      if (lowerSearchTerm === 'best') {
-        const bestIds = [bestPerfExamId, bestAccExamId].filter(
-          (id): id is number => id !== undefined
-        );
-        if (bestIds.length > 0) {
-          return baseList.filter(item => bestIds.includes(item.id));
-        }
-        return [];
-      }
-      if (lowerSearchTerm === 'best tps') {
-        if (bestPerfExamId !== undefined) {
-          return baseList.filter(item => item.id === bestPerfExamId);
-        }
-        return [];
-      }
-      if (lowerSearchTerm === 'best acc' || lowerSearchTerm === 'best accuracy') {
-        if (bestAccExamId !== undefined) {
-          return baseList.filter(item => item.id === bestAccExamId);
-        }
-        return [];
-      }
-      if (lowerSearchTerm === 'best performance') {
-        if (bestPerfExamId !== undefined) {
-          return baseList.filter(item => item.id === bestPerfExamId);
-        }
-        return [];
-      }
-    }
-
-    // Regular search
-    return baseList.filter(
-      item =>
-        item.name.toLowerCase().includes(lowerSearchTerm) ||
-        item.model.toLowerCase().includes(lowerSearchTerm) ||
-        item.dataset.toLowerCase().includes(lowerSearchTerm) ||
-        item.gpu_type.toLowerCase().includes(lowerSearchTerm)
-    );
-  }, [data?.list, searchTerm, bestPerfExamId, bestAccExamId, hideSweepRuns]);
-
-  const totalCount = searchTerm ? filteredData.length : (data?.total ?? 0);
+  const totalCount = data?.total ?? 0;
 
   return (
     <QueryBoundary query={query} isEmpty={d => !d || d.list.length === 0}>
@@ -400,6 +351,8 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
         data={filteredData}
         columns={createColumns(onUseData, bestPerfExamId, bestAccExamId)}
         total={totalCount}
+        manualPagination
+        pageCount={data?.total_pages ?? -1}
         state={{
           pagination
         }}

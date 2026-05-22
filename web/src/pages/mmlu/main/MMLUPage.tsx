@@ -234,7 +234,7 @@ const MMLUPage = () => {
             <AddIcon sx={{ color: '#FFF', fontSize: '1.375rem' }} />
           </Box>
           <Box sx={{ flex: 1 }}>
-            <Typography sx={{ fontWeight: 700, color: '#1E293B', fontSize: '1rem', lineHeight: 1.3 }}>
+            <Typography component="h2" sx={{ fontWeight: 700, color: '#1E293B', fontSize: '1rem', lineHeight: 1.3 }}>
               Create New Test
             </Typography>
             <Typography sx={{ fontSize: '0.8125rem', color: '#64748B', lineHeight: 1.3 }}>

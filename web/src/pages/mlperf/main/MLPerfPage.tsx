@@ -44,6 +44,7 @@ import { MpExamConfirmationModal } from '@/pages/mlperf/main/components/ExamConf
 import { MpExamForm, type MpExamFormHandle } from '@/pages/mlperf/main/exam-form';
 import type { MpExamFormInput } from '@/pages/mlperf/main/exam-form/form.type';
 import { MlperfExamResultTable } from '@/pages/mlperf/main/exam-table';
+import { useStore } from '@/store';
 
 // ----------------------------------------------------------------------
 
@@ -57,6 +58,12 @@ const MLPerfPage = () => {
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
   const formRef = useRef<MpExamFormHandle | null>(null);
+
+  // F2: admin-only fairness-gating override. Default off. When on the
+  // ComparisonCheckbox does not gate on precision/model/dataset/scenario diffs.
+  const { fairnessOverride, setFairnessOverride } = useStore(
+    store => store.testComparison
+  );
 
   const handleHideSweepChange = (checked: boolean) => {
     setHideSweep(checked);
@@ -174,8 +181,23 @@ const MLPerfPage = () => {
         />
       </Box>
 
-      {/* Toolbar — Hide sweep toggle */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
+      {/* Toolbar — Hide sweep + Fairness override toggles */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mb: 1.5, alignItems: 'center' }}>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              color="warning"
+              checked={fairnessOverride}
+              onChange={e => setFairnessOverride(e.target.checked)}
+            />
+          }
+          label={
+            <Typography sx={{ fontSize: '0.8125rem', color: fairnessOverride ? '#B45309' : '#475569' }}>
+              Override fairness gating (admin)
+            </Typography>
+          }
+        />
         <FormControlLabel
           control={
             <Switch
@@ -243,7 +265,7 @@ const MLPerfPage = () => {
             <AddIcon sx={{ color: '#FFF', fontSize: '1.375rem' }} />
           </Box>
           <Box sx={{ flex: 1 }}>
-            <Typography sx={{ fontWeight: 700, color: '#1E293B', fontSize: '1rem', lineHeight: 1.3 }}>
+            <Typography component="h2" sx={{ fontWeight: 700, color: '#1E293B', fontSize: '1rem', lineHeight: 1.3 }}>
               Create New Test
             </Typography>
             <Typography sx={{ fontSize: '0.8125rem', color: '#64748B', lineHeight: 1.3 }}>

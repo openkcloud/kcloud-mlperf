@@ -21,7 +21,7 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
     <Paper sx={{ p: 2, mt: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="h6">{title}</Typography>
+          <Typography variant="h6" component="h3">{title}</Typography>
           {state === 'ready' && (
             <Chip label="Live" size="small" sx={{ bgcolor: '#16A34A', color: '#fff', fontWeight: 600, fontSize: '0.6875rem' }} />
           )}

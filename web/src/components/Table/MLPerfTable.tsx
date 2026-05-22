@@ -173,6 +173,7 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
           <Button
             variant="outlined"
             size="small"
+            aria-label="Previous page"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
             sx={{ minWidth: 0, width: 32, height: 32, p: 0 }}
@@ -185,6 +186,7 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
           <Button
             variant="outlined"
             size="small"
+            aria-label="Next page"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
             sx={{ minWidth: 0, width: 32, height: 32, p: 0 }}

@@ -47,6 +47,7 @@ export const RefreshButton = memo<RefreshButtonProps>(props => {
       <span>
         <IconButton
           type="button"
+          aria-label="Refresh"
           onClick={handleClick}
           disabled={isLoading}
           size="small"
