@@ -206,7 +206,7 @@ const AtomPlusNpuEvalPage = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>Atom+ NPU Evaluation</Typography>
+          <Typography variant="h5" component="h2" fontWeight={700}>Atom+ NPU Evaluation</Typography>
           <Box sx={{ mt: 0.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
               variant="outlined"

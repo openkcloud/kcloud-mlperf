@@ -35,8 +35,14 @@ export const MmExamApi = {
   // ----------------------------------------------------------------------
 
   list: async (params: PaginationParams) => {
+    const filteredParams = {
+      page: params.page,
+      limit: params.limit,
+      ...(params.search && params.search.trim() !== '' ? { search: params.search } : {})
+    };
+
     const { data } = await httpClient.get<PaginationMeta<MmExamResultList>>('/mm-exam/list', {
-      params
+      params: filteredParams
     });
 
     return data;

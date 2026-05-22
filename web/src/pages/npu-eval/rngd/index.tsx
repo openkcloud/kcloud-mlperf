@@ -247,7 +247,7 @@ const RngdNpuEvalPage = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>RNGD NPU Evaluation</Typography>
+          <Typography variant="h5" component="h2" fontWeight={700}>RNGD NPU Evaluation</Typography>
           <Box sx={{ mt: 0.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
               variant="outlined"
@@ -411,15 +411,15 @@ const RngdNpuEvalPage = () => {
                   )}
                 </TableCell>
                 <TableCell align="right">
-                  <IconButton size="small" onClick={() => navigate(NpuEvalPageLinks.testResult(exam.id))}>
+                  <IconButton size="small" aria-label={`View results for ${exam.name}`} onClick={() => navigate(NpuEvalPageLinks.testResult(exam.id))}>
                     <VisibilityIcon fontSize="small" />
                   </IconButton>
                   {exam.status === StatusEnum.RUNNING && (
-                    <IconButton size="small" color="warning" onClick={() => stopMutation.mutate(exam.id)}>
+                    <IconButton size="small" color="warning" aria-label={`Stop ${exam.name}`} onClick={() => stopMutation.mutate(exam.id)}>
                       <StopIcon fontSize="small" />
                     </IconButton>
                   )}
-                  <IconButton size="small" color="error" onClick={() => setDeleteTarget({ id: exam.id, name: exam.name })}>
+                  <IconButton size="small" color="error" aria-label={`Delete ${exam.name}`} onClick={() => setDeleteTarget({ id: exam.id, name: exam.name })}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </TableCell>
