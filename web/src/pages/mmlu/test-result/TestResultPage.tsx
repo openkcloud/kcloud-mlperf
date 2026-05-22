@@ -33,7 +33,6 @@ type AverageDatasets = Array<{ label: string; accuracy: number | null; allAccura
 
 const TestResultPage = () => {
   const testResult = useMmExamTestResult();
-  console.log('testResult of MMLU:', testResult?.results);
 
   const downloadExcel = () => {
     const workbook = XLSX.utils.book_new();
@@ -49,8 +48,6 @@ const TestResultPage = () => {
     link.download = 'MMLU-Pro Accuracy Test Results.xlsx';
     link.click();
   };
-
-  console.log('testResult: ', testResult);
 
   const testResultGraphs: TestResultGraphs | null = useMemo(() => {
     if (!testResult || testResult.results.length === 0) return null;
@@ -221,10 +218,7 @@ const TestResultPage = () => {
             </Typography>
             <Button
               variant="contained"
-              onClick={() => {
-                console.log('Download button is clicked!');
-                downloadExcel();
-              }}
+              onClick={downloadExcel}
               startIcon={<DownloadOutlinedIcon />}
             >
               Download

@@ -75,6 +75,7 @@ export const Modal = (
               <IconButton
                 onClick={event => onClose?.(event, 'escapeKeyDown')}
                 size="small"
+                aria-label="Close"
                 sx={{
                   color: 'grey.500',
                   transition: 'color 0.2s ease, background-color 0.2s ease',

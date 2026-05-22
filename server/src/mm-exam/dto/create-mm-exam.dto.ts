@@ -1,6 +1,7 @@
 import {
   IsInt,
   IsNumber,
+  IsNumberString,
   IsString,
   Length,
   Min,
@@ -45,7 +46,8 @@ export class CreateMmExamDto {
   @Length(1, 100)
   dataset: string;
 
-  // Required
+  // Required. data_number=0 means "full dataset" — the worker forwards "0"
+  // and its argparse interprets that as no per-subject sample cap.
   @IsInt()
   @Min(0)
   data_number: number;
@@ -117,4 +119,9 @@ export class CreateMmExamDto {
   @IsOptional()
   @IsString()
   error_log: string;
+
+  // Optional — reproducibility seed (WS-D03). Stored as string for bigint safety.
+  @IsOptional()
+  @IsNumberString()
+  seed?: number | string;
 }

@@ -17,8 +17,9 @@ import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPane
 import { ComparisonCandidatePicker } from '@/components/ComparisonCandidatePicker';
 import { ComparisonRunTable } from '@/components/ComparisonRunTable';
 import { ComparisonDetailDialog } from '@/components/ComparisonDetailDialog';
+import { QueryBoundary } from '@/components/QueryBoundary';
 import { ComparisonApi } from '@/api/domains/comparison';
-import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate } from '@/api/domains/comparison';
+import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate, ComparisonListResponse } from '@/api/domains/comparison';
 import { MmluPageLinks } from '@/contexts/RouterContext/router.links';
 
 // ----------------------------------------------------------------------
@@ -35,11 +36,13 @@ const MmluDeviceComparisonPage = () => {
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const listQuery = useQuery({
     queryKey: ['comparison', 'list', 'mmlu'],
     queryFn: () => ComparisonApi.list({ benchmark: 'mmlu' }),
     refetchInterval: 30_000
   });
+
+  const { data, isLoading, error, refetch } = listQuery;
 
   const runs = data?.runs ?? [];
   const diagnosticReason: ComparisonDiagnosticReason = data?.diagnostic?.reason ?? 'no_runs_exist';
@@ -133,25 +136,30 @@ const MmluDeviceComparisonPage = () => {
         </Box>
       )}
 
-      <ComparisonRunTable
-        runs={runs}
-        isLoading={isLoading}
-        onSelectRun={handleSelectA}
-        selectedId={selectedA?.id}
-        showBenchmark={false}
-        showVendor
-        exportParams={{ benchmark: 'mmlu' }}
-        renderRowAction={(run) => (
-          <Button
-            size="small"
-            variant={selectedA?.id === run.id ? 'contained' : 'outlined'}
-            onClick={(e) => { e.stopPropagation(); handleSelectA(run); }}
-          >
-            {selectedA?.id === run.id ? 'Selected' : 'Pick'}
-          </Button>
-        )}
-        onClearFilters={() => refetch()}
-      />
+      <QueryBoundary<ComparisonListResponse>
+        query={listQuery}
+        isEmpty={d => !d || d.runs.length === 0}
+      >
+        <ComparisonRunTable
+          runs={runs}
+          isLoading={isLoading}
+          onSelectRun={handleSelectA}
+          selectedId={selectedA?.id}
+          showBenchmark={false}
+          showVendor
+          exportParams={{ benchmark: 'mmlu' }}
+          renderRowAction={(run) => (
+            <Button
+              size="small"
+              variant={selectedA?.id === run.id ? 'contained' : 'outlined'}
+              onClick={(e) => { e.stopPropagation(); handleSelectA(run); }}
+            >
+              {selectedA?.id === run.id ? 'Selected' : 'Pick'}
+            </Button>
+          )}
+          onClearFilters={() => refetch()}
+        />
+      </QueryBoundary>
 
       <Drawer
         anchor="right"

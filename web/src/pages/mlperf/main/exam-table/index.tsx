@@ -11,13 +11,15 @@ import type { MpExamDetails } from '@/api/types/mp-exam.types';
 import { MLPerfTable } from '@/components/Table';
 import { SelectedTestResultCount } from '@/constants/test-comparison.constants';
 import { TIMEZONE } from '@/constants/timezone.constants';
-import type { MpExamModeEnum } from '@/enums/mp-exam-mode.enum.ts';
 import type { StatusEnum } from '@/enums/status.enum';
 import { useStore } from '@/store';
 
+import { QueryBoundary } from '@/components/QueryBoundary';
 import { useMpExamResultList } from '@/pages/mlperf/main/exam-table/useMpExamResultList';
 import { useMpExamResultsList } from '@/pages/mlperf/main/exam-table/useMpExamResultsList';
-import { useMpExamStatus } from '@/pages/mlperf/main/components/ExamStatusBadge/useExamStatus';
+import { useQueryClient } from '@tanstack/react-query';
+import { MpExamQueryKeys } from '@/contexts/QueryContext/query.keys';
+import type { ExamStatusResponse } from '@/api/types/common.types';
 
 
 import { MpExamPageLinks } from '@/contexts/RouterContext/router.links.ts';
@@ -33,10 +35,13 @@ dayjs.extend(timezone);
 // ----------------------------------------------------------------------
 
 const RepetitionCell = memo<{ id: number; status: StatusEnum; retryNum: number }>(({ id, status, retryNum }) => {
-  const examStatus = useMpExamStatus({ id, status, tablePageNumber: 1 });
-  
-  const currentRepeatCount = examStatus?.currentRepeatCount;
-  
+  // Read from the query cache without adding a second polling observer.
+  // ExamStatusBadge (via useMpExamStatus) already polls this key every 3 s;
+  // reading the cached value here avoids duplicate network timers.
+  const queryClient = useQueryClient();
+  const cached = queryClient.getQueryData<ExamStatusResponse>(MpExamQueryKeys.checkExamStatus(id));
+  const currentRepeatCount = cached?.currentRepeatCount;
+
   if (!currentRepeatCount) {
     return <Typography variant="body2">{retryNum}</Typography>;
   }
@@ -217,16 +222,21 @@ const createColumns = (
   {
     accessorKey: 'comparison_action',
     header: 'Comparison',
-    accessorFn: row => ({ id: row.id, status: row.status, examMode: row.mode }),
+    accessorFn: row => row,
     cell: info => {
-      const { id, status, examMode } = info.getValue() as {
-        id: number;
-        status: StatusEnum;
-        examMode: MpExamModeEnum;
-      };
-
+      const row = info.getValue() as MpExamDetails;
       return (
-        <MlperfComparisonCheckbox id={id} disabled={status !== 'Completed'} examMode={examMode} />
+        <MlperfComparisonCheckbox
+          id={row.id}
+          disabled={row.status !== 'Completed'}
+          examMode={row.mode}
+          precision={row.precision}
+          model={row.model}
+          dataset={row.dataset}
+          scenario={row.scenario}
+          maxOutputTokens={row.max_output_tokens ?? null}
+          dataNumber={row.data_number}
+        />
       );
     }
   },
@@ -288,7 +298,7 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
     return searchTerm;
   }, [searchTerm]);
 
-  const { data, refetchMpExamList } = useMpExamResultList({
+  const { data, refetchMpExamList, query } = useMpExamResultList({
     page: 1,
     limit: 10000, // Fetch all items for client-side pagination
     search: apiSearchTerm
@@ -323,8 +333,6 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
     });
     return maxResultPerfAccItem?.exam_id;
   }, [resultsList]);
-  console.log('bestPerfExamId:', bestPerfExamId);
-  console.log('bestAccExamId:', bestAccExamId);
 
   const filteredData = useMemo(() => {
     if (!data?.list) return [];
@@ -384,28 +392,28 @@ export const MlperfExamResultTable = memo((props: MlperfExamResultTableProps) =>
     );
   }, [data?.list, searchTerm, bestPerfExamId, bestAccExamId, hideSweepRuns]);
 
-  if (!data || data.list.length === 0) return null;
-
-  const totalCount = searchTerm ? filteredData.length : data.total;
+  const totalCount = searchTerm ? filteredData.length : (data?.total ?? 0);
 
   return (
-    <MLPerfTable<MpExamDetails>
-      data={filteredData}
-      columns={createColumns(onUseData, bestPerfExamId, bestAccExamId)}
-      total={totalCount}
-      state={{
-        pagination
-      }}
-      onPaginationChange={setPagination}
-      onClickRefreshBtn={() => refetchMpExamList()}
-      compareBtn={{
-        disabled: mpExamIds.length !== SelectedTestResultCount,
-        onClick: () =>
-          navigate(MpExamPageLinks.testComparison(mpExamIds[0], mpExamIds[1]), {
-            preventScrollReset: true
-          })
-      }}
-      onSearch={handleSearch}
-    />
+    <QueryBoundary query={query} isEmpty={d => !d || d.list.length === 0}>
+      <MLPerfTable<MpExamDetails>
+        data={filteredData}
+        columns={createColumns(onUseData, bestPerfExamId, bestAccExamId)}
+        total={totalCount}
+        state={{
+          pagination
+        }}
+        onPaginationChange={setPagination}
+        onClickRefreshBtn={() => refetchMpExamList()}
+        compareBtn={{
+          disabled: mpExamIds.length !== SelectedTestResultCount,
+          onClick: () =>
+            navigate(MpExamPageLinks.testComparison(mpExamIds[0], mpExamIds[1]), {
+              preventScrollReset: true
+            })
+        }}
+        onSearch={handleSearch}
+      />
+    </QueryBoundary>
   );
 });

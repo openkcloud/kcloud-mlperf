@@ -12,6 +12,7 @@ import { MpExamModeEnum } from '@/enums/mp-exam-mode.enum';
 import { useTestDetails } from '@/pages/mlperf/test-comparison/useTestDetails';
 
 import { AccuracyComparisonGraph } from '@/pages/mlperf/test-comparison/components/AccuracyComparisonGraph';
+import { FairnessBanner } from '@/pages/mlperf/test-comparison/components/FairnessBanner';
 import { PerformanceComparisonGraph } from '@/pages/mlperf/test-comparison/components/PerformanceComparisonGraph';
 
 // ----------------------------------------------------------------------
@@ -89,6 +90,29 @@ const ComparisonPage = () => {
           Side-by-side analysis of two MLPerf benchmark runs
         </Typography>
       </Box>
+
+      {/* F3: fairness banner — red when configs differ, green when matched */}
+      <FairnessBanner
+        benchmark="mlperf"
+        idA={firstTestResult.id}
+        idB={secondTestResult.id}
+        fallbackA={{
+          precision: firstTestResult.precision,
+          model: firstTestResult.model,
+          dataset: firstTestResult.dataset,
+          scenario: firstTestResult.scenario,
+          data_number: firstTestResult.data_number,
+          max_output_tokens: firstTestResult.max_output_tokens ?? null
+        }}
+        fallbackB={{
+          precision: secondTestResult.precision,
+          model: secondTestResult.model,
+          dataset: secondTestResult.dataset,
+          scenario: secondTestResult.scenario,
+          data_number: secondTestResult.data_number,
+          max_output_tokens: secondTestResult.max_output_tokens ?? null
+        }}
+      />
 
       {/* Test cards — side-by-side at lg, stacked below */}
       <Box

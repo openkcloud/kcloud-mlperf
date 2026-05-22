@@ -10,6 +10,7 @@ export function getGpuPrometheusUrl(): string {
 }
 
 export function getL40LiveBenchUrl(): string {
+  // TODO: LAN-only fallback — set VITE__APP_L40_LIVE_BENCH_URL for external access
   return (
     (import.meta.env.VITE__APP_L40_LIVE_BENCH_URL as string | undefined) ??
     'http://10.254.184.195:30891/'
@@ -17,6 +18,7 @@ export function getL40LiveBenchUrl(): string {
 }
 
 export function getAtomPlusLiveBenchUrl(): string {
+  // TODO: LAN-only fallback — set VITE__APP_ATOMPLUS_LIVE_BENCH_URL for external access
   return (
     (import.meta.env.VITE__APP_ATOMPLUS_LIVE_BENCH_URL as string | undefined) ??
     'http://10.254.202.111:30892/'
@@ -24,6 +26,7 @@ export function getAtomPlusLiveBenchUrl(): string {
 }
 
 export function getA40LiveBenchUrl(): string {
+  // TODO: LAN-only fallback — set VITE__APP_A40_LIVE_BENCH_URL for external access
   return (
     (import.meta.env.VITE__APP_A40_LIVE_BENCH_URL as string | undefined) ??
     'http://10.254.184.196:30893/'

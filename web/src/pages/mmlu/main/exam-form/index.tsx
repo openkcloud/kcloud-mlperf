@@ -1,7 +1,7 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useMemo } from 'react';
 import { Controller, type SubmitHandler, useForm } from 'react-hook-form';
 
-import { Box, Button, Grid, Paper, Typography } from '@mui/material';
+import { Box, Button, Chip, Grid, Paper, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import { isEmpty } from 'lodash';
 
@@ -21,8 +21,12 @@ import { useGpuList } from '@/pages/mmlu/main/exam-form/useGpuList';
 import { useGpuModel } from '@/hooks/useGpuModel.ts';
 
 import { cpuCoreList } from '@/pages/mlperf/main/exam-form/fake-data.ts';
-import { mlExamFrameworkList, mlExamPrecisionList } from '@/pages/mmlu/main/exam-form/fake-data';
+import { mlExamFrameworkList } from '@/pages/mmlu/main/exam-form/fake-data';
 import type { MlExamFormInput } from '@/pages/mmlu/main/exam-form/form.type';
+import {
+  precisionInfoFor,
+  precisionOptionsFor
+} from '@/shared/precision-rules';
 
 // ----------------------------------------------------------------------
 
@@ -110,6 +114,21 @@ export const MmluExamForm = memo(
 
     const selectedGpuType = watch('gpuType');
     const selectedModel = watch('model');
+    const selectedPrecision = watch('precision');
+
+    // F1: device-aware precision options. See web/src/shared/precision-rules.ts.
+    const mlExamPrecisionList = useMemo(
+      () => precisionOptionsFor(selectedGpuType?.value as string | undefined),
+      [selectedGpuType?.value]
+    );
+    const precisionInfo = useMemo(
+      () => precisionInfoFor(selectedGpuType?.value as string | undefined),
+      [selectedGpuType?.value]
+    );
+    const selectedPrecisionInfo = useMemo(() => {
+      const match = mlExamPrecisionList.find(p => p.value === selectedPrecision?.value);
+      return match?.info ?? null;
+    }, [mlExamPrecisionList, selectedPrecision?.value]);
 
     // Extract models from settings.mmlu; always include FP8 variant
     const models = useMemo(() => {
@@ -173,6 +192,17 @@ export const MmluExamForm = memo(
         setValue('dataset', { label: '', value: '' });
       }
     }, [selectedModel?.value, setValue]);
+
+    // F1: snap precision to the first allowed value if the current one is no
+    // longer valid for the selected device.
+    useEffect(() => {
+      if (!mlExamPrecisionList.length) return;
+      const stillValid = mlExamPrecisionList.some(p => p.value === selectedPrecision?.value);
+      if (!stillValid) {
+        const first = mlExamPrecisionList[0];
+        setValue('precision', { value: first.value, label: first.label });
+      }
+    }, [mlExamPrecisionList, selectedPrecision?.value, setValue]);
 
     return (
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -301,6 +331,36 @@ export const MmluExamForm = memo(
                 }}
                 rules={{ required: 'Please select a precision' }}
               />
+              {(precisionInfo || selectedPrecisionInfo) && (
+                <Box sx={{ mt: 0.75, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                  {selectedPrecisionInfo && (
+                    <Chip
+                      size="small"
+                      label={selectedPrecisionInfo}
+                      sx={{
+                        fontSize: '0.6875rem',
+                        height: 22,
+                        bgcolor: '#EEF2FF',
+                        color: '#3730A3',
+                        border: '1px solid #C7D2FE'
+                      }}
+                    />
+                  )}
+                  {precisionInfo && (
+                    <Chip
+                      size="small"
+                      label={precisionInfo}
+                      sx={{
+                        fontSize: '0.6875rem',
+                        height: 22,
+                        bgcolor: '#FEF3C7',
+                        color: '#92400E',
+                        border: '1px solid #FDE68A'
+                      }}
+                    />
+                  )}
+                </Box>
+              )}
             </Grid>
             <Grid size={fieldGrid}>
               <Controller

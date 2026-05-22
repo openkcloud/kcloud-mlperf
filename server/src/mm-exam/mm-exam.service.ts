@@ -15,7 +15,10 @@ import { lastValueFrom, Observable } from 'rxjs';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { MmExam } from '../entities/mm-exam.entity';
+import { MmExamResult } from '../entities/mm-exam-result.entity';
 import { CreateMmExamDto } from './dto/create-mm-exam.dto';
+import { captureReproducibilityMetadata } from '../reproducibility/reproducibility.metadata';
+import { formatSeed } from '../reproducibility/seed-format';
 import { PaginationQueryDto } from '../common-dto/pagination-query.dto';
 import { UpdateMmExamDto } from './dto/update-mm-exam.dto';
 import {
@@ -37,11 +40,21 @@ import { clampLokiValuesToCap } from '../loki/clamp-loki-values';
 import { LokiInstantQueryResponseDto } from '../loki/dto/loki-instant-query-response.dto';
 import { StatusEnum } from '../enums/status.enum';
 import { MmExamResultService } from '../mm-exam-result/mm-exam-result.service';
+import { selfFairnessSnapshot } from '../comparison/fairness-assessment';
+import { LatencyMeasurementContext } from '../enums/latency-measurement-context.enum';
+import * as k8s from '@kubernetes/client-node';
 
 // ----------------------------------------------------------------------
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// v42: Exam CRD coordinates — used to read worker completion timestamps from
+// the operator's `mmlu-${id}` CR so end_at reflects actual finish time.
+const MM_EXAM_CRD_GROUP = 'resources.etri.llm';
+const MM_EXAM_CRD_VERSION = 'v1';
+const MM_EXAM_CRD_PLURAL = 'exams';
+const MM_EXAM_CRD_NAMESPACE = process.env.OPERATOR_NAMESPACE || 'llm-evaluation';
 
 // ----------------------------------------------------------------------
 
@@ -51,9 +64,13 @@ export class MmExamService implements OnModuleInit {
   private timezone: string = 'Asia/Seoul';
   private timestampFormat: string = 'YYYY-MM-DDTHH:mm:ssZ';
   private examBenchmark: 'mmlu' | 'mlperf' = 'mmlu';
+  // v42: optional k8s client for reading Exam CR completion timestamps.
+  private k8sCustomObjects: k8s.CustomObjectsApi | null = null;
 
   constructor(
     @InjectRepository(MmExam) private readonly mmExamRepo: Repository<MmExam>,
+    @InjectRepository(MmExamResult)
+    private readonly mmExamResultRepo: Repository<MmExamResult>,
     @Inject('EXAM_PACKAGE') private client: ClientGrpc,
     private readonly lokiService: LokiService,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -67,6 +84,19 @@ export class MmExamService implements OnModuleInit {
     // Check and add result_acc_math column if it doesn't exist
     await this.ensureResultAccMathColumn();
 
+    // v42: build a CustomObjects client so we can read the operator's Exam CR
+    // for the worker's actual completion timestamp. Soft-fail in local dev.
+    try {
+      const kc = new k8s.KubeConfig();
+      kc.loadFromDefault();
+      this.k8sCustomObjects = kc.makeApiClient(k8s.CustomObjectsApi);
+    } catch (err) {
+      console.warn(
+        `[MmExamService] k8s client init failed; completion-time reads will fall back to wall-clock: ${(err as Error)?.message}`,
+      );
+      this.k8sCustomObjects = null;
+    }
+
     const pendingExams = await this.mmExamRepo.find({
       where: { status: StatusEnum.IDLE },
     });
@@ -78,6 +108,55 @@ export class MmExamService implements OnModuleInit {
 
   private generateScheduleExamId(id: number): string {
     return `${this.examBenchmark}-exam-${id}`;
+  }
+
+  /**
+   * v42 Defect #39 fix: read the worker's actual completion timestamp from the
+   * Exam CR (set by the operator on the `Completed` phase transition) rather
+   * than using server-side wall-clock at status-poll time.
+   *
+   * Retries up to 12× with 5 s gaps (≤60 s total) to handle operator lag
+   * behind gRPC. Falls back to wall-clock if unavailable.
+   */
+  private async resolveExamCompletionTime(examId: number): Promise<string> {
+    const fallback = dayjs().tz(this.timezone).format(this.timestampFormat);
+    if (!this.k8sCustomObjects) return fallback;
+    const maxAttempts = 12;
+    const delayMs = 5_000;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const cr = (await this.k8sCustomObjects.getNamespacedCustomObject({
+          group: MM_EXAM_CRD_GROUP,
+          version: MM_EXAM_CRD_VERSION,
+          namespace: MM_EXAM_CRD_NAMESPACE,
+          plural: MM_EXAM_CRD_PLURAL,
+          name: `mmlu-${examId}`,
+        } as any)) as { status?: { phase?: { type?: string; lastTransitionTime?: string } } };
+        const phase = cr?.status?.phase;
+        if (phase?.type === 'Completed' && phase.lastTransitionTime) {
+          console.log(
+            `[MmExamService] Exam CR mmlu-${examId} Completed phase found on attempt ${attempt}: ${phase.lastTransitionTime}`,
+          );
+          return dayjs(phase.lastTransitionTime)
+            .tz(this.timezone)
+            .format(this.timestampFormat);
+        }
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      } catch (err) {
+        console.warn(
+          `[MmExamService] Could not read Exam CR mmlu-${examId} (attempt ${attempt}): ${(err as Error)?.message}`,
+        );
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
+    }
+    console.warn(
+      `[MmExamService] Exam CR mmlu-${examId} did not show Completed phase after ${maxAttempts} attempts; falling back to wall-clock end_at.`,
+    );
+    return fallback;
   }
 
   // Exam schedule caller
@@ -95,7 +174,7 @@ export class MmExamService implements OnModuleInit {
         // before gRPC status is queried. Without this, the gRPC returns empty
         // and the exam is permanently marked as Undefined.
         const minDelay = 30_000;
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+
         const timeout = setTimeout(async () => {
           await this.executeCreateGrpcExam(exam);
           this.schedulerRegistry.deleteTimeout(
@@ -109,7 +188,6 @@ export class MmExamService implements OnModuleInit {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       const timeout = setTimeout(async () => {
         await this.executeCreateGrpcExam(exam);
         this.schedulerRegistry.deleteTimeout(
@@ -161,7 +239,10 @@ export class MmExamService implements OnModuleInit {
         datasetName: data.dataset,
         framework: data.framework,
         gpuUtil: `${data.gpu_util}`,
-        maxTestSamples: `${data.data_number === 0 ? '' : data.data_number}`, // 0 = all samples (empty string = no limit)
+        // 0 = full dataset. The worker's argparse uses int(default=0) where
+        // 0 means "no cap on samples", so we forward the literal "0" instead
+        // of an empty string (which crashes int() parsing).
+        maxTestSamples: `${data.data_number}`,
         modelName: data.model,
         nTrain: `${data.n_train}`, // default value
         // MMLU image's evaluate_from_local.py argparse rejects 'auto'
@@ -207,18 +288,41 @@ export class MmExamService implements OnModuleInit {
 
     const examStatus = (res.status || StatusEnum.UNDEFINED) as StatusEnum;
 
+    let resolvedStatus: StatusEnum = examStatus;
+    let safetyGateLog: string | null = null;
     if (
       examStatus === StatusEnum.COMPLETED &&
       res.currentRepeatCount === data.retry_num.toString()
     ) {
-      const now = dayjs().tz(this.timezone).format(this.timestampFormat);
-      await this.update(data.id, { end_at: now.toString() });
+      // v42 Defect #39: use worker's actual finish timestamp from Exam CR.
+      const completionTs = await this.resolveExamCompletionTime(data.id);
+      await this.update(data.id, { end_at: completionTs });
 
-      await this.mmExamResultService.create({
-        examId: data.id,
-        repeatCount: data.retry_num,
-        exam: data,
-      });
+      // v42 Defect #38: catch result-service exceptions (e.g. ENOENT when
+      // the worker crashed before writing log files).
+      try {
+        await this.mmExamResultService.create({
+          examId: data.id,
+          repeatCount: data.retry_num,
+          exam: data,
+        });
+      } catch (createErr) {
+        console.error(
+          `[MmExamService] result create failed for exam ${data.id}: ${(createErr as Error)?.message}`,
+        );
+        resolvedStatus = StatusEnum.ERROR;
+        safetyGateLog =
+          `Worker exited cleanly but result extraction failed (${(createErr as Error)?.message}) — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.`;
+      }
+
+      if (resolvedStatus !== StatusEnum.ERROR) {
+        const after = await this.findOne(data.id);
+        if (!after.results || after.results.length === 0) {
+          resolvedStatus = StatusEnum.ERROR;
+          safetyGateLog =
+            'Worker exited cleanly but produced no result rows — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.';
+        }
+      }
     }
 
     if (examStatus === StatusEnum.ERROR) {
@@ -227,11 +331,15 @@ export class MmExamService implements OnModuleInit {
       });
     }
 
+    if (safetyGateLog) {
+      await this.update(data.id, { error_log: safetyGateLog });
+    }
+
     console.log(
-      `🚀 Executing MMLU exam ID=${data.id} at ${dayjs().tz(this.timezone).format()} status: ${examStatus}`,
+      `🚀 Executing MMLU exam ID=${data.id} at ${dayjs().tz(this.timezone).format()} status: ${resolvedStatus}`,
     );
 
-    return await this.update(data.id, { status: examStatus });
+    return await this.update(data.id, { status: resolvedStatus });
   }
 
   // Get the exam status by the given exam_id with grpc protocol
@@ -277,7 +385,31 @@ export class MmExamService implements OnModuleInit {
         createMmExamDto.started_at = currentTime.format(this.timestampFormat);
       }
 
-      const mmExam = this.mmExamRepo.create(createMmExamDto);
+      const reproMeta = captureReproducibilityMetadata();
+      const seedValue = formatSeed(
+        createMmExamDto.seed,
+        process.env.BENCHMARK_DETERMINISTIC === '1',
+      );
+      const { seed: _dtoSeed, ...mmExamData } = createMmExamDto;
+      // US-NEXT-1: persist a self-fairness snapshot so the jsonb
+      // `fairness_assessment` column is populated at create-time. MMLU rows
+      // have no per-request latency capture, so the latency context defaults
+      // to UNKNOWN — selfFairnessSnapshot will record latency_context='unknown'.
+      const fairnessAssessment = selfFairnessSnapshot({
+        vendor: 'nvidia',
+        precision: createMmExamDto.precision ?? null,
+        latency_measurement_context: LatencyMeasurementContext.UNKNOWN,
+      });
+      const examPayload: Partial<MmExam> = {
+        ...mmExamData,
+        ...reproMeta,
+        fairness_assessment: fairnessAssessment as unknown as Record<
+          string,
+          unknown
+        >,
+      };
+      if (seedValue !== null) examPayload.seed_value = seedValue;
+      const mmExam = this.mmExamRepo.create(examPayload);
 
       const rowData = await this.mmExamRepo.save(mmExam);
 
@@ -336,31 +468,60 @@ export class MmExamService implements OnModuleInit {
       testResult = clampLokiValuesToCap(testResult, examRes.data_number);
     }
 
+    let resolvedStatus: StatusEnum = examStatus;
+    let safetyGateLog: string | null = null;
     if (
       examStatus === StatusEnum.COMPLETED &&
       res.currentRepeatCount === examRes.retry_num.toString()
     ) {
-      const now = dayjs().format(this.timestampFormat);
+      // v42 Defect #39: use worker's actual finish timestamp from Exam CR.
+      const completionTs = await this.resolveExamCompletionTime(id);
 
       const exam = await this.update(id, {
-        end_at: now.toString(),
+        end_at: completionTs,
       });
 
-      await this.mmExamResultService.create({
-        examId: id,
-        repeatCount: exam.retry_num,
-        exam,
-      });
+      // v42 Defect #38: catch result-service exceptions (see executeCreateGrpcExam).
+      try {
+        await this.mmExamResultService.create({
+          examId: id,
+          repeatCount: exam.retry_num,
+          exam,
+        });
+      } catch (createErr) {
+        console.error(
+          `[MmExamService] result create failed for exam ${id}: ${(createErr as Error)?.message}`,
+        );
+        resolvedStatus = StatusEnum.ERROR;
+        safetyGateLog =
+          `Worker exited cleanly but result extraction failed (${(createErr as Error)?.message}) — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.`;
+      }
+
+      if (resolvedStatus !== StatusEnum.ERROR) {
+        const after = await this.findOne(id);
+        if (!after.results || after.results.length === 0) {
+          resolvedStatus = StatusEnum.ERROR;
+          safetyGateLog =
+            'Worker exited cleanly but produced no result rows — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.';
+        }
+      }
     }
 
     if (examStatus === StatusEnum.ERROR) {
       await this.update(id, { error_log: res.message });
     }
 
+    if (safetyGateLog) {
+      await this.update(id, {
+        status: resolvedStatus,
+        error_log: safetyGateLog,
+      });
+    }
+
     return {
       ...res,
       result: testResult,
-      status: examStatus,
+      status: resolvedStatus,
       start_time: examRes.started_at,
     };
   }
@@ -388,7 +549,9 @@ export class MmExamService implements OnModuleInit {
       .filter((r) => inFlightStatuses.includes(r.status as StatusEnum))
       .slice(0, 5);
     if (inFlight.length > 0) {
-      await Promise.all(inFlight.map((r) => this.getExamStatus(r.id).catch(() => null)));
+      await Promise.all(
+        inFlight.map((r) => this.getExamStatus(r.id).catch(() => null)),
+      );
       [data, total] = await this.mmExamRepo.findAndCount({
         skip: (page - 1) * limit,
         take: limit,
@@ -426,7 +589,8 @@ export class MmExamService implements OnModuleInit {
 
   // Update MP Exam info
   async update(id: number, updateMmExamDto: UpdateMmExamDto) {
-    await this.mmExamRepo.update(id, updateMmExamDto);
+    const { seed: _s, ...updateData } = updateMmExamDto;
+    await this.mmExamRepo.update(id, updateData);
 
     return this.findOne(id);
   }
@@ -449,6 +613,19 @@ export class MmExamService implements OnModuleInit {
       //     id: id.toString(),
       //   }),
       // );
+
+      // US-NEXT-5: purge partial result rows BEFORE marking the exam stopped so
+      // a re-submitted exam under the same exam_id (or new exam reusing the
+      // logical name) does not inherit stale rows that latestResult() would
+      // pick up via max(result_number).
+      try {
+        await this.mmExamResultRepo.delete({ exam_id: id });
+      } catch (purgeError) {
+        console.error(
+          `Failed to purge mm_exam_result rows for exam ${id} on stop:`,
+          purgeError,
+        );
+      }
 
       const now = dayjs().tz(this.timezone).format(this.timestampFormat);
 

@@ -4,6 +4,10 @@ import {
   Pagination, Paper, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Typography
 } from '@mui/material';
+import {
+  precisionInfoFor,
+  precisionOptionsFor
+} from '@/shared/precision-rules';
 import { CompareArrows as CompareIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
@@ -95,12 +99,14 @@ const ActiveBenchmarkCard = ({ run }: { run: ComparisonRunRow }) => {
 
 type AtomExamFormData = NpuExamCreateBody;
 
+// F1: Atom+ has no FP8 silicon — only FP16 is supported (see
+// web/src/shared/precision-rules.ts). Default must be fp16.
 const ATOM_DEFAULT_VALUES: AtomExamFormData = {
   name: '',
   description: '',
   benchmark: 'mlperf',
   model: 'rebellions/Llama-3.1-8B-Instruct',
-  precision: 'fp8',
+  precision: 'fp16',
   framework: 'optimum-rbln',
   batch_size: 1,
   dataset: 'cnn_dailymail',
@@ -254,13 +260,25 @@ const AtomPlusNpuEvalPage = () => {
             <Controller name="model" control={control} render={({ field }) => (
               <TextField {...field} label="Model (HuggingFace path)" size="small" />
             )} />
-            <Controller name="precision" control={control} render={({ field }) => (
-              <TextField {...field} label="Precision" size="small" select>
-                <MenuItem value="fp8">FP8</MenuItem>
-                <MenuItem value="bf16">BF16</MenuItem>
-                <MenuItem value="int8">INT8</MenuItem>
-              </TextField>
-            )} />
+            <Box>
+              <Controller name="precision" control={control} render={({ field }) => (
+                <TextField {...field} label="Precision" size="small" select fullWidth>
+                  {precisionOptionsFor('atom+').map(opt => (
+                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                  ))}
+                </TextField>
+              )} />
+              {precisionInfoFor('atom+') && (
+                <Chip
+                  size="small"
+                  label={precisionInfoFor('atom+')}
+                  sx={{
+                    mt: 0.75, fontSize: '0.6875rem', height: 22,
+                    bgcolor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A'
+                  }}
+                />
+              )}
+            </Box>
             <Controller name="framework" control={control} render={({ field }) => (
               <TextField {...field} label="Framework" size="small" disabled />
             )} />

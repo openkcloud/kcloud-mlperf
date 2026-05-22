@@ -2,7 +2,7 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useMemo } from 'react
 import { Controller, type SubmitHandler, useForm } from 'react-hook-form';
 
 import { useMpGpuList } from './useGpuList';
-import { Box, Button, Grid, Paper, Typography } from '@mui/material';
+import { Box, Button, Chip, Grid, Paper, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 
 import type { MpExamDetails } from '@/api/types/mp-exam.types';
@@ -22,10 +22,13 @@ import {
   cpuCoreList,
   frameworkList,
   modeList,
-  precisionList,
   scenarioList
 } from '@/pages/mlperf/main/exam-form/fake-data';
 import type { MpExamFormInput } from '@/pages/mlperf/main/exam-form/form.type';
+import {
+  precisionInfoFor,
+  precisionOptionsFor
+} from '@/shared/precision-rules';
 
 // ----------------------------------------------------------------------
 
@@ -125,6 +128,24 @@ export const MpExamForm = memo(
     const selectedGpuType = watch('gpuType');
     const selectedScenario = watch('scenario');
     const selectedModel = watch('model');
+    const selectedPrecision = watch('precision');
+
+    // F1: device-aware precision options. Keyed on the selected GPU type so
+    // Atom+ shows only fp16, RNGD shows fp8/bf16/etc., and NVIDIA shows the
+    // full vLLM-supported list. Falls back to NVIDIA defaults when no device
+    // is selected yet.
+    const precisionList = useMemo(
+      () => precisionOptionsFor(selectedGpuType?.value as string | undefined),
+      [selectedGpuType?.value]
+    );
+    const precisionInfo = useMemo(
+      () => precisionInfoFor(selectedGpuType?.value as string | undefined),
+      [selectedGpuType?.value]
+    );
+    const selectedPrecisionInfo = useMemo(() => {
+      const match = precisionList.find(p => p.value === selectedPrecision?.value);
+      return match?.info ?? null;
+    }, [precisionList, selectedPrecision?.value]);
 
     // Extract models from settings.mlperf; always include FP8 variant
     const models = useMemo(() => {
@@ -191,6 +212,18 @@ export const MpExamForm = memo(
       }
     }, [selectedModel?.value, setValue]);
 
+    // F1: when the device changes, snap precision to the first allowed value
+    // if the current one is no longer valid for that hardware. Prevents users
+    // from creating exams with hardware-impossible combinations.
+    useEffect(() => {
+      if (!precisionList.length) return;
+      const stillValid = precisionList.some(p => p.value === selectedPrecision?.value);
+      if (!stillValid) {
+        const first = precisionList[0];
+        setValue('precision', { value: first.value, label: first.label });
+      }
+    }, [precisionList, selectedPrecision?.value, setValue]);
+
     return (
       <form onSubmit={handleSubmit(onSubmit)}>
         {/* Basic Info */}
@@ -199,6 +232,14 @@ export const MpExamForm = memo(
             <Controller
               name="name"
               control={control}
+              rules={{
+                validate: (v: string | undefined) => {
+                  if (!v || !v.trim()) return true; // field is optional
+                  if (v.trim().length < 3) return 'Name must be at least 3 characters';
+                  if (/^\d+$/.test(v.trim())) return 'Name cannot be purely numeric';
+                  return true;
+                }
+              }}
               render={({ field, fieldState }) => {
                 const { error } = fieldState;
                 return (
@@ -318,6 +359,36 @@ export const MpExamForm = memo(
                 }}
                 rules={{ required: 'Please select a precision' }}
               />
+              {(precisionInfo || selectedPrecisionInfo) && (
+                <Box sx={{ mt: 0.75, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                  {selectedPrecisionInfo && (
+                    <Chip
+                      size="small"
+                      label={selectedPrecisionInfo}
+                      sx={{
+                        fontSize: '0.6875rem',
+                        height: 22,
+                        bgcolor: '#EEF2FF',
+                        color: '#3730A3',
+                        border: '1px solid #C7D2FE'
+                      }}
+                    />
+                  )}
+                  {precisionInfo && (
+                    <Chip
+                      size="small"
+                      label={precisionInfo}
+                      sx={{
+                        fontSize: '0.6875rem',
+                        height: 22,
+                        bgcolor: '#FEF3C7',
+                        color: '#92400E',
+                        border: '1px solid #FDE68A'
+                      }}
+                    />
+                  )}
+                </Box>
+              )}
             </Grid>
             <Grid size={fieldGrid}>
               <Controller

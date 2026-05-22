@@ -45,7 +45,11 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/ban-types': 'off',
       'no-useless-catch': 'off',
+      'no-console': ['error', { allow: ['warn', 'error'] }],
       'prettier/prettier': ['warn', { endOfLine: 'auto', singleQuote: true }],
+      // Downgraded to warn — pre-existing debt, tracked in lint-debt-2026-05-11.md
+      'react/no-unescaped-entities': 'warn',
+      '@typescript-eslint/no-unnecessary-type-constraint': 'warn',
     },
   },
 

@@ -427,6 +427,31 @@ export const MainLayout = (props: MainLayoutProps) => {
 
   return (
     <StyledWrapper>
+      {/* Skip-to-main-content link — visually hidden until focused (F13) */}
+      <Box
+        component="a"
+        href="#main-content"
+        sx={{
+          position: 'fixed',
+          top: '-999px',
+          left: '1rem',
+          zIndex: 9999,
+          px: 2,
+          py: 1,
+          bgcolor: '#4F46E5',
+          color: '#FFF',
+          fontWeight: 700,
+          borderRadius: '0 0 0.5rem 0.5rem',
+          textDecoration: 'none',
+          fontSize: '0.875rem',
+          '&:focus': {
+            top: 0
+          }
+        }}
+      >
+        Skip to main content
+      </Box>
+
       {/* Desktop sidebar */}
       {!isMobile && (
         <Box
@@ -507,6 +532,7 @@ export const MainLayout = (props: MainLayoutProps) => {
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography
               variant="h5"
+              component="h1"
               sx={{
                 fontWeight: 700,
                 color: '#0F172A',
@@ -552,6 +578,7 @@ export const MainLayout = (props: MainLayoutProps) => {
 
         {/* Content area */}
         <Box
+          id="main-content"
           ref={containerRef}
           sx={{
             flex: 1,

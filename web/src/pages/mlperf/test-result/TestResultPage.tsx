@@ -35,7 +35,6 @@ const mpExamTt100tSec = (raw: number | null | undefined): number | null =>
 
 const TestResultPage = () => {
   const testResult = useTestResult();
-  console.log('testResult:', testResult);
 
   const [activeIndex, setActiveIndex] = useState<number>(1);
   const [showAverageAccuracyGraph, setShowAverageAccuracyGraph] = useState<boolean>(false);

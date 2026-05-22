@@ -6,11 +6,11 @@ import type { PaginationParams } from '@/api/types/common.types';
 import { MpExamQueryKeys } from '@/contexts/QueryContext/query.keys.ts';
 
 export const useMpExamResultList = (params: PaginationParams) => {
-  const { data, isLoading, refetch } = useQuery({
+  const query = useQuery({
     queryKey: MpExamQueryKeys.list(params.page, params.limit),
     queryFn: () => MpExamApi.list(params),
     staleTime: Infinity
   });
 
-  return { data, isLoading, refetchMpExamList: refetch };
+  return { data: query.data, isLoading: query.isLoading, refetchMpExamList: query.refetch, query };
 };

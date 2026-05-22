@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Box, Button, Typography, TextField, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Pagination, Stack, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import { Delete as DeleteIcon, Visibility as VisibilityIcon, Stop as StopIcon, CompareArrows as CompareIcon } from '@mui/icons-material';
+import {
+  precisionInfoFor,
+  precisionOptionsFor
+} from '@/shared/precision-rules';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
 import { NpuEvalApi } from '@/api/domains/npu-eval.domain';
+import { QueryBoundary } from '@/components/QueryBoundary';
 import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { NpuEvalPageLinks } from '@/contexts/RouterContext/router.links';
 import { StatusEnum } from '@/enums/status.enum';
@@ -167,11 +172,12 @@ const NpuEvalPage = () => {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const limit = 10;
 
-  const { data: examList } = useQuery({
+  const examListQuery = useQuery({
     queryKey: NpuEvalQueryKeys.list(page, limit),
     queryFn: () => NpuEvalApi.list({ page, limit }),
     refetchInterval: 5000,
   });
+  const { data: examList } = examListQuery;
 
   const { data: npuListData } = useQuery({
     queryKey: NpuEvalQueryKeys.npuList(),
@@ -282,14 +288,25 @@ const NpuEvalPage = () => {
             <Controller name="model" control={control} render={({ field }) => (
               <TextField {...field} label="Model" size="small" />
             )} />
-            <Controller name="precision" control={control} render={({ field }) => (
-              <TextField {...field} label="Precision" size="small" select>
-                <MenuItem value="FP8">FP8</MenuItem>
-                <MenuItem value="BF16">BF16</MenuItem>
-                <MenuItem value="INT8">INT8</MenuItem>
-                <MenuItem value="INT4">INT4</MenuItem>
-              </TextField>
-            )} />
+            <Box>
+              <Controller name="precision" control={control} render={({ field }) => (
+                <TextField {...field} label="Precision" size="small" select fullWidth>
+                  {precisionOptionsFor('rngd').map(opt => (
+                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                  ))}
+                </TextField>
+              )} />
+              {precisionInfoFor('rngd') && (
+                <Chip
+                  size="small"
+                  label={precisionInfoFor('rngd')}
+                  sx={{
+                    mt: 0.75, fontSize: '0.6875rem', height: 22,
+                    bgcolor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A'
+                  }}
+                />
+              )}
+            </Box>
             <Controller name="framework" control={control} render={({ field }) => (
               <TextField {...field} label="Framework" size="small" disabled />
             )} />
@@ -334,6 +351,7 @@ const NpuEvalPage = () => {
       )}
 
       {/* Exam List */}
+      <QueryBoundary query={examListQuery} isEmpty={d => !d || !d.list || d.list.length === 0}>
       <TableContainer component={Paper}>
         <Table size="small">
           <TableHead>
@@ -413,16 +431,10 @@ const NpuEvalPage = () => {
                 </TableCell>
               </TableRow>
             ))}
-            {(!examList?.list || examList.list.length === 0) && (
-              <TableRow>
-                <TableCell colSpan={11} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                  No NPU exams found. Create one to get started.
-                </TableCell>
-              </TableRow>
-            )}
           </TableBody>
         </Table>
       </TableContainer>
+      </QueryBoundary>
 
       {examList && examList.total_pages > 1 && (
         <Stack alignItems="center" sx={{ mt: 2 }}>

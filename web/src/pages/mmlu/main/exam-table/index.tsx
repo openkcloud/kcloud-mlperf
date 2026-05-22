@@ -14,8 +14,11 @@ import { TIMEZONE } from '@/constants/timezone.constants.ts';
 import { type StatusEnum } from '@/enums/status.enum';
 import { useStore } from '@/store';
 
+import { QueryBoundary } from '@/components/QueryBoundary';
 import { useMmExamResultList } from '@/pages/mmlu/main/exam-table/useMmExamResultList';
-import { useExamStatus } from '@/pages/mmlu/main/components/ExamStatusBadge/useExamStatus';
+import { useQueryClient } from '@tanstack/react-query';
+import { MmExamQueryKeys } from '@/contexts/QueryContext/query.keys';
+import type { ExamStatusResponse } from '@/api/types/common.types';
 
 import { MmluPageLinks } from '@/contexts/RouterContext/router.links';
 
@@ -31,10 +34,13 @@ dayjs.extend(timezone);
 // ----------------------------------------------------------------------
 
 const RepetitionCell = memo<{ id: number; status: StatusEnum; retryNum: number }>(({ id, status, retryNum }) => {
-  const examStatus = useExamStatus({ id, status, tablePageNumber: 1 });
-  
-  const currentRepeatCount = examStatus?.currentRepeatCount;
-  
+  // Read from the query cache without adding a second polling observer.
+  // ExamStatusBadge (via useExamStatus) already polls this key every 3 s;
+  // reading the cached value here avoids duplicate network timers.
+  const queryClient = useQueryClient();
+  const cached = queryClient.getQueryData<ExamStatusResponse>(MmExamQueryKeys.checkExamStatus(id));
+  const currentRepeatCount = cached?.currentRepeatCount;
+
   if (!currentRepeatCount) {
     return <Typography variant="body2">{retryNum}</Typography>;
   }
@@ -197,7 +203,7 @@ export const MmluExamResultTable = memo((props: MmluExamResultTableProps) => {
 
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  const { data, refetchMmExamList } = useMmExamResultList({
+  const { data, refetchMmExamList, query } = useMmExamResultList({
     page: pagination.pageIndex + 1,
     limit: pagination.pageSize,
     search: searchTerm
@@ -234,26 +240,26 @@ export const MmluExamResultTable = memo((props: MmluExamResultTableProps) => {
 
   // const pageCount = Math.ceil(filteredData.length / pagination.pageSize);
 
-  if (!data || data?.list.length === 0) return null;
-
   return (
-    <MMLUTable<MmExamResultList>
-      data={filteredData}
-      columns={createColumns(onUseData)}
-      total={filteredData.length}
-      state={{
-        pagination
-      }}
-      onPaginationChange={setPagination}
-      onClickRefreshBtn={() => refetchMmExamList()}
-      compareBtn={{
-        disabled: mlExamIds.length !== SelectedTestResultCount,
-        onClick: () =>
-          navigate(MmluPageLinks.testComparison(mlExamIds[0], mlExamIds[1]), {
-            preventScrollReset: true
-          })
-      }}
-      onSearch={handleSearch}
-    />
+    <QueryBoundary query={query} isEmpty={d => !d || d.list.length === 0}>
+      <MMLUTable<MmExamResultList>
+        data={filteredData}
+        columns={createColumns(onUseData)}
+        total={filteredData.length}
+        state={{
+          pagination
+        }}
+        onPaginationChange={setPagination}
+        onClickRefreshBtn={() => refetchMmExamList()}
+        compareBtn={{
+          disabled: mlExamIds.length !== SelectedTestResultCount,
+          onClick: () =>
+            navigate(MmluPageLinks.testComparison(mlExamIds[0], mlExamIds[1]), {
+              preventScrollReset: true
+            })
+        }}
+        onSearch={handleSearch}
+      />
+    </QueryBoundary>
   );
 });

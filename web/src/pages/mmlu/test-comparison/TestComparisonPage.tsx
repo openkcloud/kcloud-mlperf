@@ -10,6 +10,7 @@ import { TestResultInfo } from '@/components/TestResultInfo';
 import { TIMEZONE } from '@/constants/timezone.constants.ts';
 
 import { useMmExamTestDetails } from '@/pages/mmlu/test-comparison/useMmExamTestDetails';
+import { FairnessBanner } from '@/pages/mlperf/test-comparison/components/FairnessBanner';
 
 // ----------------------------------------------------------------------
 
@@ -166,6 +167,27 @@ const TestComparisonPage = () => {
           Side-by-side accuracy analysis across subject domains
         </Typography>
       </Box>
+
+      {/* F3: fairness banner */}
+      <FairnessBanner
+        benchmark="mmlu"
+        idA={firstTestResult.id}
+        idB={secondTestResult.id}
+        fallbackA={{
+          precision: firstTestResult.precision,
+          model: firstTestResult.model,
+          dataset: firstTestResult.dataset,
+          data_number: firstTestResult.data_number,
+          max_output_tokens: firstTestResult.max_tokens ?? null
+        }}
+        fallbackB={{
+          precision: secondTestResult.precision,
+          model: secondTestResult.model,
+          dataset: secondTestResult.dataset,
+          data_number: secondTestResult.data_number,
+          max_output_tokens: secondTestResult.max_tokens ?? null
+        }}
+      />
 
       {/* Test cards — side-by-side at lg, stacked below */}
       <Box
