@@ -61,8 +61,15 @@ const AdminSweepControlPage = () => (
 
 const NotFoundPage = () => (
   <Container maxWidth="sm" sx={{ py: 12, textAlign: 'center' }}>
-    <Typography variant="h1" sx={{ fontSize: '6rem', fontWeight: 700, color: 'text.disabled' }}>404</Typography>
-    <Typography variant="h5" sx={{ mt: 2 }}>Page not found</Typography>
+    <Typography
+      variant="h1"
+      component="div"
+      aria-hidden="true"
+      sx={{ fontSize: '6rem', fontWeight: 700, color: 'text.disabled' }}
+    >
+      404
+    </Typography>
+    <Typography variant="h5" component="h2" sx={{ mt: 2 }}>Page not found</Typography>
     <Typography variant="body1" sx={{ mt: 1, color: 'text.secondary' }}>The page you're looking for doesn't exist or has moved.</Typography>
     <Button component={Link} to="/" variant="contained" sx={{ mt: 4 }}>Go home</Button>
   </Container>
