@@ -42,9 +42,9 @@ export class CreateMpExamDto {
   @Length(1, 100)
   framework: string;
 
-  // Required
+  // Required — batch_size=0 is operationally invalid (vLLM requires >=1).
   @IsInt()
-  @Min(0)
+  @Min(1)
   batch_size: number;
 
   // Required
@@ -72,14 +72,14 @@ export class CreateMpExamDto {
   @Min(0)
   target_qps: number;
 
-  // Required
+  // Required — num_workers=0 is operationally invalid; must be at least 1.
   @IsInt()
-  @Min(0)
+  @Min(1)
   num_workers: number;
 
-  // Required
+  // Required — tensor_parallel_size=0 is invalid (vLLM requires >=1).
   @IsInt()
-  @Min(0)
+  @Min(1)
   tensor_parallel_size: number;
 
   // Optional - defaults to GPU

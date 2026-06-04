@@ -62,8 +62,8 @@ function fmtVal(v: string | number | null | undefined): string {
 const METRIC_META: Record<string, { label: string; unit?: string; lowerIsBetter?: boolean }> = {
   tt100t_seconds: { label: 'TT100T', unit: 's', lowerIsBetter: true },
   ttft_seconds: { label: 'TTFT (server)', unit: 's', lowerIsBetter: true },
-  tps: { label: 'Throughput', unit: 'tok/s' },
-  throughput: { label: 'Throughput', unit: 'samples/s' },
+  tps: { label: 'Token throughput', unit: 'tok/s' },
+  throughput: { label: 'Sample throughput', unit: 'samples/s' },
   accuracy_pct: { label: 'Accuracy', unit: '%' },
   // BB-3 latency percentiles (lower better) + R8 power/efficiency.
   p50_latency_s: { label: 'p50 latency', unit: 's', lowerIsBetter: true },

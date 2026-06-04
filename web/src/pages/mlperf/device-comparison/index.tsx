@@ -21,7 +21,7 @@ import { ComparisonRunTable } from '@/components/ComparisonRunTable';
 import { ComparisonDetailDialog } from '@/components/ComparisonDetailDialog';
 import { QueryBoundary } from '@/components/QueryBoundary';
 import { RenderErrorBoundary } from '@/components/ErrorBoundary';
-import { ComparisonApi } from '@/api/domains/comparison';
+import { ComparisonApi, runRef } from '@/api/domains/comparison';
 import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate, ComparisonListResponse } from '@/api/domains/comparison';
 import type { FairnessAssessment } from '@/api/types/fairness-assessment';
 import { MpExamPageLinks } from '@/contexts/RouterContext/router.links';
@@ -72,7 +72,10 @@ const MlperfDeviceComparisonPage = () => {
     setFairness(undefined);
     setDialogOpen(true);
     try {
-      const result = await ComparisonApi.compare('mlperf', selectedA.id, runB.id);
+      // C1: pass table-namespaced run refs (e.g. "npu:178") so the backend
+      // resolves the exact run the user picked rather than a colliding id from
+      // another table (mp_exam shadowing npu_exam → false vendor_match).
+      const result = await ComparisonApi.compare('mlperf', runRef(selectedA), runRef(runB));
       setCompareData(result.metrics);
       setIncompat(result.incompatibility_reasons ?? []);
       setFairness(result.fairness_assessment);
@@ -91,7 +94,9 @@ const MlperfDeviceComparisonPage = () => {
     setIncompat([]);
     setFairness(undefined);
     try {
-      const result = await ComparisonApi.compare('mlperf', selectedA.id, selectedB.id);
+      // C1: same table-namespaced refs as handleSelectB so a retry resolves the
+      // identical runs (no mp_exam/npu_exam id-collision shadowing).
+      const result = await ComparisonApi.compare('mlperf', runRef(selectedA), runRef(selectedB));
       setCompareData(result.metrics);
       setIncompat(result.incompatibility_reasons ?? []);
       setFairness(result.fairness_assessment);

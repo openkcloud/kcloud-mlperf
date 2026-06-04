@@ -412,7 +412,7 @@ export const MmluExamForm = memo(
                     </Box>
                   );
                 }}
-                rules={{ min: { value: 0, message: 'Number of data should be positive!' } }}
+                rules={{ min: { value: 0, message: 'Number of data must be 0 (full) or greater' } }}
               />
             </Grid>
             <Grid size={fieldGrid}>

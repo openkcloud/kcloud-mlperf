@@ -91,6 +91,81 @@ export type DeviceAgg = {
 
 const isPos = (n: number | null | undefined): n is number => n != null && n > 0;
 
+// ----------------------------------------------------------------------
+// H2: outlier / sample-count / variance discipline for throughput metrics.
+// A run may only contribute its tps/tt100t to the device aggregate when it has
+// enough samples AND its coefficient of variation is sane. A single 2-sample,
+// CV-79% run (RNGD #98 @ 187.4 tok/s) otherwise wins `max(tps)` and corrupts the
+// leaderboard, scatter, cost, and efficiency axes. Across the qualifying runs we
+// pick a robust statistic (median) instead of the raw max so one freak value can
+// never set the device's headline number.
+// ----------------------------------------------------------------------
+
+/** Minimum measured samples a run needs before its tps/tt100t is trusted. */
+export const MIN_METRIC_SAMPLES = 3;
+/** Maximum coefficient of variation (stdev/mean) tolerated for a run's metric. */
+export const MAX_METRIC_CV = 0.5;
+
+/**
+ * Decide whether a run's throughput-style metric (value + optional stdev/sample
+ * count) is statistically trustworthy enough to feed the device aggregate.
+ *
+ * Rule:
+ *  - samples present and < MIN_METRIC_SAMPLES  -> reject (clearly single/low-N).
+ *  - stdev present (and value > 0) and CV > MAX_METRIC_CV -> reject (high variance).
+ *  - sample/stdev fields ABSENT -> qualified (graceful: legacy rows without the
+ *    statistical columns are treated as a single trustworthy observation rather
+ *    than being silently dropped). Only a *present* samples<MIN or a *present*
+ *    high CV disqualifies a run.
+ */
+export function isMetricQualified(
+  value: number | null | undefined,
+  stdev: number | null | undefined,
+  samples: number | null | undefined,
+): boolean {
+  if (!isPos(value)) return false;
+  if (samples != null && samples < MIN_METRIC_SAMPLES) return false;
+  if (stdev != null && value > 0 && stdev / value > MAX_METRIC_CV) return false;
+  return true;
+}
+
+/** Median of a non-empty numeric list (robust central statistic). */
+export function median(xs: number[]): number {
+  const v = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+// ----------------------------------------------------------------------
+// C2 frontend defense: accuracy may arrive as a 0-1 fraction (GPU mm_exam path)
+// or a 0-100 percent (NPU path). Even though the backend normalization (Agent A)
+// should make this consistent, the scatter/leaderboard defend themselves: a value
+// at or below 1 is interpreted as a fraction and scaled to a percent.
+// ----------------------------------------------------------------------
+
+/** Normalize an accuracy reading to a 0-100 percent (value<=1 is a fraction). */
+export function normalizeAccuracyPct(acc: number | null | undefined): number | null {
+  if (acc == null || !Number.isFinite(acc) || acc < 0) return null;
+  return acc <= 1 ? acc * 100 : acc;
+}
+
+// H1: the accuracy axis is hard-labeled "MMLU-Pro accuracy". Only MMLU rows may
+// contribute — mlperf `accuracy_pct` is a ROUGE-1 summarization score on a
+// different dataset and must never land on the MMLU axis.
+const isMmluBenchmark = (benchmark: string | null | undefined): boolean =>
+  String(benchmark ?? '').toLowerCase().includes('mmlu');
+
+// M7: the NPU path measures single-stream server-side (SERVER_TOKEN_STREAM) while
+// the GPU path measures offline/batched client-side (CLIENT_WALL_CLOCK). The field
+// is on the wire (NormalizedRun.latency_measurement_context) but absent from the
+// frontend ComparisonRunRow type, so read it defensively.
+export function latencyContext(r: ComparisonRunRow): string | null {
+  const ctx = (r as ComparisonRunRow & { latency_measurement_context?: string | null })
+    .latency_measurement_context;
+  const s = ctx == null ? '' : String(ctx).trim();
+  return s.length ? s : null;
+}
+
 /**
  * #10: collapse fragmented hardware-model identities to ONE canonical key per
  * physical device. The data carries the same Rebellions part as 'ATOM', 'ATOM+',
@@ -126,12 +201,36 @@ export function filterToCurrentCluster(
   return devices.filter(d => currentModels.has(d.hwModel));
 }
 
-/** Collapse the run list into one row per (vendor / canonical hardware model). */
+// A qualifying throughput observation for one device (carried until we collapse
+// the per-device pool into a single robust statistic).
+type TpsObs = { tps: number; stdev: number | null; samples: number | null; id: number | null; model: string | null };
+type TtObs = { tt: number; stdev: number | null; samples: number | null };
+
+/**
+ * Collapse the run list into one row per (vendor / canonical hardware model).
+ *
+ * H2: tps and tt100t no longer take a raw max/min over every run. A run only
+ * contributes if it passes `isMetricQualified` (>= MIN_METRIC_SAMPLES samples and
+ * CV <= MAX_METRIC_CV when those fields are present), and across the qualifying
+ * runs we use the MEDIAN — a robust statistic a single freak value cannot move.
+ * If NO run qualifies for a metric, we fall back to the best raw positive value so
+ * the device still appears (graceful, but the headline number is no longer a lone
+ * high-variance outlier).
+ *
+ * H1 + C2: the accuracy axis is restricted to MMLU benchmark rows (mlperf ROUGE is
+ * excluded) and every reading is scale-normalized (value<=1 => fraction => x100).
+ */
 export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
   const byKey = new Map<string, DeviceAgg>();
-  for (const r of runs) {
-    const vendor = r.hardware?.vendor ?? 'unknown';
-    const hwModel = normalizeHwModel(r.hardware?.model);
+  // Per-device pools of qualifying observations (kept separate from `agg`).
+  const tpsPools = new Map<string, TpsObs[]>();
+  const ttPools = new Map<string, TtObs[]>();
+  // Raw fallbacks (best value seen at all), used only when nothing qualifies.
+  const tpsFallback = new Map<string, TpsObs>();
+  const ttFallback = new Map<string, TtObs>();
+  const accPools = new Map<string, number[]>();
+
+  const ensureAgg = (vendor: string, hwModel: string): DeviceAgg => {
     const key = `${vendor}/${hwModel}`;
     let agg = byKey.get(key);
     if (!agg) {
@@ -144,24 +243,99 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
       };
       byKey.set(key, agg);
     }
+    return agg;
+  };
+
+  for (const r of runs) {
+    const vendor = r.hardware?.vendor ?? 'unknown';
+    const hwModel = normalizeHwModel(r.hardware?.model);
+    const key = `${vendor}/${hwModel}`;
+    ensureAgg(vendor, hwModel);
+
     const tps = r.metrics?.tps;
+    const tpsStdev = r.metrics?.tps_stdev ?? null;
+    const tpsSamples = r.metrics?.tps_samples ?? null;
     const tt = r.metrics?.tt100t_seconds;
-    const acc = r.metrics?.accuracy_pct;
-    if (isPos(tps) && (agg.tps == null || tps > agg.tps)) {
-      agg.tps = tps;
-      agg.tpsStdev = r.metrics?.tps_stdev ?? null;
-      agg.model = r.model ?? agg.model;
-      agg.bestRunId = r.id ?? agg.bestRunId;
+    const ttStdev = r.metrics?.tt100t_stdev ?? null;
+    const ttSamples = r.metrics?.tt100t_samples ?? null;
+
+    if (isPos(tps)) {
+      const obs: TpsObs = { tps, stdev: tpsStdev, samples: tpsSamples, id: r.id ?? null, model: r.model ?? null };
+      // Track the best raw value as a last-resort fallback.
+      const fb = tpsFallback.get(key);
+      if (!fb || tps > fb.tps) tpsFallback.set(key, obs);
+      if (isMetricQualified(tps, tpsStdev, tpsSamples)) {
+        const pool = tpsPools.get(key) ?? [];
+        pool.push(obs);
+        tpsPools.set(key, pool);
+      }
     }
-    if (isPos(tt) && (agg.tt100t == null || tt < agg.tt100t)) {
-      agg.tt100t = tt;
-      agg.tt100tStdev = r.metrics?.tt100t_stdev ?? null;
-      agg.tt100tSamples = r.metrics?.tt100t_samples ?? null;
+    if (isPos(tt)) {
+      const obs: TtObs = { tt, stdev: ttStdev, samples: ttSamples };
+      const fb = ttFallback.get(key);
+      if (!fb || tt < fb.tt) ttFallback.set(key, obs);
+      // H2: the same sample/CV discipline applies to tt100t (it shares the path).
+      if (isMetricQualified(tt, ttStdev, ttSamples)) {
+        const pool = ttPools.get(key) ?? [];
+        pool.push(obs);
+        ttPools.set(key, pool);
+      }
     }
-    if (acc != null && acc >= 0 && (agg.accuracy == null || acc > agg.accuracy)) {
-      agg.accuracy = acc;
+    // H1: only MMLU rows feed the accuracy axis; C2: normalize 0-1 vs 0-100.
+    if (isMmluBenchmark(r.benchmark)) {
+      const acc = normalizeAccuracyPct(r.metrics?.accuracy_pct);
+      if (acc != null) {
+        const pool = accPools.get(key) ?? [];
+        pool.push(acc);
+        accPools.set(key, pool);
+      }
     }
   }
+
+  for (const [key, agg] of byKey) {
+    // Throughput: median of qualifying runs; representative run = the one whose
+    // tps is closest to that median. Fall back to the best raw value if none pass.
+    const tpsQ = tpsPools.get(key) ?? [];
+    if (tpsQ.length > 0) {
+      const med = median(tpsQ.map(o => o.tps));
+      const rep = tpsQ.reduce((a, b) => (Math.abs(b.tps - med) < Math.abs(a.tps - med) ? b : a));
+      agg.tps = med;
+      agg.tpsStdev = rep.stdev;
+      agg.model = rep.model ?? agg.model;
+      agg.bestRunId = rep.id ?? agg.bestRunId;
+    } else {
+      const fb = tpsFallback.get(key);
+      if (fb) {
+        agg.tps = fb.tps;
+        agg.tpsStdev = fb.stdev;
+        agg.model = fb.model ?? agg.model;
+        agg.bestRunId = fb.id ?? agg.bestRunId;
+      }
+    }
+
+    // TT100T: median of qualifying runs (robust); fall back to best (lowest) raw.
+    const ttQ = ttPools.get(key) ?? [];
+    if (ttQ.length > 0) {
+      const med = median(ttQ.map(o => o.tt));
+      const rep = ttQ.reduce((a, b) => (Math.abs(b.tt - med) < Math.abs(a.tt - med) ? b : a));
+      agg.tt100t = med;
+      agg.tt100tStdev = rep.stdev;
+      agg.tt100tSamples = rep.samples;
+    } else {
+      const fb = ttFallback.get(key);
+      if (fb) {
+        agg.tt100t = fb.tt;
+        agg.tt100tStdev = fb.stdev;
+        agg.tt100tSamples = fb.samples;
+      }
+    }
+
+    // Accuracy (MMLU only, normalized): best (max) across MMLU rows. Devices with
+    // no MMLU run stay null and are simply absent from the accuracy frontier.
+    const accQ = accPools.get(key) ?? [];
+    if (accQ.length > 0) agg.accuracy = Math.max(...accQ);
+  }
+
   // R12: derive modeled $/1M-tokens once per device from its best throughput.
   for (const agg of byKey.values()) {
     agg.costPerMTok = costPerMTok(agg.hwModel, agg.tps);
@@ -390,6 +564,7 @@ export type DeviceTtStat = {
   stdev: number;
   n: number; // number of RUNS pooled (each run's TT100T is itself a retry-mean)
   scenarios: string[]; // distinct MLPerf scenarios seen in the pool
+  contexts: string[]; // M7: distinct latency_measurement_contexts seen in the pool
 };
 
 export type CrossDeviceVerdict = {
@@ -404,6 +579,12 @@ export type CrossDeviceVerdict = {
   // EXPLORATORY, not a controlled experiment. `mixedScenario` is true when either
   // side pooled more than one MLPerf scenario.
   mixedScenario: boolean;
+  // M7: true when the two sides were measured under DIFFERENT latency measurement
+  // contexts (e.g. NPU SERVER_TOKEN_STREAM vs GPU CLIENT_WALL_CLOCK) or when either
+  // side itself pooled more than one context. This is the structural reason the
+  // verdict is exploratory rather than a controlled head-to-head, surfaced
+  // independently of the scenario-string flag.
+  mixedContext: boolean;
 };
 
 function meanStdev(xs: number[]): { mean: number; stdev: number; n: number } {
@@ -431,10 +612,10 @@ function meanStdev(xs: number[]): { mean: number; stdev: number; n: number } {
 export function topCrossDeviceComparison(
   runs: ComparisonRunRow[],
 ): CrossDeviceVerdict | null {
-  // cellKey -> deviceKey -> pooled tt100t means (+ scenarios seen)
+  // cellKey -> deviceKey -> pooled tt100t means (+ scenarios + measurement contexts)
   const cells = new Map<
     string,
-    Map<string, { vendor: string; hwModel: string; tts: number[]; scenarios: Set<string> }>
+    Map<string, { vendor: string; hwModel: string; tts: number[]; scenarios: Set<string>; contexts: Set<string> }>
   >();
   for (const r of runs) {
     const tt = r.metrics?.tt100t_seconds;
@@ -451,9 +632,13 @@ export function topCrossDeviceComparison(
     let dm = cells.get(cellKey);
     if (!dm) { dm = new Map(); cells.set(cellKey, dm); }
     let cell = dm.get(dk);
-    if (!cell) { cell = { vendor, hwModel, tts: [], scenarios: new Set() }; dm.set(dk, cell); }
+    if (!cell) { cell = { vendor, hwModel, tts: [], scenarios: new Set(), contexts: new Set() }; dm.set(dk, cell); }
     cell.tts.push(tt);
     if (r.scenario) cell.scenarios.add(String(r.scenario));
+    // M7: track the measurement context per device so a SERVER_TOKEN_STREAM (NPU)
+    // vs CLIENT_WALL_CLOCK (GPU) mismatch can be flagged structurally.
+    const ctx = latencyContext(r);
+    if (ctx) cell.contexts.add(ctx.toUpperCase());
   }
 
   type Pick = { family: string; precision: string; npu: DeviceTtStat; gpu: DeviceTtStat; score: number };
@@ -462,7 +647,7 @@ export function topCrossDeviceComparison(
     const stats: DeviceTtStat[] = [];
     for (const cell of dm.values()) {
       const s = meanStdev(cell.tts);
-      if (s.n >= 1) stats.push({ label: cell.hwModel, type: deviceType(cell.vendor), mean: s.mean, stdev: s.stdev, n: s.n, scenarios: [...cell.scenarios] });
+      if (s.n >= 1) stats.push({ label: cell.hwModel, type: deviceType(cell.vendor), mean: s.mean, stdev: s.stdev, n: s.n, scenarios: [...cell.scenarios], contexts: [...cell.contexts] });
     }
     const npus = stats.filter(s => s.type === 'NPU');
     const gpus = stats.filter(s => s.type === 'GPU');
@@ -481,5 +666,29 @@ export function topCrossDeviceComparison(
   );
   const mixedScenario =
     best.npu.scenarios.length > 1 || best.gpu.scenarios.length > 1;
-  return { family: best.family, precision: best.precision, a: best.npu, b: best.gpu, verdict, mixedScenario };
+  // M7: a context mismatch is structural — flag it when either side pooled more
+  // than one context, OR the two sides' context sets are not identical (e.g. NPU
+  // {SERVER_TOKEN_STREAM} vs GPU {CLIENT_WALL_CLOCK}). Two empty/unknown context
+  // sets are treated as "no signal" (not a mismatch) so legacy rows don't false-flag.
+  const mixedContext = isMixedContext(best.npu.contexts, best.gpu.contexts);
+  return { family: best.family, precision: best.precision, a: best.npu, b: best.gpu, verdict, mixedScenario, mixedContext };
+}
+
+/**
+ * M7: decide whether two pooled latency-measurement-context sets represent a
+ * mismatch. True when either side pooled >1 distinct context, or the two
+ * non-empty sets differ. Empty sets (no context on the wire) yield false so
+ * legacy rows without the field never produce a spurious flag.
+ */
+export function isMixedContext(
+  aContexts: readonly string[],
+  bContexts: readonly string[],
+): boolean {
+  if (aContexts.length > 1 || bContexts.length > 1) return true;
+  if (aContexts.length === 0 || bContexts.length === 0) return false;
+  const a = new Set(aContexts);
+  const b = new Set(bContexts);
+  if (a.size !== b.size) return true;
+  for (const c of a) if (!b.has(c)) return true;
+  return false;
 }

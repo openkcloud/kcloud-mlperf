@@ -18,6 +18,7 @@ import {
   filterCanonicalRuns,
   filterToCurrentCluster,
   markParetoBy,
+  normalizeAccuracyPct,
   PARETO_AXES,
   vendorColor,
   type DeviceAgg,
@@ -83,10 +84,20 @@ export const DeviceEfficiencyScatter = ({ runs, currentModels }: Props) => {
       ),
     [runs, currentModels, cfg.axis],
   );
-  const plottable = devices.filter(d => d.tps != null && cfg.axis.get(d) != null);
+  // C2 frontend defense: for the accuracy axis, defensively normalize a 0-1
+  // fraction to a 0-100 percent before plotting, even though aggregateByDevice
+  // already normalizes — the chart must never render a 0.5%-style fraction on an
+  // axis labeled "MMLU-Pro accuracy (%)". Cost passes through unchanged.
+  const readAxis = (d: DeviceAgg): number | null => {
+    const raw = cfg.axis.get(d);
+    if (raw == null) return null;
+    return yMetric === 'accuracy' ? normalizeAccuracyPct(raw) : raw;
+  };
+
+  const plottable = devices.filter(d => d.tps != null && readAxis(d) != null);
 
   const series = plottable.map((d: DeviceAgg) => {
-    const yVal = cfg.axis.get(d) as number;
+    const yVal = readAxis(d) as number;
     return {
       label: `${d.hwModel}${d.paretoOptimal ? ' ★' : ''}`,
       data: [{ x: d.tps as number, y: yVal, id: d.key }],

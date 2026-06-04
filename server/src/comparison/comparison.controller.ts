@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Param,
-  ParseIntPipe,
   Query,
   Res,
 } from '@nestjs/common';
@@ -185,12 +184,30 @@ export class ComparisonController {
   @Get(':benchmark/:idA/:idB')
   pair(
     @Param('benchmark') benchmark: string,
-    @Param('idA', ParseIntPipe) idA: number,
-    @Param('idB', ParseIntPipe) idB: number,
+    @Param('idA') idA: string,
+    @Param('idB') idB: string,
   ) {
     if (benchmark !== 'mlperf' && benchmark !== 'mmlu') {
       throw new BadRequestException(
         `Invalid benchmark '${benchmark}'. Allowed: mlperf, mmlu`,
+      );
+    }
+    // C1: ids may be bare numeric ("178") or namespaced "${kind}:${id}"
+    // ("npu:178"/"mp:178"/"mm:153") so the service can disambiguate runs that
+    // collide across the per-table autoincrement sequences. Validate the
+    // shape here (NaN/garbage → 400) and let the service resolve the table.
+    const validRunRef = (ref: string): boolean => {
+      const m = /^(?:(mp|mm|npu)(?:_exam)?:)?(\d+)$/i.exec(ref.trim());
+      return !!m && Number.isFinite(Number.parseInt(m[2], 10));
+    };
+    if (!validRunRef(idA)) {
+      throw new BadRequestException(
+        `Invalid run id "${idA}". Expected a numeric id or "<mp|mm|npu>:<id>".`,
+      );
+    }
+    if (!validRunRef(idB)) {
+      throw new BadRequestException(
+        `Invalid run id "${idB}". Expected a numeric id or "<mp|mm|npu>:<id>".`,
       );
     }
     return this.comparisonService.pair(benchmark, idA, idB);

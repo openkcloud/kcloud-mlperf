@@ -40,12 +40,25 @@ const fmt = (value: number | undefined | null, digits = 0, suffix = ''): string 
   return `${value.toFixed(digits)}${suffix}`;
 };
 
-/** Pick the right utilization field by device type. */
+/** Pick the right utilization field by device type. Returns undefined when the
+ *  telemetry is absent OR when the exporter is not in 'ok' state — callers must
+ *  never coerce the result to 0 for display purposes (M1). */
 const utilPct = (t: WireSlotTelemetry | null | undefined, deviceType: 'gpu' | 'npu' | 'cpu'): number | undefined => {
   if (!t) return undefined;
+  // If exporter is not reporting cleanly, treat as unavailable rather than 0 (M1).
+  if (t.exporter_status && t.exporter_status !== 'ok') return undefined;
   if (deviceType === 'gpu') return t.gpu_util_pct;
   return t.util_pct;
 };
+
+/** Return true when the exporter is in a non-ok state (timeout, unavailable, …) */
+const isExporterUnavailable = (t: WireSlotTelemetry | null | undefined): boolean => {
+  if (!t) return false;
+  return !!(t.exporter_status && t.exporter_status !== 'ok');
+};
+
+/** Staleness threshold in seconds above which telemetry data is considered stale (M2). */
+const TELEMETRY_STALE_SECONDS = 15;
 
 /** Compose the DRAM / FB usage tile string ("used / total GB" or "MiB"). */
 const memUsage = (t: WireSlotTelemetry | null | undefined, deviceType: 'gpu' | 'npu' | 'cpu'): string => {
@@ -200,11 +213,26 @@ const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
   // populated regardless of whether an exam is running.
   const historyKey = telemetryHistoryKey(device.node, device.slot_id);
   const history = telemetryHistory[historyKey];
-  // Sparkline data: 60-point utilization timeline. Falls back to []
-  // (LineChart still renders an empty axis) until samples arrive.
-  const utilSeries: number[] = (history ?? [])
-    .map(t => utilPct(t, device.type as 'gpu' | 'npu' | 'cpu') ?? 0);
+
+  // M1: never coerce missing util to 0. Filter out frames where utilPct
+  // returns undefined (i.e. exporter_status !== 'ok' or field absent).
+  // Only append real numeric values to the sparkline series.
+  const utilSeries: number[] = (history ?? []).reduce<number[]>((acc, t) => {
+    const u = utilPct(t, device.type as 'gpu' | 'npu' | 'cpu');
+    if (u !== undefined) acc.push(u);
+    return acc;
+  }, []);
   const xAxisIdx: number[] = utilSeries.map((_v, i) => i);
+
+  // M1: exporter unavailable / timeout — show caption instead of sparkline.
+  const exporterUnavailable = isExporterUnavailable(telemetry);
+
+  // M2: telemetry data staleness — distinct from transport "Live/Offline".
+  const telemetryAgeSeconds = telemetry?.age_seconds;
+  const isTelemetryStale =
+    telemetryAgeSeconds !== undefined &&
+    telemetryAgeSeconds !== null &&
+    telemetryAgeSeconds > TELEMETRY_STALE_SECONDS;
   const isRunning = status.toLowerCase() === 'running';
   const isStale = status.toLowerCase() === 'stale';
   const badgeText = device.type === 'npu' ? 'NPU' : device.type === 'cpu' ? 'CPU' : 'GPU';
@@ -323,7 +351,8 @@ const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
       </Box>
 
       {/* Telemetry tile row: util %, power W, temp C, DRAM/FB used/total.
-          Always rendered — idle slots still get fresh values from SSE. */}
+          Always rendered — idle slots still get fresh values from SSE.
+          M2: dim the entire tile row when telemetry data is stale (age > threshold). */}
       <Box
         sx={{
           mt: 1.25,
@@ -331,7 +360,10 @@ const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
           gridTemplateColumns: 'repeat(4, 1fr)',
           gap: 1,
           pt: 1,
-          borderTop: '1px dashed rgba(0,0,0,0.08)'
+          borderTop: '1px dashed rgba(0,0,0,0.08)',
+          // M2: dim tiles to signal stale data; transport "Live" chip is unchanged
+          opacity: isTelemetryStale ? 0.5 : 1,
+          transition: 'opacity 0.3s'
         }}
       >
         <Box>
@@ -368,9 +400,31 @@ const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
         </Box>
       </Box>
 
-      {/* Utilization sparkline — last 60 readings (~2 min @ 2s cadence). */}
+      {/* M2: telemetry staleness badge — distinct from transport connection status. */}
+      {isTelemetryStale && (
+        <Chip
+          label={`Telemetry stale (${Math.round(telemetryAgeSeconds!)}s old)`}
+          size="small"
+          variant="outlined"
+          sx={{
+            mt: 0.75,
+            fontSize: '0.625rem',
+            height: 18,
+            borderColor: statusColor('warning', mode),
+            color: statusColor('warning', mode)
+          }}
+        />
+      )}
+
+      {/* Utilization sparkline — last 60 readings (~2 min @ 2s cadence).
+          M1: show "exporter unavailable" caption instead of a fake 0% sparkline
+          when exporter_status !== 'ok' (e.g. Atom+ timeout). */}
       <Box sx={{ mt: 1, height: 60 }}>
-        {utilSeries.length > 1 ? (
+        {exporterUnavailable ? (
+          <Typography variant="caption" color="text.secondary" sx={{ pl: 0.5 }}>
+            Exporter unavailable ({telemetry?.exporter_status ?? 'unknown'}) — util history paused.
+          </Typography>
+        ) : utilSeries.length > 1 ? (
           <LineChart
             xAxis={[{ data: xAxisIdx, scaleType: 'point', disableTicks: true, disableLine: true }]}
             series={[
@@ -469,6 +523,14 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
           s.exam_name != null && s.exam_name.toLowerCase().includes(benchmarkFilter.toLowerCase())
       )
     : allSlots;
+
+  // R1: filter the slots for the table (and its empty-state) by device type.
+  // The device CARDS are already type-filtered via useDeviceRegistry({deviceType}),
+  // but the table was rendering the unfiltered global slot list.  deviceType==='all'
+  // shows every slot; gpu/npu dashboards show only slots for that type.
+  const typeSlots = deviceType === 'all'
+    ? slots
+    : slots.filter(s => s.device_type === deviceType);
 
   const getSlotForDevice = (device: DeviceEntry): RealtimeExamSlot | null => {
     // Join by node + slot_id (the only per-device-unique key). Matching on the
@@ -663,8 +725,9 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
         </Paper>
       )}
 
-      {/* Live Slots Table */}
-      {slots.length > 0 && (
+      {/* Live Slots Table — R1: rendered from typeSlots (device-type-filtered).
+          R2: row key includes slot_id to avoid collisions for multi-slot nodes. */}
+      {typeSlots.length > 0 && (
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" sx={{ mb: 2 }}>
             Active Exam Slots
@@ -683,8 +746,8 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
                 </TableRow>
               </TableHead>
               <TableBody>
-                {slots.map(slot => (
-                  <TableRow key={`${slot.gpu_type}-${slot.node}`} hover>
+                {typeSlots.map(slot => (
+                  <TableRow key={`${slot.node}-${slot.slot_id}`} hover>
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Box
@@ -742,7 +805,9 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
         </Paper>
       )}
 
-      {slots.length === 0 && devices.length > 0 && !error && (
+      {/* R1: empty-state also uses typeSlots so NPU/GPU dashboards don't
+          falsely claim "no active exams" when the other type has running exams. */}
+      {typeSlots.length === 0 && devices.length > 0 && !error && (
         <Paper sx={{ p: 4, textAlign: 'center' }}>
           <Typography color="text.secondary">
             {connected

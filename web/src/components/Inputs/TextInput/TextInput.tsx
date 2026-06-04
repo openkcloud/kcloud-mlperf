@@ -27,6 +27,10 @@ type TextInputProps = {
   onChange: ChangeEventHandler<HTMLInputElement>;
   onBlur?: VoidFunction;
   value?: string | number;
+  // Native <input> attributes (e.g. { min: 1, max: 100, step: 1 }) forwarded to
+  // the underlying field's htmlInput slot — used by the exam forms to enforce a
+  // numeric floor (min:1) at the DOM level alongside react-hook-form rules.
+  inputProps?: React.InputHTMLAttributes<HTMLInputElement>;
 };
 
 // ----------------------------------------------------------------------
@@ -48,7 +52,8 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>((props, re
     fullWidth = true,
     variant = 'outlined',
     type = 'text',
-    inputLabelSx = {}
+    inputLabelSx = {},
+    inputProps
   } = props;
 
   return (
@@ -100,6 +105,7 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>((props, re
         helperText={hasError ? helperText : ''}
         slotProps={{
           htmlInput: {
+            ...inputProps,
             onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
             inputMode: type === 'number' ? 'decimal' : 'text'
           }

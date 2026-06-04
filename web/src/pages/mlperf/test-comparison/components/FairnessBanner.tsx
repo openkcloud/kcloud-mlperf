@@ -118,8 +118,12 @@ export const FairnessBanner = ({
     return computeDeltas(runA, runB);
   }, [runA, runB]);
 
-  // Backend's structural assessment, when available
-  const incompat = data?.fairness_assessment?.incompatibility_reasons ?? [];
+  // Backend's structural assessment, when available.
+  // M5 fix: read the canonical top-level incompatibility_reasons from the mapped
+  // ComparisonPairResponse (data.incompatibility_reasons), NOT the duplicated nested
+  // data.fairness_assessment.incompatibility_reasons — the same field the
+  // ComparisonDetailDialog gate uses (and where Agent A's scenario_mismatch will land).
+  const incompat = data?.incompatibility_reasons ?? [];
   const precisionMismatch =
     data?.fairness_assessment?.precision_class === 'mismatched';
 

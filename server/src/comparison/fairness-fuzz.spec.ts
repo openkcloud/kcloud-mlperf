@@ -4,7 +4,7 @@
  * Generates 100 random (precision, dataset, model, vendor, latency_context)
  * tuples using a seeded PRNG (no fast-check dependency required) and asserts:
  *  1. Determinism: same input → same output across two calls.
- *  2. incompatibility_reasons[] contains only the canonical 7 reason codes.
+ *  2. incompatibility_reasons[] contains only the canonical 8 reason codes.
  *  3. fairness_assessment.precision_class ∈ {matched, mismatched, unknown}.
  *  4. fairness_assessment.latency_context ∈ {matched, mismatched, unknown}.
  *  5. fairness_assessment.tokenizer_match ∈ {verified, unverified, mismatch, unknown}.
@@ -21,7 +21,9 @@ import { assessFairness } from './fairness-assessment';
 import { LatencyMeasurementContext } from '../enums/latency-measurement-context.enum';
 import { StatusEnum } from '../enums/status.enum';
 
-// ── Canonical 7 incompatibility reason codes ─────────────────────────────────
+// ── Canonical 8 incompatibility reason codes ─────────────────────────────────
+// scenario_mismatch (C4) added: MLPerf Server-vs-Offline is a non-comparable
+// measurement mode and must gate the comparison dialog.
 const CANONICAL_REASON_CODES = new Set([
   'model_mismatch',
   'precision_mismatch',
@@ -30,6 +32,7 @@ const CANONICAL_REASON_CODES = new Set([
   'max_output_tokens_mismatch',
   'tokenizer_unverified',
   'latency_context_mismatch',
+  'scenario_mismatch',
 ]);
 
 const VALID_PRECISION_CLASSES = new Set(['matched', 'mismatched', 'unknown']);

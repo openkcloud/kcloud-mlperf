@@ -273,6 +273,27 @@ export function computeIncompatibilityReasons(
     reasons.push('latency_context_mismatch');
   }
 
+  // C4: MLPerf Server vs Offline are non-comparable measurement modes (Server =
+  // Poisson arrivals under a latency SLA; Offline = max-throughput batch). The
+  // candidate classifier already demotes a scenario-mismatched run to "related",
+  // but this gate (which the dialog's metric-table + fairness verdict consume)
+  // ignored scenario, so server-vs-offline rendered a delta table with an
+  // "all matched" fairness verdict and no warning. Flag it when BOTH runs are
+  // mlperf and their (case-insensitive) scenarios differ; skip when either is
+  // null/empty (MMLU rows carry no scenario). Guarded against double-adding.
+  if (a.benchmark === 'mlperf' && b.benchmark === 'mlperf') {
+    const scenA = normalizeStrLower(a.scenario);
+    const scenB = normalizeStrLower(b.scenario);
+    if (
+      scenA &&
+      scenB &&
+      scenA !== scenB &&
+      !reasons.includes('scenario_mismatch')
+    ) {
+      reasons.push('scenario_mismatch');
+    }
+  }
+
   return reasons;
 }
 
@@ -512,8 +533,8 @@ export class ComparisonService {
 
   async pair(
     benchmark: 'mlperf' | 'mmlu',
-    idA: number,
-    idB: number,
+    idA: number | string,
+    idB: number | string,
   ): Promise<PairComparisonResponse> {
     const [a, b] = await Promise.all([
       this.findUnifiedRun(benchmark, idA),
@@ -638,10 +659,74 @@ export class ComparisonService {
   // Internal helpers
   // ---------------------------------------------------------------------
 
+  // C1 fix: a run reference may arrive either as a bare numeric id (legacy,
+  // ambiguous on cross-table id collisions) or as a namespaced
+  // `${kind}:${id}` token (e.g. "npu:178", "mp:178", "mm:153") that pins the
+  // exact source table. Per-table autoincrement ids collide across
+  // mp_exam/mm_exam/npu_exam (75 live mp↔npu collisions incl. every canonical
+  // NPU run), so a bare id silently let mp_exam shadow npu_exam and returned an
+  // L40 GPU run with a false vendor_match for a picked RNGD NPU run. The
+  // candidate carries its source table, so the frontend now namespaces the id;
+  // a bare numeric id still falls back to the original mp→npu / mm→npu
+  // precedence for backward compatibility.
+  private parseRunRef(ref: number | string): {
+    kind: 'mp' | 'mm' | 'npu' | null;
+    id: number;
+  } | null {
+    if (typeof ref === 'number') {
+      return Number.isFinite(ref) ? { kind: null, id: ref } : null;
+    }
+    const raw = String(ref).trim();
+    const colon = raw.indexOf(':');
+    if (colon === -1) {
+      const id = Number.parseInt(raw, 10);
+      return Number.isFinite(id) ? { kind: null, id } : null;
+    }
+    const prefix = raw.slice(0, colon).toLowerCase();
+    const id = Number.parseInt(raw.slice(colon + 1), 10);
+    if (!Number.isFinite(id)) return null;
+    // Map both the short kind tokens and the full source_table names so either
+    // form ("npu" or "npu_exam") resolves correctly.
+    if (prefix === 'mp' || prefix === 'mp_exam') return { kind: 'mp', id };
+    if (prefix === 'mm' || prefix === 'mm_exam') return { kind: 'mm', id };
+    if (prefix === 'npu' || prefix === 'npu_exam') return { kind: 'npu', id };
+    // Unknown prefix → treat as ambiguous bare id (best-effort precedence).
+    return { kind: null, id };
+  }
+
   private async findUnifiedRun(
     benchmark: 'mlperf' | 'mmlu',
-    id: number,
+    ref: number | string,
   ): Promise<NormalizedRun | null> {
+    const parsed = this.parseRunRef(ref);
+    if (!parsed) return null;
+    const { kind, id } = parsed;
+
+    // Namespaced reference: resolve from the pinned table only — no
+    // cross-table fallback that could re-introduce the shadowing bug.
+    if (kind === 'mp') {
+      const mp = await this.mpExamRepo.findOne({
+        where: { id },
+        relations: ['results'],
+      });
+      return mp ? this.normalizeMpExam(mp) : null;
+    }
+    if (kind === 'mm') {
+      const mm = await this.mmExamRepo.findOne({
+        where: { id },
+        relations: ['results'],
+      });
+      return mm ? this.normalizeMmExam(mm) : null;
+    }
+    if (kind === 'npu') {
+      const npu = await this.npuExamRepo.findOne({
+        where: { id, benchmark },
+        relations: ['results'],
+      });
+      return npu ? this.normalizeNpuExam(npu) : null;
+    }
+
+    // Bare numeric id (legacy): preserve the original per-benchmark precedence.
     if (benchmark === 'mlperf') {
       const mp = await this.mpExamRepo.findOne({
         where: { id },
@@ -782,8 +867,18 @@ export class ComparisonService {
   private normalizeMmExam(exam: MmExam): NormalizedRun {
     const latest = this.latestResult(exam.results || []);
 
+    // C2 fix: mm_exam.result_acc_total is parsed from the worker line
+    // "Average accuracy: 0.4929" (mm-exam-result.service.ts:194-198) as a
+    // FRACTION in [0,1], whereas the NPU path stores result_accuracy already as
+    // a PERCENT in [0,100] (mmlu-scoring.ts computes (100*correct)/total). Both
+    // land in the same metrics.accuracy_pct field, so without normalisation the
+    // candidate picker / home efficiency surfaces compared "0.5%" (GPU) against
+    // "45.0%" (NPU) — a 100x scale break. Normalise the fraction to a percent
+    // here so accuracy_pct ∈ [0,100] everywhere.
     const accuracy =
-      latest?.result_acc_total != null ? latest.result_acc_total : null;
+      latest?.result_acc_total != null
+        ? this.toAccuracyPercent(latest.result_acc_total)
+        : null;
 
     const cfg: CanonicalRunConfig = {
       benchmark: 'mmlu',
@@ -880,7 +975,10 @@ export class ComparisonService {
       metrics: {
         tt100t_seconds: npuTtStats.mean ?? latest?.result_tt100t ?? null,
         tps: npuTps,
-        accuracy_pct: latest?.result_accuracy ?? null,
+        // C2 guard: NPU stores result_accuracy already as a percent in
+        // [0,100]; clamp defensively so a malformed row can never escape the
+        // invariant that accuracy_pct ∈ [0,100] across both paths.
+        accuracy_pct: this.clampAccuracyPercent(latest?.result_accuracy ?? null),
         throughput: latest?.result_sps ?? null,
         tps_stdev: npuTpsStats.stdev,
         tt100t_stdev: npuTtStats.stdev,
@@ -970,6 +1068,28 @@ export class ComparisonService {
   ): number | null {
     if (tps == null || power == null || power <= 0) return null;
     return tps / power;
+  }
+
+  // C2: convert an mm_exam accuracy FRACTION (0..1) into a PERCENT (0..100).
+  // result_acc_total is parsed verbatim from "Average accuracy: 0.4929" so it
+  // is always a fraction; ×100 yields the canonical accuracy_pct unit shared
+  // with the NPU path. Clamped to [0,100] so a malformed (>1) row can't blow
+  // the invariant. Null/non-finite passes through as null.
+  private toAccuracyPercent(fraction: number | null | undefined): number | null {
+    if (fraction == null || !Number.isFinite(fraction)) return null;
+    return this.clampAccuracyPercent(fraction * 100) as number;
+  }
+
+  // C2 guard: assert an already-percent accuracy stays within [0,100]. Valid
+  // values pass through untouched; out-of-range inputs are clamped so the
+  // accuracy_pct ∈ [0,100] invariant holds for every source path.
+  private clampAccuracyPercent(
+    pct: number | null | undefined,
+  ): number | null {
+    if (pct == null || !Number.isFinite(pct)) return null;
+    if (pct < 0) return 0;
+    if (pct > 100) return 100;
+    return pct;
   }
 
   private canonicalizeHardwareLabel(raw: string): CanonicalHardwareLabel {

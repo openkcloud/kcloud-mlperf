@@ -1,7 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import Settings from '@mui/icons-material/Settings';
 import { Box, Button, Grid, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
@@ -29,12 +28,6 @@ type MmluExamConfirmationModalProps = {
 
 // ----------------------------------------------------------------------
 
-const nTrainModel = {
-  extra_args: ` `
-};
-
-// ----------------------------------------------------------------------
-
 // B-validation #22: pull a human-readable message out of an Axios/API error.
 // NestJS class-validator failures arrive as { message: string | string[] }.
 const extractApiErrorMessage = (error: unknown): string => {
@@ -52,7 +45,6 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
 
   const queryClient = useQueryClient();
 
-  const [openSettings, setOpenSettings] = useState(false);
   // B-validation #22: disable the submit button while the create request is in
   // flight so the user cannot fire duplicate exams.
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -93,8 +85,6 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
 
   const onCancel = () => {
     handleClose();
-    setOpenSettings(false);
-    setOpenSettings(false);
   };
 
   return (
@@ -111,8 +101,7 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
       >
         Confirmation exam creation
       </Typography>
-      {!openSettings && (
-        <Box>
+      <Box>
           <Typography component={'p'} color={'secondary'} marginBottom={'0.875rem'}>
             A new exam is created with the following contents:
           </Typography>
@@ -261,34 +250,13 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
             </Typography>
           </Box>
         </Box>
-      )}
-      {openSettings && (
-        <Box marginBottom={'0.875rem'}>
-          <Box
-            sx={{
-              backgroundColor: '#1e1e1e',
-              color: '#fff',
-              p: 2,
-              borderRadius: 2,
-              fontFamily: 'monospace',
-              fontSize: '14px',
-              overflowX: 'auto',
-              whiteSpace: 'pre-wrap'
-            }}
-          >
-            <Typography component="pre" sx={{ m: 0 }}>
-              {JSON.stringify(nTrainModel, null, 2)}
-            </Typography>
-          </Box>
-        </Box>
-      )}
       <Grid container spacing={2}>
         <Grid size={5}>
           <Button size={'large'} fullWidth variant={'outlined'} onClick={onCancel}>
             Cancel
           </Button>
         </Grid>
-        <Grid size={5}>
+        <Grid size={7}>
           <Button
             size={'large'}
             fullWidth
@@ -297,20 +265,6 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Generating...' : 'Generate'}
-          </Button>
-        </Grid>
-        <Grid size={2}>
-          <Button
-            size={'large'}
-            fullWidth
-            variant={'contained'}
-            sx={{
-              minWidth: 'fit-content',
-              padding: '0.5rem'
-            }}
-            onClick={() => setOpenSettings(true)}
-          >
-            <Settings />
           </Button>
         </Grid>
       </Grid>

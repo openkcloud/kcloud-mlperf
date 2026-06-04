@@ -87,7 +87,7 @@ const initialData: MpExamFormInput = {
     value: ''
   },
   cpuCore: { value: 8, label: '8 Cores' },
-  dataNumber: 0,
+  dataNumber: 1,
   targetQps: 0.5,
   batchSize: 1,
   numOfWorkers: 1,
@@ -476,19 +476,13 @@ export const MpExamForm = memo(
                         type="number"
                         hasError={Boolean(error)}
                         helperText={error?.message}
-                        label="Number of data (0 = full)"
+                        label="Number of data"
+                        inputProps={{ min: 1 }}
                       />
-                      {/* B-validation #21: 0 is a valid "full dataset" sentinel —
-                          make that explicit so accidental empty/0 entries are clear. */}
-                      <Typography
-                        sx={{ mt: 0.5, fontSize: '0.6875rem', color: '#64748B' }}
-                      >
-                        0 = full dataset
-                      </Typography>
                     </Box>
                   );
                 }}
-                rules={{ min: { value: 0, message: 'Number of data should be positive!' } }}
+                rules={{ min: { value: 1, message: 'Number of data must be at least 1' } }}
               />
             </Grid>
             <Grid size={fieldGrid}>
@@ -528,7 +522,7 @@ export const MpExamForm = memo(
                     />
                   );
                 }}
-                rules={{ min: { value: 0, message: 'Batch size should be positive!' } }}
+                rules={{ min: { value: 1, message: 'Batch size must be at least 1' } }}
               />
             </Grid>
             <Grid size={fieldGrid}>
@@ -548,7 +542,7 @@ export const MpExamForm = memo(
                     />
                   );
                 }}
-                rules={{ min: { value: 0, message: 'Number of workers should be positive!' } }}
+                rules={{ min: { value: 1, message: 'Number of workers must be at least 1' } }}
               />
             </Grid>
             <Grid size={fieldGrid}>
@@ -588,7 +582,7 @@ export const MpExamForm = memo(
                     />
                   );
                 }}
-                rules={{ min: { value: 0, message: 'Tensor parallel size should be positive!' } }}
+                rules={{ min: { value: 1, message: 'Tensor parallel size must be at least 1' } }}
               />
             </Grid>
             <Grid size={fieldGrid}>

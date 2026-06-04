@@ -66,7 +66,7 @@ export const MmluExamConfirmationModal = (props: MmluExamConfirmationModalProps)
     try {
       const data = await MmExamApi.create({
         ...modalState,
-        n_train: Number(nTrain) || N_TRAIN_DEFAULT_VALUE
+        n_train: Math.max(1, Number(nTrain) || 1)
       });
 
       await queryClient.invalidateQueries({
@@ -239,6 +239,7 @@ export const MmluExamConfirmationModal = (props: MmluExamConfirmationModalProps)
             }}
             value={nTrain}
             type={'number'}
+            inputProps={{ min: 1 }}
             sx={{
               marginBottom: '0.875rem'
             }}

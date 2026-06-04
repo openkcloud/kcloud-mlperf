@@ -227,13 +227,18 @@ export function useRealtimeExams({ pollIntervalMs = FALLBACK_POLL_MS }: UseRealt
 
   // Append the newest telemetry frame from every slot in the snapshot, trim to
   // HISTORY_MAX entries per key. Slots without telemetry are skipped (no
-  // fabricated zeros).
+  // fabricated zeros). Frames where exporter_status !== 'ok' are also skipped
+  // to prevent timeout/unavailable frames from polluting the util sparkline
+  // with fake 0% values (M1).
   const appendTelemetryHistory = useCallback((snap: RealtimeSnapshot) => {
     setTelemetryHistory(prev => {
       const next: TelemetryHistory = { ...prev };
       let mutated = false;
       for (const slot of snap.slots) {
         if (!slot.telemetry) continue;
+        // Skip exporter-unavailable/timeout frames — they carry no real metrics
+        // and would produce spurious 0% util data points in the sparkline.
+        if (slot.telemetry.exporter_status && slot.telemetry.exporter_status !== 'ok') continue;
         const key = telemetryHistoryKey(slot.node, slot.slot_id);
         const prior = next[key] ?? [];
         const appended = prior.concat(slot.telemetry);

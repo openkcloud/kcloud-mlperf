@@ -18,6 +18,13 @@ import {
   markPareto,
   PARETO_AXES,
   CANONICAL_MODEL_FAMILY,
+  isMetricQualified,
+  normalizeAccuracyPct,
+  median,
+  isMixedContext,
+  latencyContext,
+  MIN_METRIC_SAMPLES,
+  MAX_METRIC_CV,
   type DeviceAgg,
 } from '../deviceAggregates';
 import { deviceUsdPerHr } from '@/constants/device-cost.constants';
@@ -307,8 +314,8 @@ describe('normalizeHwModel (#10)', () => {
     const aggs = aggregateByDevice(runs).filter(d => d.vendor === 'rebellions');
     expect(aggs).toHaveLength(1);
     expect(aggs[0].hwModel).toBe('Atom+');
-    // best (lowest) TT100T wins.
-    expect(aggs[0].tt100t).toBeCloseTo(0.7, 6);
+    // H2: robust MEDIAN TT100T across the three merged runs (0.7, 0.75, 0.8).
+    expect(aggs[0].tt100t).toBeCloseTo(0.75, 6);
   });
 
   it('returns unknown / passes through unknown models unchanged', () => {
@@ -383,5 +390,231 @@ describe('finite stats (#9)', () => {
     expect(Number.isFinite(v.verdict.delta)).toBe(true);
     expect(Number.isFinite(v.verdict.ciLow)).toBe(true);
     expect(Number.isFinite(v.verdict.ciHigh)).toBe(true);
+  });
+});
+
+// ----------------------------------------------------------------------
+// H2: throughput outlier / sample-count / CV gating + robust median.
+// ----------------------------------------------------------------------
+
+describe('isMetricQualified (H2)', () => {
+  it('rejects a run whose sample count is below the minimum', () => {
+    expect(MIN_METRIC_SAMPLES).toBe(3);
+    expect(isMetricQualified(80, 1, 2)).toBe(false); // 2 samples < 3
+    expect(isMetricQualified(80, 1, 1)).toBe(false);
+    expect(isMetricQualified(80, 1, 3)).toBe(true); // exactly 3 qualifies
+  });
+
+  it('rejects a high-CV run (stdev/value > MAX_METRIC_CV)', () => {
+    expect(MAX_METRIC_CV).toBe(0.5);
+    // RNGD #98 shape: tps=187.41, stdev=148.72, samples=2 -> CV 79% AND n<3.
+    expect(isMetricQualified(187.41, 148.72, 2)).toBe(false);
+    // Even with enough samples, a CV above 0.5 disqualifies.
+    expect(isMetricQualified(100, 60, 5)).toBe(false); // CV 0.6
+    expect(isMetricQualified(100, 50, 5)).toBe(true); // CV exactly 0.5 ok
+  });
+
+  it('treats absent sample/stdev fields as a qualified single observation (graceful)', () => {
+    expect(isMetricQualified(80, null, null)).toBe(true);
+    expect(isMetricQualified(80, undefined, undefined)).toBe(true);
+    // A non-positive value never qualifies.
+    expect(isMetricQualified(0, null, 3)).toBe(false);
+    expect(isMetricQualified(null, null, 5)).toBe(false);
+  });
+});
+
+describe('median', () => {
+  it('returns the middle of an odd list and the mean of the two middles for even', () => {
+    expect(median([3, 1, 2])).toBe(2);
+    expect(median([1, 2, 3, 4])).toBe(2.5);
+    expect(median([82.3, 81.7, 80.9])).toBeCloseTo(81.7, 6);
+  });
+});
+
+describe('aggregateByDevice — H2 tps outlier gating', () => {
+  // Build the live RNGD shape: one 2-sample CV-79% outlier (#98 @ 187.4) plus
+  // a population of well-sampled ~80 tok/s runs.
+  const rngd = (tps: number, over: Partial<ComparisonRunRow['metrics']> = {}) =>
+    run({ vendor: 'furiosa', hwModel: 'RNGD', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+      metrics: { tt100t_seconds: 1.25, tps, ...over } });
+
+  it('excludes the single 2-sample CV-79% outlier from the device tps', () => {
+    const runs = [
+      rngd(187.41, { tps_samples: 2, tps_stdev: 148.72 }), // the #98 outlier
+      rngd(81.73, { tps_samples: 5, tps_stdev: 2.0 }),
+      rngd(80.96, { tps_samples: 5, tps_stdev: 1.5 }),
+      rngd(80.84, { tps_samples: 5, tps_stdev: 1.8 }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    // Median of the three qualifying runs (80.84, 80.96, 81.73) = 80.96 — the
+    // 187.4 outlier is gone, not driving a 2.3x inflated headline.
+    expect(agg.tps).toBeCloseTo(80.96, 2);
+    expect(agg.tps).toBeLessThan(100);
+    // The representative run id is one of the qualifying runs, never the outlier.
+    expect(agg.bestRunId).not.toBeNull();
+  });
+
+  it('falls back to the best raw value when NO run qualifies (graceful, still appears)', () => {
+    // Both runs are low-sample/high-CV -> neither qualifies; device still placed.
+    const runs = [
+      rngd(187.41, { tps_samples: 2, tps_stdev: 148.72 }),
+      rngd(60.0, { tps_samples: 1, tps_stdev: null }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    // Fallback uses the best (max) raw positive value so the row is not dropped.
+    expect(agg.tps).toBeCloseTo(187.41, 2);
+  });
+
+  it('uses the robust median of qualifying runs rather than the raw max', () => {
+    const runs = [
+      rngd(70), rngd(72), rngd(95), // no sample/stdev fields -> all qualify
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    // Median (72), not max (95).
+    expect(agg.tps).toBeCloseTo(72, 6);
+  });
+
+  it('applies the same sample/CV discipline to tt100t', () => {
+    // A spuriously-low tt100t with 2 samples + huge CV must not win.
+    const runs = [
+      run({ vendor: 'furiosa', hwModel: 'RNGD', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 0.2, tt100t_samples: 2, tt100t_stdev: 0.3 } }), // CV 1.5, n<3
+      run({ vendor: 'furiosa', hwModel: 'RNGD', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 1.30, tt100t_samples: 5, tt100t_stdev: 0.05 } }),
+      run({ vendor: 'furiosa', hwModel: 'RNGD', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 1.32, tt100t_samples: 5, tt100t_stdev: 0.04 } }),
+      run({ vendor: 'furiosa', hwModel: 'RNGD', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 1.28, tt100t_samples: 5, tt100t_stdev: 0.06 } }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    // Median of the three qualifying tt100t (1.28, 1.30, 1.32) = 1.30; the 0.2 outlier is rejected.
+    expect(agg.tt100t).toBeCloseTo(1.30, 6);
+  });
+});
+
+// ----------------------------------------------------------------------
+// H1 + C2 frontend defense: MMLU-only, scale-normalized accuracy axis.
+// ----------------------------------------------------------------------
+
+describe('normalizeAccuracyPct (C2 frontend defense)', () => {
+  it('scales a 0-1 fraction to a 0-100 percent', () => {
+    expect(normalizeAccuracyPct(0.4929)).toBeCloseTo(49.29, 6);
+    expect(normalizeAccuracyPct(0.5)).toBe(50);
+    expect(normalizeAccuracyPct(1)).toBe(100); // boundary: 1 treated as a fraction
+  });
+
+  it('leaves a 0-100 percent unchanged', () => {
+    expect(normalizeAccuracyPct(45)).toBe(45);
+    expect(normalizeAccuracyPct(70)).toBe(70);
+    expect(normalizeAccuracyPct(100)).toBe(100);
+  });
+
+  it('returns null for missing / negative / non-finite input', () => {
+    expect(normalizeAccuracyPct(null)).toBeNull();
+    expect(normalizeAccuracyPct(undefined)).toBeNull();
+    expect(normalizeAccuracyPct(-0.1)).toBeNull();
+    expect(normalizeAccuracyPct(NaN)).toBeNull();
+  });
+});
+
+describe('aggregateByDevice — H1 MMLU-only accuracy axis', () => {
+  it('ignores mlperf accuracy_pct (ROUGE) and uses MMLU rows only', () => {
+    const runs = [
+      // mlperf ROUGE-1 score of 23.39 must NOT land on the MMLU accuracy axis.
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mlperf',
+        metrics: { tt100t_seconds: 1.5, accuracy_pct: 23.39 } }),
+      // Real MMLU runs, stored as 0-1 fractions (GPU mm_exam path).
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mmlu',
+        metrics: { tt100t_seconds: 1.5, accuracy_pct: 0.5 } }),
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mmlu',
+        metrics: { tt100t_seconds: 1.5, accuracy_pct: 0.4667 } }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'A30')!;
+    // Best MMLU = 0.5 fraction, normalized to 50% — NOT the 23.39 ROUGE value.
+    expect(agg.accuracy).toBeCloseTo(50, 6);
+  });
+
+  it('normalizes NPU MMLU already in 0-100 and GPU MMLU in 0-1 to one scale', () => {
+    const runs = [
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 1.2, accuracy_pct: 45 } }), // already 0-100
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 1.2, accuracy_pct: 70 } }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    expect(agg.accuracy).toBe(70); // max MMLU, unchanged (already a percent)
+  });
+
+  it('leaves accuracy null for a device with only mlperf rows (absent from accuracy frontier)', () => {
+    const runs = [
+      run({ vendor: 'rebellions', hwModel: 'Atom+', benchmark: 'mlperf', model: 'Llama-3.1-8B-Instruct',
+        metrics: { tt100t_seconds: 1.0, accuracy_pct: 0 } }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'Atom+')!;
+    // No MMLU run -> accuracy stays null (not pinned at the mlperf 0).
+    expect(agg.accuracy).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------
+// M7: measurement-context mismatch flag.
+// ----------------------------------------------------------------------
+
+describe('latencyContext / isMixedContext (M7)', () => {
+  // The field is on the wire (NormalizedRun) but not on the typed
+  // ComparisonRunRow, so attach it via an untyped cast for the test fixtures.
+  const withCtx = (r: ComparisonRunRow, ctx: string): ComparisonRunRow =>
+    ({ ...r, latency_measurement_context: ctx }) as ComparisonRunRow;
+
+  it('reads latency_measurement_context off a run defensively', () => {
+    const r = withCtx(run({}), 'SERVER_TOKEN_STREAM');
+    expect(latencyContext(r)).toBe('SERVER_TOKEN_STREAM');
+    expect(latencyContext(run({}))).toBeNull(); // absent -> null
+  });
+
+  it('flags a mismatch between NPU SERVER_TOKEN_STREAM and GPU CLIENT_WALL_CLOCK', () => {
+    expect(isMixedContext(['SERVER_TOKEN_STREAM'], ['CLIENT_WALL_CLOCK'])).toBe(true);
+  });
+
+  it('flags when one side itself pooled more than one context', () => {
+    expect(isMixedContext(['SERVER_TOKEN_STREAM', 'CLIENT_WALL_CLOCK'], ['CLIENT_WALL_CLOCK'])).toBe(true);
+  });
+
+  it('does NOT flag identical contexts on both sides', () => {
+    expect(isMixedContext(['CLIENT_WALL_CLOCK'], ['CLIENT_WALL_CLOCK'])).toBe(false);
+  });
+
+  it('does NOT flag when context is absent on either side (legacy rows, no signal)', () => {
+    expect(isMixedContext([], ['CLIENT_WALL_CLOCK'])).toBe(false);
+    expect(isMixedContext([], [])).toBe(false);
+  });
+
+  it('surfaces mixedContext on the cross-device verdict for an NPU/GPU context split', () => {
+    const runs = [
+      withCtx(npuRun(1.20), 'SERVER_TOKEN_STREAM'),
+      withCtx(npuRun(1.22), 'SERVER_TOKEN_STREAM'),
+      withCtx(npuRun(1.24), 'SERVER_TOKEN_STREAM'),
+      withCtx(gpuRun(1.50), 'CLIENT_WALL_CLOCK'),
+      withCtx(gpuRun(1.55), 'CLIENT_WALL_CLOCK'),
+      withCtx(gpuRun(1.52), 'CLIENT_WALL_CLOCK'),
+    ];
+    const v = topCrossDeviceComparison(runs)!;
+    expect(v.mixedContext).toBe(true);
+    // Scenario strings still match per side here, so mixedScenario stays false —
+    // proving the context flag is an INDEPENDENT structural signal.
+    expect(v.mixedScenario).toBe(false);
+  });
+
+  it('mixedContext is false when both sides share the same measurement context', () => {
+    const runs = [
+      withCtx(npuRun(1.20), 'SERVER_TOKEN_STREAM'),
+      withCtx(npuRun(1.22), 'SERVER_TOKEN_STREAM'),
+      withCtx(npuRun(1.24), 'SERVER_TOKEN_STREAM'),
+      withCtx(gpuRun(1.50), 'SERVER_TOKEN_STREAM'),
+      withCtx(gpuRun(1.55), 'SERVER_TOKEN_STREAM'),
+      withCtx(gpuRun(1.52), 'SERVER_TOKEN_STREAM'),
+    ];
+    const v = topCrossDeviceComparison(runs)!;
+    expect(v.mixedContext).toBe(false);
   });
 });

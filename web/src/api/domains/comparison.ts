@@ -135,6 +135,30 @@ export type PairBenchmark = 'mlperf' | 'mmlu';
 
 // ----------------------------------------------------------------------
 
+/**
+ * C1 fix: per-table autoincrement ids collide across mp_exam/mm_exam/npu_exam
+ * (e.g. mp #178 = an L40 GPU run AND npu #178 = an RNGD NPU run). The pair
+ * endpoint resolved a bare id by table precedence (mp first), so picking the
+ * RNGD candidate silently returned the L40 run with a false vendor_match.
+ *
+ * Build a namespaced run reference `${kind}:${id}` ("npu:178") from a run's
+ * `source_table` so the backend can pin the exact table. Falls back to the bare
+ * numeric id (legacy precedence) when the source table is unknown.
+ */
+export const runRef = (run: {
+  id: number;
+  source_table?: string | null;
+}): string => {
+  const table = (run.source_table ?? '').toLowerCase();
+  if (table === 'mp_exam' || table === 'mp') return `mp:${run.id}`;
+  if (table === 'mm_exam' || table === 'mm') return `mm:${run.id}`;
+  if (table === 'npu_exam' || table === 'npu') return `npu:${run.id}`;
+  // Unknown/absent source table → bare id (backend applies legacy precedence).
+  return String(run.id);
+};
+
+// ----------------------------------------------------------------------
+
 // ----------------------------------------------------------------------
 
 export type CandidateCategory = 'strict' | 'hardware_optimized' | 'related';

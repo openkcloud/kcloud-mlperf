@@ -452,6 +452,9 @@ const Tt100tLeaderboard = ({
           'The NPU path measures single-stream (server-side) while the GPU path measures offline/batched (client-side) — measurement contexts differ, which alone can shift TT100T.',
           'Likely bias: single-stream (NPU) tends to report LOWER TT100T than offline/batched (GPU), so the measurement context probably flatters the NPU side — treat any NPU lead as an upper bound.',
           crossDevice.mixedScenario ? 'Pool spans more than one MLPerf scenario.' : 'One scenario per side.',
+          crossDevice.mixedContext
+            ? 'Pool mixes latency-measurement contexts (e.g. server-token-stream vs client-wall-clock) — the verdict is not context-controlled.'
+            : 'One latency-measurement context per side.',
           'Cell auto-selected = the model+precision with the most cross-type runs; runs span multiple dates.',
           'For a strict apples-to-apples figure, use a controlled single-stream probe (both client-side).',
         ];

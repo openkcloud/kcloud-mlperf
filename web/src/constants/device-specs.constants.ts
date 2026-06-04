@@ -157,6 +157,34 @@ export function bytesPerWeightFor(precisionClass: string | null | undefined): nu
   return (precisionClass ?? '').toLowerCase().includes('fp8') ? 1 : 2;
 }
 
+/** True when a device has a hardware FP8 path (a published dense FP8 peak). */
+export function hasFp8Path(spec: DeviceSpec | null | undefined): boolean {
+  return spec != null && spec.fp8Tflops != null;
+}
+
+/**
+ * C3 (root cause b): reconcile a run's precision class against the DEVICE's
+ * actual capability before computing the roofline ceiling. A run may be tagged
+ * fp8 (1 byte/weight) yet land on hardware with NO FP8 path (Ampere A30/A40 —
+ * `fp8Tflops === null`). On such hardware the weights are physically streamed at
+ * bf16/fp16 (2 bytes/weight), so the bandwidth ceiling MUST be computed at
+ * 2 bytes/weight, not 1. Returns the effective bytes-per-weight to use for the
+ * ceiling/intensity, plus a flag noting whether the run's precision was downgraded
+ * because the device cannot run it. For devices that DO have an FP8 path, the
+ * run's precision class is honored as-is.
+ */
+export function effectiveBytesPerWeight(
+  spec: DeviceSpec | null | undefined,
+  precisionClass: string | null | undefined,
+): { bytesPerWeight: number; reconciledFromFp8: boolean } {
+  const wantsFp8 = (precisionClass ?? '').toLowerCase().includes('fp8');
+  if (wantsFp8 && !hasFp8Path(spec)) {
+    // Device has no FP8 path: clamp to the bf16/fp16 ceiling (2 bytes/weight).
+    return { bytesPerWeight: 2, reconciledFromFp8: true };
+  }
+  return { bytesPerWeight: bytesPerWeightFor(precisionClass), reconciledFromFp8: false };
+}
+
 /** Ridge-point intensity (FLOP/byte) where the memory roof meets the compute roof. */
 export function ridgePoint(peakTflops: number, memBwGBs: number): number {
   // memBW in TB/s = GB/s / 1000; ridge = peakTFLOPS / memBW(TB/s).
