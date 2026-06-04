@@ -35,18 +35,34 @@ const nTrainModel = {
 
 // ----------------------------------------------------------------------
 
+// B-validation #22: pull a human-readable message out of an Axios/API error.
+// NestJS class-validator failures arrive as { message: string | string[] }.
+const extractApiErrorMessage = (error: unknown): string => {
+  const response = (error as { response?: { data?: { message?: unknown }; statusText?: string } })?.response;
+  const apiMessage = response?.data?.message;
+  if (Array.isArray(apiMessage)) return apiMessage.join(', ');
+  if (typeof apiMessage === 'string' && apiMessage.trim()) return apiMessage;
+  if (response?.statusText) return response.statusText;
+  if (error instanceof Error && error.message) return error.message;
+  return 'Unknown error';
+};
+
 export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) => {
   const { modalState, handleClose } = props;
 
   const queryClient = useQueryClient();
 
   const [openSettings, setOpenSettings] = useState(false);
+  // B-validation #22: disable the submit button while the create request is in
+  // flight so the user cannot fire duplicate exams.
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { setNotification, setErrorNotification } = useStore(store => store.notification);
+  const { setNotification } = useStore(store => store.notification);
 
   const handleSubmit = async () => {
-    if (!modalState) return;
+    if (!modalState || isSubmitting) return;
 
+    setIsSubmitting(true);
     try {
       const data = await MpExamApi.create({
         ...modalState
@@ -64,7 +80,14 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
       handleClose();
     } catch (error) {
       console.error(error);
-      setErrorNotification(error);
+      // B-validation #22: surface the real failure reason to the user instead
+      // of swallowing it behind a bare status code.
+      setNotification({
+        type: 'error',
+        message: `Failed to create test: ${extractApiErrorMessage(error)}`
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -266,8 +289,14 @@ export const MpExamConfirmationModal = (props: MmluExamConfirmationModalProps) =
           </Button>
         </Grid>
         <Grid size={5}>
-          <Button size={'large'} fullWidth variant={'contained'} onClick={handleSubmit}>
-            Generate
+          <Button
+            size={'large'}
+            fullWidth
+            variant={'contained'}
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Generating...' : 'Generate'}
           </Button>
         </Grid>
         <Grid size={2}>

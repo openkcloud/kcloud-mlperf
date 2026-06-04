@@ -132,6 +132,13 @@ const TestComparisonPage = () => {
                 label: 'Other',
                 test1: (list1[i].result_acc_other ?? 0) * 100,
                 test2: (list2[j].result_acc_other ?? 0) * 100
+              },
+              // bug #25: include the overall ("All") subject — present on the result page
+              // but previously omitted here — so the comparison matches the per-run view.
+              {
+                label: 'All',
+                test1: (list1[i].result_acc_total ?? 0) * 100,
+                test2: (list2[j].result_acc_total ?? 0) * 100
               }
             ]
           });

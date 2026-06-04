@@ -133,7 +133,9 @@ const BENCHMARK_NAV_ITEMS = [
   {
     to: NpuEvalAtomPlusPageLinks.main,
     label: 'Rebellions Atom+ NPU Eval',
-    sublabel: 'Awaiting device plugin',
+    // node5 is joined and the Atom+ devices are live; the remaining gap is the
+    // inference server (NodePort 30093 not yet deployed), not the device itself.
+    sublabel: 'node5 · inference server pending',
     Icon: HexagonSVG,
     segment: 'npu-eval/atomplus'
   }
@@ -468,6 +470,10 @@ export const MainLayout = (props: MainLayoutProps) => {
   const isNpu = pathname.startsWith('/npu-eval');
   const isNpuRealtime = pathname.startsWith('/dashboard/npu-realtime');
   const isDashboard = pathname.startsWith('/dashboard');
+  const isMlPerf = pathname.startsWith('/ml-perf');
+  // The MLPerf benchmark page lives at /ml-perf; the cluster overview is the
+  // bare "/" route. Without an explicit MLPerf check the overview fell through
+  // to the "MLPerf Benchmark" title, which was wrong for the landing page.
   const pageTitle = isNpuRngd
     ? 'RNGD NPU Evaluation'
     : isNpu
@@ -478,7 +484,9 @@ export const MainLayout = (props: MainLayoutProps) => {
           ? 'NPU Realtime Dashboard'
           : isDashboard
             ? 'GPU Realtime Dashboard'
-            : 'MLPerf Benchmark';
+            : isMlPerf
+              ? 'MLPerf Benchmark'
+              : 'Cluster Overview';
   const pageBadge = isNpuRngd
     ? 'FuriosaAI RNGD'
     : isNpu
@@ -489,7 +497,9 @@ export const MainLayout = (props: MainLayoutProps) => {
           ? 'Live'
           : isDashboard
             ? 'Live'
-            : 'MLPerf v5.1';
+            : isMlPerf
+              ? 'MLPerf v5.1'
+              : 'Overview';
 
   return (
     <StyledWrapper>
@@ -596,9 +606,12 @@ export const MainLayout = (props: MainLayoutProps) => {
           )}
 
           <Box sx={{ flex: 1, minWidth: 0 }}>
+            {/* h2, not h1: each page body owns its single <h1> (e.g. the home
+                hero). A second top-bar h1 duplicated the page heading and broke
+                one-h1-per-page a11y. */}
             <Typography
               variant="h5"
-              component="h1"
+              component="h2"
               sx={{
                 fontWeight: 700,
                 color: titleColor,

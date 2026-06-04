@@ -213,10 +213,15 @@ const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
 
   return (
     <Paper
+      component="section"
+      aria-label={`${label} — ${device.vendor} ${device.model} on ${device.node}${
+        device.slot_id !== undefined ? ` #${device.slot_id}` : ''
+      }, status ${status}`}
       sx={{ p: 2.5, borderTop: `3px solid ${color}`, height: '100%', opacity: isPending ? 0.7 : 1 }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
         <Box
+          aria-hidden
           sx={{
             width: 32,
             height: 32,
@@ -466,8 +471,13 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
     : allSlots;
 
   const getSlotForDevice = (device: DeviceEntry): RealtimeExamSlot | null => {
-    const key = slotKeyFromDevice(device);
-    return slots.find(s => s.gpu_type === key) ?? null;
+    // Join by node + slot_id (the only per-device-unique key). Matching on the
+    // model string is wrong twice over: the slot's `gpu_type` is the bare model
+    // ("A30") while slotKeyFromDevice() returns "<VENDOR>-<model>" ("NVIDIA-A30"),
+    // so the equality never holds and every card renders telemetry as "—"; and
+    // even if normalized, two same-model devices (jw2/jw3 A30, node5 Atom+ #0/#1)
+    // would both collide onto the first matching slot.
+    return slots.find(s => s.node === device.node && s.slot_id === device.slot_id) ?? null;
   };
 
   const chartLabels = devices.map(d => d.model);

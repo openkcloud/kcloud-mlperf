@@ -15,6 +15,8 @@ import { ShowChart as ShowChartIcon } from '@mui/icons-material';
 import type { ComparisonRunRow } from '@/api/domains/comparison';
 import {
   aggregateByDevice,
+  filterCanonicalRuns,
+  filterToCurrentCluster,
   markParetoBy,
   PARETO_AXES,
   vendorColor,
@@ -29,7 +31,11 @@ import {
 // emphasized so the GPU-vs-NPU efficiency tradeoff is obvious.
 // ----------------------------------------------------------------------
 
-type Props = { runs: ComparisonRunRow[] };
+type Props = {
+  runs: ComparisonRunRow[];
+  /** #8: canonical hwModels in the live registry; null/empty = show all. */
+  currentModels?: ReadonlySet<string> | null;
+};
 
 type YMetric = 'accuracy' | 'cost';
 
@@ -62,14 +68,20 @@ const Y_CONFIG: Record<
   },
 };
 
-export const DeviceEfficiencyScatter = ({ runs }: Props) => {
+export const DeviceEfficiencyScatter = ({ runs, currentModels }: Props) => {
   const mode = useTheme().palette.mode;
   const [yMetric, setYMetric] = useState<YMetric>('accuracy');
   const cfg = Y_CONFIG[yMetric];
 
   const devices = useMemo(
-    () => markParetoBy(aggregateByDevice(runs), PARETO_AXES.tps, cfg.axis),
-    [runs, cfg.axis],
+    () =>
+      markParetoBy(
+        // #7/#8: canonical-model runs only, scoped to current-cluster hardware.
+        filterToCurrentCluster(aggregateByDevice(filterCanonicalRuns(runs)), currentModels),
+        PARETO_AXES.tps,
+        cfg.axis,
+      ),
+    [runs, currentModels, cfg.axis],
   );
   const plottable = devices.filter(d => d.tps != null && cfg.axis.get(d) != null);
 
@@ -109,7 +121,7 @@ export const DeviceEfficiencyScatter = ({ runs }: Props) => {
       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
         Throughput (x, higher is better) vs {yMetric === 'accuracy' ? 'MMLU-Pro accuracy' : 'modeled $ / 1M tokens'} (y,{' '}
         {cfg.better}) per device. ★ marks devices no other device beats on both axes.
-        {yMetric === 'cost' && ' Cost uses MODELED external $/hr assumptions, not measured cluster billing.'}
+        {yMetric === 'cost' && ' Cost uses MODELED external $/hr assumptions, not measured cluster billing. Values are clamped at $10,000/Mtok so a near-zero-throughput outlier cannot rescale the axis.'}
       </Typography>
 
       {plottable.length === 0 ? (
@@ -121,6 +133,7 @@ export const DeviceEfficiencyScatter = ({ runs }: Props) => {
       ) : (
         <ScatterChart
           height={340}
+          aria-label={`Efficiency frontier scatter: throughput (tok/s) versus ${yMetric === 'accuracy' ? 'MMLU-Pro accuracy (%)' : 'modeled cost ($ per 1M tokens)'} per device, with Pareto-optimal devices marked`}
           grid={{ horizontal: true, vertical: true }}
           series={series}
           xAxis={[{ label: 'Throughput (tok/s) →', min: 0 }]}

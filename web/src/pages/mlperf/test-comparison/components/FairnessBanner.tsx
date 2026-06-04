@@ -31,8 +31,16 @@ type Delta = {
   label: string;
   a: string;
   b: string;
+  /** True when at least one side is null/unknown — comparability can't be verified. */
+  incomplete?: boolean;
 };
 
+const fmtField = (v: string | number | null | undefined): string =>
+  v == null ? 'unknown' : String(v);
+
+// Bug #15: do NOT silently skip null-valued fields. A precision=null vs precision='fp8'
+// pair cannot be confirmed comparable, so surface it as an "incomplete" delta instead of
+// dropping it (which previously let the banner claim "Directly comparable" on missing data).
 const computeDeltas = (a: Run, b: Run): Delta[] => {
   const out: Delta[] = [];
   const fields: Array<[string, keyof Run]> = [
@@ -46,7 +54,18 @@ const computeDeltas = (a: Run, b: Run): Delta[] => {
   for (const [label, key] of fields) {
     const va = a[key];
     const vb = b[key];
-    if (va == null || vb == null) continue;
+    const aMissing = va == null;
+    const bMissing = vb == null;
+
+    if (aMissing && bMissing) {
+      // Both unknown — not a mismatch we can assert; skip silently.
+      continue;
+    }
+    if (aMissing || bMissing) {
+      // One side known, the other unknown → can't verify equality.
+      out.push({ label, a: fmtField(va), b: fmtField(vb), incomplete: true });
+      continue;
+    }
     if (String(va) !== String(vb)) {
       out.push({ label, a: String(va), b: String(vb) });
     }
@@ -108,6 +127,12 @@ export const FairnessBanner = ({
     return null;
   }
 
+  // A real mismatch is a delta where BOTH sides are known but differ. Deltas where one
+  // side is unknown are "incomplete metadata" — comparability can't be verified, but it
+  // isn't a confirmed mismatch (bug #15).
+  const hardMismatches = deltas.filter(d => !d.incomplete);
+  const incompleteFields = deltas.filter(d => d.incomplete);
+
   if (deltas.length === 0 && incompat.length === 0 && !precisionMismatch) {
     return (
       <Alert
@@ -125,9 +150,13 @@ export const FairnessBanner = ({
     );
   }
 
+  // Only incomplete metadata (no confirmed mismatch / backend flag) → softer warning.
+  const onlyIncomplete =
+    hardMismatches.length === 0 && incompat.length === 0 && !precisionMismatch;
+
   return (
     <Alert
-      severity="error"
+      severity={onlyIncomplete ? 'warning' : 'error'}
       sx={{
         mb: 2,
         borderRadius: '0.75rem',
@@ -135,19 +164,36 @@ export const FairnessBanner = ({
       }}
     >
       <Typography sx={{ fontWeight: 700, fontSize: '0.9375rem', mb: 0.75 }}>
-        ⚠ Not directly comparable
+        {onlyIncomplete ? '⚠ Comparability unverified — incomplete metadata' : '⚠ Not directly comparable'}
       </Typography>
-      {deltas.length > 0 && (
+      {hardMismatches.length > 0 && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-          {deltas.map(d => (
+          {hardMismatches.map(d => (
             <Chip
               key={d.label}
               size="small"
               label={`${d.label}: ${d.a} vs ${d.b}`}
               sx={{
-                bgcolor: '#FEE2E2',
-                color: '#991B1B',
-                border: '1px solid #FCA5A5',
+                bgcolor: 'error.light',
+                color: 'error.contrastText',
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                height: 22
+              }}
+            />
+          ))}
+        </Box>
+      )}
+      {incompleteFields.length > 0 && (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: hardMismatches.length > 0 ? 0.75 : 0 }}>
+          {incompleteFields.map(d => (
+            <Chip
+              key={d.label}
+              size="small"
+              variant="outlined"
+              color="warning"
+              label={`${d.label}: ${d.a} vs ${d.b}`}
+              sx={{
                 fontSize: '0.6875rem',
                 fontWeight: 600,
                 height: 22
@@ -157,7 +203,7 @@ export const FairnessBanner = ({
         </Box>
       )}
       {incompat.length > 0 && (
-        <Typography sx={{ mt: 0.75, fontSize: '0.75rem', color: '#7F1D1D' }}>
+        <Typography sx={{ mt: 0.75, fontSize: '0.75rem' }} color="error">
           Backend flagged: {incompat.join(', ')}
         </Typography>
       )}

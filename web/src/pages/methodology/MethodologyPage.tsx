@@ -23,6 +23,20 @@ const PRECISION_ROWS = [
   { device: 'Rebellions Atom+', type: 'NPU', precision: 'BF16', notes: 'FP8 pending SDK 3.x support' }
 ] as const;
 
+// Current consolidation cluster (jw1 master). L40 / A40 rows above are retained
+// for historical precision context only — that hardware is not in this cluster.
+const TOPOLOGY_ROWS = [
+  { device: 'NVIDIA A30', type: 'GPU', nodes: 'jw2, jw3', slots: '2 devices/node', status: 'Live' },
+  { device: 'FuriosaAI RNGD', type: 'NPU', nodes: 'node4', slots: '1 device', status: 'Live' },
+  {
+    device: 'Rebellions Atom+',
+    type: 'NPU',
+    nodes: 'node5',
+    slots: '2 devices',
+    status: 'Joined — inference server pending'
+  }
+] as const;
+
 const METRIC_ROWS = [
   {
     metric: 'TT100T',
@@ -73,8 +87,58 @@ const MethodologyPage = () => (
 
     <Divider sx={{ mb: 3 }} />
 
-    {/* Model under test */}
     <Stack spacing={3}>
+      {/* Cluster topology */}
+      <Paper variant="outlined" sx={{ p: 2.5 }}>
+        <SectionHeader>Cluster topology</SectionHeader>
+        <Typography variant="body1" sx={{ color: 'text.primary', mb: 1.5 }}>
+          All current numbers are produced on a single consolidation Kubernetes cluster:{' '}
+          <strong>jw1</strong> (control plane) plus the accelerator nodes below. Historical
+          NVIDIA&nbsp;L40 / A40 figures in the precision table predate this cluster and are not
+          re-run here.
+        </Typography>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 700 }}>Device</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Node(s)</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Capacity</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {TOPOLOGY_ROWS.map((row) => (
+                <TableRow key={row.device} hover>
+                  <TableCell sx={{ color: 'text.primary' }}>{row.device}</TableCell>
+                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{row.type}</TableCell>
+                  <TableCell>
+                    <Typography
+                      component="span"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.8125rem',
+                        px: 0.75,
+                        py: 0.25,
+                        borderRadius: '4px',
+                        bgcolor: 'action.selected',
+                        color: 'text.primary'
+                      }}
+                    >
+                      {row.nodes}
+                    </Typography>
+                  </TableCell>
+                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{row.slots}</TableCell>
+                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{row.status}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      {/* Model under test */}
       <Paper variant="outlined" sx={{ p: 2.5 }}>
         <SectionHeader>Model under test</SectionHeader>
         <Typography variant="body1" sx={{ color: 'text.primary', mb: 1 }}>

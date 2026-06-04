@@ -43,6 +43,7 @@ import type { CrossDeviceVerdict } from '@/components/home/deviceAggregates';
 
 import { ComparisonApi, type ComparisonRunRow } from '@/api/domains/comparison';
 import { DevicesApi } from '@/api/domains/devices.domains';
+import type { DeviceEntry } from '@/api/types/devices.types';
 import { QueryBoundary } from '@/components/QueryBoundary';
 import { ColumnMenu, type ColumnOption } from '@/components/common/ColumnMenu';
 import { useColumnVisibility } from '@/hooks/useColumnVisibility';
@@ -57,6 +58,9 @@ import {
   markPareto,
   speedupVsSlowest,
   topCrossDeviceComparison,
+  filterCanonicalRuns,
+  filterToCurrentCluster,
+  normalizeHwModel,
 } from '@/components/home/deviceAggregates';
 
 // ----------------------------------------------------------------------
@@ -79,6 +83,45 @@ const toRows = (runs: unknown): ComparisonRunRow[] =>
 
 const TT100T_HELP =
   'TT100T = wall-clock time to generate the first 100 output tokens. Lower is better; the cluster target is < 1.1 s.';
+
+// ----------------------------------------------------------------------
+// #8: the live cluster registry is the single source of truth for which
+// hardware is "current". One devices query (shared between the inventory card
+// and the insight filters) and one derivation of the current canonical hwModel
+// set keep the leaderboard / scatter / roofline scoped to {A30, RNGD, Atom+}.
+// ----------------------------------------------------------------------
+
+const useDevicesQuery = () =>
+  useQuery({
+    queryKey: ['home', 'devices'],
+    queryFn: DevicesApi.list,
+    staleTime: 30_000,
+  });
+
+/**
+ * Set of canonical hwModels currently advertised by /api/devices. Returns null
+ * until the registry resolves (or if it is empty) so the insight filters degrade
+ * to "show everything" rather than blanking out while devices load.
+ */
+const deriveCurrentModels = (devices: DeviceEntry[] | undefined): ReadonlySet<string> | null => {
+  if (!Array.isArray(devices) || devices.length === 0) return null;
+  const models = new Set<string>();
+  for (const d of devices) models.add(normalizeHwModel(d.model));
+  return models.size ? models : null;
+};
+
+/**
+ * #8: keep only runs whose (normalized) hardware model is in the live cluster, so
+ * the cross-device verdict never compares against off-cluster L40/A40 hardware.
+ * A null set (registry not yet resolved) is a no-op so the verdict still renders.
+ */
+const filterRunsToCurrentCluster = (
+  runs: ComparisonRunRow[],
+  currentModels: ReadonlySet<string> | null,
+): ComparisonRunRow[] => {
+  if (!currentModels || currentModels.size === 0) return runs;
+  return runs.filter(r => currentModels.has(normalizeHwModel(r.hardware?.model)));
+};
 
 // ----------------------------------------------------------------------
 
@@ -176,13 +219,11 @@ const HeroBanner = ({
 
 // ----------------------------------------------------------------------
 
-const VendorCluster = () => {
-  const devicesQuery = useQuery({
-    queryKey: ['home', 'devices'],
-    queryFn: DevicesApi.list,
-    staleTime: 30_000,
-  });
-
+const VendorCluster = ({
+  devicesQuery,
+}: {
+  devicesQuery: ReturnType<typeof useDevicesQuery>;
+}) => {
   const { data: devices } = devicesQuery;
   const list = Array.isArray(devices) ? devices : [];
   const groups = ['nvidia', 'furiosa', 'rebellions'].map(v => {
@@ -287,7 +328,15 @@ const LEADERBOARD_COLUMN_DEFAULTS: Record<string, boolean> = {
   verdict: true,
 };
 
-const Tt100tLeaderboard = ({ runs, loading }: { runs: ComparisonRunRow[]; loading?: boolean }) => {
+const Tt100tLeaderboard = ({
+  runs,
+  loading,
+  currentModels,
+}: {
+  runs: ComparisonRunRow[];
+  loading?: boolean;
+  currentModels?: ReadonlySet<string> | null;
+}) => {
   const [vendorFilter, setVendorFilter] = useState<string[]>([]); // [] = all
   const [showAll, setShowAll] = useState(false);
   const [viewMode, setViewMode] = useState<'raw' | 'norm'>('raw');
@@ -296,11 +345,20 @@ const Tt100tLeaderboard = ({ runs, loading }: { runs: ComparisonRunRow[]; loadin
   const mode = useTheme().palette.mode;
 
   const devices = useMemo(() => {
-    const aggs = markPareto(withEfficiency(aggregateByDevice(runs)));
+    // #7 canonical-model runs only + #8 current-cluster scoping, BEFORE efficiency
+    // normalization so the 0-100 axes are relative to the shown devices only.
+    const scoped = filterToCurrentCluster(aggregateByDevice(filterCanonicalRuns(runs)), currentModels);
+    const aggs = markPareto(withEfficiency(scoped));
     return aggs
       .filter(d => d.tt100t != null)
-      .sort((a, b) => (a.tt100t as number) - (b.tt100t as number));
-  }, [runs]);
+      // #26: stable sort — break TT100T ties on hwModel so the order is
+      // deterministic instead of depending on insertion order.
+      .sort(
+        (a, b) =>
+          (a.tt100t as number) - (b.tt100t as number) ||
+          a.hwModel.localeCompare(b.hwModel),
+      );
+  }, [runs, currentModels]);
 
   const filtered = vendorFilter.length
     ? devices.filter(d => vendorFilter.includes(d.vendor))
@@ -310,13 +368,17 @@ const Tt100tLeaderboard = ({ runs, loading }: { runs: ComparisonRunRow[]; loadin
   // Real GPU↔NPU question: for the model running on the most devices, is the
   // fastest hardware significantly faster than the next? (same model, cross hw —
   // model names are vendor-namespace-normalized so A30 vs RNGD actually compares).
-  const crossDevice = useMemo(() => topCrossDeviceComparison(runs), [runs]);
+  // #8: scope the verdict to current-cluster hardware only.
+  const crossDevice = useMemo(
+    () => topCrossDeviceComparison(filterRunsToCurrentCluster(runs, currentModels ?? null)),
+    [runs, currentModels],
+  );
   const norm = viewMode === 'norm';
   const maxTps = Math.max(0, ...devices.map(d => d.tps ?? 0));
-  const bestTt = Math.min(
-    ...devices.filter(d => d.tt100t != null).map(d => d.tt100t as number),
-    Infinity,
-  );
+  // #3: bestTt is Infinity when no device has a TT100T; callers must guard with
+  // Number.isFinite (Math.min(...[], Infinity) === Infinity → "Infinity" score).
+  const ttValues = devices.filter(d => d.tt100t != null).map(d => d.tt100t as number);
+  const bestTt = ttValues.length ? Math.min(...ttValues) : Infinity;
 
   return (
     <Paper sx={{ p: 2.5, mb: 3 }}>
@@ -489,8 +551,12 @@ const Tt100tLeaderboard = ({ runs, loading }: { runs: ComparisonRunRow[]; loadin
             {shown.map((d, i) => {
               const v = verdictOf(d.tt100t);
               const vc = vendorColor(d.vendor, mode);
-              const slowestTt = Math.max(...shown.map(x => x.tt100t as number));
-              const barPct = slowestTt > 0 ? ((d.tt100t as number) / slowestTt) * 100 : 0;
+              // #27: only pool finite TT100Ts for the slowest, and guard d.tt100t
+              // null so LinearProgress never receives a NaN value.
+              const ttShown = shown.map(x => x.tt100t).filter((t): t is number => t != null);
+              const slowestTt = ttShown.length ? Math.max(...ttShown) : 0;
+              const barPct =
+                slowestTt > 0 && d.tt100t != null ? ((d.tt100t as number) / slowestTt) * 100 : 0;
               const speedup = speedupVsSlowest(d, devices);
               return (
                 <TableRow key={d.key} hover>
@@ -518,7 +584,9 @@ const Tt100tLeaderboard = ({ runs, loading }: { runs: ComparisonRunRow[]; loadin
                       <Box sx={{ minWidth: 64 }}>
                         <Typography variant="caption" fontFamily="monospace" fontWeight={700} component="div">
                           {norm
-                            ? (bestTt > 0 && d.tt100t ? Math.round((bestTt / (d.tt100t as number)) * 100) : '—')
+                            ? (Number.isFinite(bestTt) && bestTt > 0 && d.tt100t
+                                ? Math.round((bestTt / (d.tt100t as number)) * 100)
+                                : '—')
                             : fmtSec(d.tt100t)}
                         </Typography>
                         {!norm && d.tt100tSamples != null && d.tt100tSamples > 1 && d.tt100tStdev != null && d.tt100tStdev > 0 && (
@@ -739,8 +807,17 @@ const HomePage = () => {
     queryFn: () => ComparisonApi.list({}),
     staleTime: 30_000,
   });
+  // #8: one shared devices query feeds both the inventory card and the
+  // current-cluster scoping for the leaderboard / scatter / roofline / verdict.
+  const devicesQuery = useDevicesQuery();
+  const currentModels = useMemo(() => deriveCurrentModels(devicesQuery.data), [devicesQuery.data]);
+
   const runs = toRows(leaderboardQuery.data);
-  const crossDevice = useMemo(() => topCrossDeviceComparison(runs), [runs]);
+  // #8: the hero verdict compares current-cluster hardware only.
+  const crossDevice = useMemo(
+    () => topCrossDeviceComparison(filterRunsToCurrentCluster(runs, currentModels)),
+    [runs, currentModels],
+  );
   const isEmpty = runs.length === 0 && !leaderboardQuery.isLoading && !leaderboardQuery.isError;
 
   return (
@@ -750,7 +827,7 @@ const HomePage = () => {
         dataUpdatedAt={leaderboardQuery.dataUpdatedAt}
         onRefresh={() => leaderboardQuery.refetch()}
       />
-      <VendorCluster />
+      <VendorCluster devicesQuery={devicesQuery} />
       {leaderboardQuery.isError && (
         <Alert severity="warning" sx={{ mb: 3 }}>
           Could not reach <code>/api/comparison/list</code> — leaderboard and frontier are showing what is cached.
@@ -761,9 +838,9 @@ const HomePage = () => {
         <OnboardingBanner />
       ) : (
         <>
-          <DeviceEfficiencyScatter runs={runs} />
-          <RooflineChart runs={runs} />
-          <Tt100tLeaderboard runs={runs} loading={leaderboardQuery.isLoading} />
+          <DeviceEfficiencyScatter runs={runs} currentModels={currentModels} />
+          <RooflineChart runs={runs} currentModels={currentModels} />
+          <Tt100tLeaderboard runs={runs} loading={leaderboardQuery.isLoading} currentModels={currentModels} />
           <RecentActivity runs={runs} />
         </>
       )}

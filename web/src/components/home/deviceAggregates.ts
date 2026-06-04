@@ -10,10 +10,27 @@ import { deviceUsdPerHr } from '@/constants/device-cost.constants';
 
 export const TT100T_TARGET = 1.1;
 
+// #7: the project's standing rule is "always Llama-3.1-8B-Instruct". Home
+// insights (leaderboard + scatter + roofline) must rank ONE canonical model so a
+// 0.5B model can never top an 8B board. `normalizeModelFamily` strips the vendor
+// namespace and trailing precision suffix, so the canonical family is the bare
+// base name; `isCanonicalModel` is the single source of truth for the filter.
+export const CANONICAL_MODEL_FAMILY = 'Llama-3.1-8B-Instruct';
+
+export const isCanonicalModel = (model: string | null | undefined): boolean =>
+  normalizeModelFamily(model).toLowerCase() === CANONICAL_MODEL_FAMILY.toLowerCase();
+
+// #7: keep only canonical-model runs for the home decision surfaces.
+export const filterCanonicalRuns = (runs: ComparisonRunRow[]): ComparisonRunRow[] =>
+  runs.filter(r => isCanonicalModel(r.model));
+
+// Light-theme vendor colors. #28: the raw brand hues (#76B900 ~2.2:1,
+// #CA8A04 ~2.8:1) fail WCAG AA (4.5:1) on white cards. These darkened tokens
+// restore AA contrast on light surfaces while staying recognizably on-brand.
 export const VENDOR_COLOR: Record<string, string> = {
-  nvidia: '#76B900',
-  furiosa: '#7C3AED',
-  rebellions: '#CA8A04',
+  nvidia: '#4d7a00', // 5.12:1 on white — AA (was #5a8c00 4.05:1 / brand #76B900 2.2:1)
+  furiosa: '#7C3AED', // ~5.2:1 on white — already AA
+  rebellions: '#a85400', // 5.34:1 on white (was #b85d00 4.56:1 / brand #CA8A04 2.8:1)
 };
 
 // Dark-surface-safe variants. The base VENDOR_COLOR values are tuned for the
@@ -74,12 +91,47 @@ export type DeviceAgg = {
 
 const isPos = (n: number | null | undefined): n is number => n != null && n > 0;
 
-/** Collapse the run list into one row per (vendor / hardware model). */
+/**
+ * #10: collapse fragmented hardware-model identities to ONE canonical key per
+ * physical device. The data carries the same Rebellions part as 'ATOM', 'ATOM+',
+ * 'Atom+', 'REBELLIONS-Atom+', etc., which would otherwise split into separate
+ * leaderboard rows and roofline groups. Mirrors the model-family normalization:
+ * SKU prefixes are dropped and known parts map to a single canonical hwModel.
+ */
+export function normalizeHwModel(hwModel: string | null | undefined): string {
+  if (!hwModel) return 'unknown';
+  const raw = String(hwModel).trim();
+  const upper = raw.toUpperCase();
+  // Atom / Atom+ (with or without the REBELLIONS- prefix, '+' or no '+').
+  if (upper.includes('ATOM') || upper.includes('REBELLIONS')) return 'Atom+';
+  if (upper.includes('RNGD') || upper.includes('FURIOSA')) return 'RNGD';
+  if (upper.includes('L40')) return 'L40';
+  if (upper.includes('A40')) return 'A40';
+  if (upper.includes('A30')) return 'A30';
+  return raw;
+}
+
+/**
+ * #8: restrict aggregated devices to the hardware that exists in the LIVE
+ * cluster registry. `currentModels` is the set of canonical hwModels currently
+ * advertised by /api/devices (e.g. {A30, RNGD, Atom+}); off-cluster historical
+ * rows (L40/A40) are dropped. A null/empty set is a no-op (show everything),
+ * so the home page degrades gracefully if the registry query has not resolved.
+ */
+export function filterToCurrentCluster(
+  devices: DeviceAgg[],
+  currentModels: ReadonlySet<string> | null | undefined,
+): DeviceAgg[] {
+  if (!currentModels || currentModels.size === 0) return devices;
+  return devices.filter(d => currentModels.has(d.hwModel));
+}
+
+/** Collapse the run list into one row per (vendor / canonical hardware model). */
 export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
   const byKey = new Map<string, DeviceAgg>();
   for (const r of runs) {
     const vendor = r.hardware?.vendor ?? 'unknown';
-    const hwModel = r.hardware?.model ?? 'unknown';
+    const hwModel = normalizeHwModel(r.hardware?.model);
     const key = `${vendor}/${hwModel}`;
     let agg = byKey.get(key);
     if (!agg) {
@@ -117,11 +169,16 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
   return Array.from(byKey.values());
 }
 
+/** #19: cap modeled $/Mtok so a near-zero tps outlier can't blow up the y-axis. */
+export const COST_PER_MTOK_CLAMP = 10_000;
+
 /**
  * R12: modeled cost per 1,000,000 output tokens, in USD. Derived purely from
  * the (external, MODELED) device $/hr assumption and measured throughput:
  *   ($/hr ÷ 3600 s/hr) ÷ (tok/s) × 1e6 tok  →  $ / Mtok.
  * Lower is better. Returns null when throughput or the rate is unavailable.
+ * #19: the result is clamped to COST_PER_MTOK_CLAMP so a tps≪1 outlier (which
+ * yields $billions/Mtok) cannot rescale the cost axis and hide normal devices.
  */
 export function costPerMTok(
   hwModel: string | null | undefined,
@@ -130,7 +187,8 @@ export function costPerMTok(
   if (!isPos(tps)) return null;
   const usdPerHr = deviceUsdPerHr(hwModel);
   if (usdPerHr == null) return null;
-  return (usdPerHr / 3600 / (tps as number)) * 1_000_000;
+  const raw = (usdPerHr / 3600 / (tps as number)) * 1_000_000;
+  return Math.min(raw, COST_PER_MTOK_CLAMP);
 }
 
 /**
@@ -256,10 +314,18 @@ function welchCore(
   aMean: number, aSd: number, aN: number, aLabel: string,
   bMean: number, bSd: number, bN: number, bLabel: string,
 ): DiffVerdict {
+  // #9: guard non-finite means / zero N (a device with no valid runs). Without
+  // this, NaN means or N=0 propagate to "Δ NaN, 95% CI [NaN, NaN]" in the UI.
+  if (
+    !Number.isFinite(aMean) || !Number.isFinite(bMean) ||
+    aN <= 0 || bN <= 0
+  ) {
+    return { label: 'INCONCLUSIVE', delta: 0, ciLow: 0, ciHigh: 0 };
+  }
   const delta = aMean - bMean;
   const seDiff = Math.sqrt((aSd * aSd) / aN + (bSd * bSd) / bN);
-  if (seDiff === 0) {
-    // No variance available — cannot establish significance.
+  if (!Number.isFinite(seDiff) || seDiff === 0) {
+    // No (finite) variance available — cannot establish significance.
     return { label: 'INCONCLUSIVE', delta, ciLow: delta, ciHigh: delta };
   }
   const num = ((aSd * aSd) / aN + (bSd * bSd) / bN) ** 2;
@@ -342,7 +408,10 @@ export type CrossDeviceVerdict = {
 
 function meanStdev(xs: number[]): { mean: number; stdev: number; n: number } {
   const v = xs.filter(x => Number.isFinite(x) && x > 0);
-  if (v.length === 0) return { mean: NaN, stdev: 0, n: 0 };
+  // #9: return a finite (0,0,0) for an empty pool, not NaN. n=0 still signals
+  // "no valid runs" to callers (welchCore short-circuits on n<=0), but nothing
+  // downstream can ever stringify a NaN mean/CI.
+  if (v.length === 0) return { mean: 0, stdev: 0, n: 0 };
   const mean = v.reduce((a, b) => a + b, 0) / v.length;
   if (v.length === 1) return { mean, stdev: 0, n: 1 };
   const variance = v.reduce((a, b) => a + (b - mean) ** 2, 0) / (v.length - 1);
@@ -370,11 +439,14 @@ export function topCrossDeviceComparison(
   for (const r of runs) {
     const tt = r.metrics?.tt100t_seconds;
     if (tt == null || tt <= 0) continue;
+    // #7: the cross-device verdict must compare the canonical model only — never
+    // rank a 0.5B run against the 8B board.
+    if (!isCanonicalModel(r.model)) continue;
     const family = normalizeModelFamily(r.model);
     const prec = precisionClass(r.precision, r.model);
     const cellKey = `${family}|${prec}`;
     const vendor = r.hardware?.vendor ?? 'unknown';
-    const hwModel = r.hardware?.model ?? 'unknown';
+    const hwModel = normalizeHwModel(r.hardware?.model); // #10: one key per device
     const dk = `${vendor}/${hwModel}`;
     let dm = cells.get(cellKey);
     if (!dm) { dm = new Map(); cells.set(cellKey, dm); }

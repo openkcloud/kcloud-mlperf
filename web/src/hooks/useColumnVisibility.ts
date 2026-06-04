@@ -49,6 +49,11 @@ export function useColumnVisibility(
     (col: string) => {
       setVisible(prev => {
         const next = { ...prev, [col]: !prev[col] };
+        // Minimum-visibility guard: never let the user hide every column
+        // (a table with zero data columns renders only row numbers). If this
+        // toggle would empty the set, keep the just-toggled column on.
+        const anyVisible = Object.keys(next).some(k => next[k] !== false);
+        if (!anyVisible) next[col] = true;
         if (typeof window !== 'undefined') {
           try {
             window.localStorage.setItem(storageKey(key), JSON.stringify(next));

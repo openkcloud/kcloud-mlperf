@@ -108,9 +108,11 @@ export class CreateMpExamDto {
   @Min(0)
   ram_capacity: number;
 
-  // Required
+  // Required — B-validation #6: retry_num drives totalRepeatCount; 0 makes the
+  // operator loop run zero iterations and hang waiting for a result that never
+  // arrives. Must be at least 1.
   @IsInt()
-  @Min(0)
+  @Min(1)
   retry_num: number;
 
   // Optional — generation length (default 128). Wired through to operator job env.

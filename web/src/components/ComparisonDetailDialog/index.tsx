@@ -305,21 +305,30 @@ const FairnessSection = ({ fairnessAssessment, incompatibilityReasons }: Fairnes
       {hasIncompatibilities && (
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
           {incompatibilityReasons.map((reason) => (
-            <Chip
-              key={reason}
-              label={INCOMPATIBLE_REASONS[reason] ?? reason}
-              size="small"
-              data-testid="incompatibility-reason-chip"
-              sx={{
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                bgcolor: 'rgba(220,38,38,0.1)',
-                color: statusColor('error', mode),
-                border: '1px solid rgba(220,38,38,0.25)',
-                height: 'auto',
-                '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 },
-              }}
-            />
+            <Tooltip key={reason} title={INCOMPATIBLE_REASONS[reason] ?? reason} arrow>
+              <Chip
+                label={INCOMPATIBLE_REASONS[reason] ?? reason}
+                size="small"
+                data-testid="incompatibility-reason-chip"
+                sx={{
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  bgcolor: 'rgba(220,38,38,0.1)',
+                  color: statusColor('error', mode),
+                  border: '1px solid rgba(220,38,38,0.25)',
+                  height: 'auto',
+                  // bug #31: cap chip width so long reason strings don't break the
+                  // mobile layout; ellipsize the overflow (full text via tooltip).
+                  maxWidth: '100%',
+                  '& .MuiChip-label': {
+                    whiteSpace: 'normal',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    py: 0.5,
+                  },
+                }}
+              />
+            </Tooltip>
           ))}
         </Stack>
       )}
@@ -422,6 +431,9 @@ export const ComparisonDetailDialog = ({
   const incompatibleMessage = incompatibleReason
     ? (INCOMPATIBLE_REASONS[incompatibleReason] ?? incompatibleReason)
     : null;
+  // Both runs reached a terminal completed state — an empty metrics payload here is a
+  // data-loss error rather than a transient "still processing" state (bug #16).
+  const bothCompleted = runA?.status === 'completed' && runB?.status === 'completed';
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth data-testid="comparison-detail-dialog">
@@ -498,8 +510,37 @@ export const ComparisonDetailDialog = ({
           </Alert>
         )}
 
-        {/* Metrics table */}
-        {!isLoading && !error && !incompatibleMessage && metrics && Object.keys(metrics).length > 0 && (
+        {/* Metrics table — hidden when runs are incompatible (legacy single reason OR
+            the new incompatibilityReasons[] from the pair endpoint), since a side-by-side
+            metric comparison is meaningless and contradicts the "NOT comparable" warning. */}
+        {!isLoading &&
+          !error &&
+          !incompatibleMessage &&
+          incompatibilityReasons.length === 0 &&
+          metrics &&
+          Object.keys(metrics).length > 0 && (
+          <>
+          {/* Delta-color legend (bug #30): green = improvement, red = regression. */}
+          <Box
+            data-testid="delta-legend"
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center', mb: 1 }}
+          >
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>
+              Delta color:
+            </Typography>
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: statusColor('success', mode) }} />
+              <Typography variant="caption" color="text.secondary">
+                Improvement (↓ latency, ↑ throughput)
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: statusColor('error', mode) }} />
+              <Typography variant="caption" color="text.secondary">
+                Regression
+              </Typography>
+            </Stack>
+          </Box>
           <TableContainer component={Paper} variant="outlined" data-testid="metrics-table">
             <Table size="small">
               <TableHead>
@@ -544,14 +585,47 @@ export const ComparisonDetailDialog = ({
               </TableBody>
             </Table>
           </TableContainer>
+          </>
         )}
 
-        {/* Empty metrics */}
-        {!isLoading && !error && !incompatibleMessage && metrics && Object.keys(metrics).length === 0 && (
-          <Alert severity="info" data-testid="no-metrics-alert">
-            No metrics were returned for this pair. The runs may still be processing.
-          </Alert>
-        )}
+        {/* Empty metrics — distinguish "still processing" from "completed but missing"
+            (bug #16). If BOTH runs report completed yet no metrics came back, that is a
+            data-loss error, not a transient processing state. */}
+        {!isLoading &&
+          !error &&
+          !incompatibleMessage &&
+          incompatibilityReasons.length === 0 &&
+          metrics &&
+          Object.keys(metrics).length === 0 &&
+          (bothCompleted ? (
+            <Alert
+              severity="error"
+              data-testid="no-metrics-alert"
+              action={
+                onRetry ? (
+                  <Button color="inherit" size="small" onClick={onRetry}>
+                    Retry
+                  </Button>
+                ) : undefined
+              }
+            >
+              Both runs completed but returned no metrics — results are missing (possible data loss).
+            </Alert>
+          ) : (
+            <Alert
+              severity="info"
+              data-testid="no-metrics-alert"
+              action={
+                onRetry ? (
+                  <Button color="inherit" size="small" onClick={onRetry}>
+                    Retry
+                  </Button>
+                ) : undefined
+              }
+            >
+              No metrics were returned for this pair. The runs may still be processing.
+            </Alert>
+          ))}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>

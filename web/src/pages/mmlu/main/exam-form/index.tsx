@@ -393,14 +393,23 @@ export const MmluExamForm = memo(
                 render={({ field, fieldState }) => {
                   const { error } = fieldState;
                   return (
-                    <TextInput
-                      {...field}
-                      size={size}
-                      type="number"
-                      hasError={Boolean(error)}
-                      helperText={error?.message}
-                      label="Number of Data (0 = full)"
-                    />
+                    <Box>
+                      <TextInput
+                        {...field}
+                        size={size}
+                        type="number"
+                        hasError={Boolean(error)}
+                        helperText={error?.message}
+                        label="Number of Data (0 = full)"
+                      />
+                      {/* B-validation #21: 0 is a valid "full dataset" sentinel —
+                          make that explicit so accidental empty/0 entries are clear. */}
+                      <Typography
+                        sx={{ mt: 0.5, fontSize: '0.6875rem', color: '#64748B' }}
+                      >
+                        0 = full dataset
+                      </Typography>
+                    </Box>
                   );
                 }}
                 rules={{ min: { value: 0, message: 'Number of data should be positive!' } }}
@@ -633,7 +642,7 @@ export const MmluExamForm = memo(
                     />
                   );
                 }}
-                rules={{ min: { value: 0, message: 'Number of repetitions should be positive!' } }}
+                rules={{ min: { value: 1, message: 'At least 1 repetition required' } }}
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>

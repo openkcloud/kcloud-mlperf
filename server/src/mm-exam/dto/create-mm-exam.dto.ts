@@ -91,9 +91,11 @@ export class CreateMmExamDto {
   @Min(1)
   n_train: number;
 
-  // Required
+  // Required — B-validation #6: retry_num drives totalRepeatCount; 0 makes the
+  // operator loop run zero iterations and hang waiting for a result that never
+  // arrives. Must be at least 1.
   @IsInt()
-  @Min(0)
+  @Min(1)
   retry_num: number;
 
   // Optional — generation length / eval output limit (default 128).

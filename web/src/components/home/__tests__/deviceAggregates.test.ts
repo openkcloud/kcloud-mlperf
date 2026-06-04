@@ -2,15 +2,22 @@ import { describe, it, expect } from 'vitest';
 import type { ComparisonRunRow } from '@/api/domains/comparison';
 import {
   normalizeModelFamily,
+  normalizeHwModel,
+  isCanonicalModel,
+  filterCanonicalRuns,
+  filterToCurrentCluster,
   precisionClass,
   topCrossDeviceComparison,
+  aggregateByDevice,
   vendorColor,
   VENDOR_COLOR,
   VENDOR_COLOR_DARK,
   costPerMTok,
+  COST_PER_MTOK_CLAMP,
   markParetoBy,
   markPareto,
   PARETO_AXES,
+  CANONICAL_MODEL_FAMILY,
   type DeviceAgg,
 } from '../deviceAggregates';
 import { deviceUsdPerHr } from '@/constants/device-cost.constants';
@@ -59,18 +66,42 @@ describe('normalizeModelFamily', () => {
 });
 
 describe('vendorColor', () => {
-  it('returns WCAG-safe dark variants in dark mode and base brand colors in light mode', () => {
-    // dark mode → the high-contrast tokens (the muddy #76B900/#CA8A04 fail AA on dark)
+  // WCAG 2.x relative luminance + contrast ratio over sRGB. We assert the
+  // *requirement* (AA = 4.5:1 on the real surface) rather than pinning a hex,
+  // so re-tuning a token can never silently regress contrast (#28).
+  const luminance = (hex: string): number => {
+    const h = hex.replace('#', '');
+    const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  };
+  const contrast = (fg: string, bg: string): number => {
+    const a = luminance(fg);
+    const b = luminance(bg);
+    const [hi, lo] = a > b ? [a, b] : [b, a];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const AA = 4.5;
+  const VENDORS = ['nvidia', 'furiosa', 'rebellions'] as const;
+
+  it('maps to the configured vendor tokens by mode (default = dark)', () => {
     expect(vendorColor('nvidia', 'dark')).toBe(VENDOR_COLOR_DARK.nvidia);
-    expect(vendorColor('nvidia', 'dark')).toBe('#84DC3D');
-    expect(vendorColor('rebellions', 'dark')).toBe('#F59E0B');
-    // light mode → the original brand colors (tuned for white cards)
     expect(vendorColor('nvidia', 'light')).toBe(VENDOR_COLOR.nvidia);
-    expect(vendorColor('nvidia', 'light')).toBe('#76B900');
-    expect(vendorColor('furiosa', 'light')).toBe('#7C3AED');
-    // default mode is dark (the app's predominant surface)
     expect(vendorColor('furiosa')).toBe(VENDOR_COLOR_DARK.furiosa);
-    // unknown vendor → neutral fallback, mode-appropriate
+  });
+
+  it('every vendor token meets WCAG AA (4.5:1) on its target surface', () => {
+    // light tokens on white cards (#ffffff)
+    for (const v of VENDORS) {
+      expect(contrast(VENDOR_COLOR[v], '#ffffff')).toBeGreaterThanOrEqual(AA);
+    }
+    // dark tokens on the dark card surface (#0F172A)
+    for (const v of VENDORS) {
+      expect(contrast(VENDOR_COLOR_DARK[v], '#0F172A')).toBeGreaterThanOrEqual(AA);
+    }
+  });
+
+  it('falls back to a neutral, mode-appropriate token for unknown vendors', () => {
     expect(vendorColor('mystery', 'dark')).toBe('#94A3B8');
     expect(vendorColor(undefined, 'light')).toBe('#64748B');
   });
@@ -201,5 +232,156 @@ describe('topCrossDeviceComparison', () => {
     ];
     // NPU is fp8, GPU is bf16 -> no same-precision cross-type cell -> null.
     expect(topCrossDeviceComparison(runs)).toBeNull();
+  });
+
+  // #7: the verdict must ignore non-canonical models (e.g. a 0.5B run).
+  it('ignores non-canonical models when forming the GPU-vs-NPU pair', () => {
+    const runs = [
+      // A faster NPU vs GPU pair, but on a NON-canonical 0.5B model -> excluded.
+      npuRun(0.40, { model: 'Qwen/Qwen2.5-0.5B-Instruct' }),
+      npuRun(0.41, { model: 'Qwen/Qwen2.5-0.5B-Instruct' }),
+      npuRun(0.42, { model: 'Qwen/Qwen2.5-0.5B-Instruct' }),
+      gpuRun(0.90, { model: 'Qwen/Qwen2.5-0.5B-Instruct' }),
+      gpuRun(0.91, { model: 'Qwen/Qwen2.5-0.5B-Instruct' }),
+      gpuRun(0.92, { model: 'Qwen/Qwen2.5-0.5B-Instruct' }),
+    ];
+    expect(topCrossDeviceComparison(runs)).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------
+// #7: canonical-model filter
+// ----------------------------------------------------------------------
+
+describe('canonical model filter (#7)', () => {
+  it('CANONICAL_MODEL_FAMILY is the project standing model', () => {
+    expect(CANONICAL_MODEL_FAMILY).toBe('Llama-3.1-8B-Instruct');
+  });
+
+  it('isCanonicalModel matches Llama-3.1-8B across vendor namespaces and precision suffixes', () => {
+    expect(isCanonicalModel('meta-llama/Llama-3.1-8B-Instruct')).toBe(true);
+    expect(isCanonicalModel('furiosa-ai/Llama-3.1-8B-Instruct')).toBe(true);
+    expect(isCanonicalModel('Llama-3.1-8B-Instruct-FP8')).toBe(true);
+    // Non-canonical models (smaller models) are rejected.
+    expect(isCanonicalModel('Qwen/Qwen2.5-0.5B-Instruct')).toBe(false);
+    expect(isCanonicalModel('meta-llama/Llama-3.1-70B-Instruct')).toBe(false);
+    expect(isCanonicalModel(null)).toBe(false);
+  });
+
+  it('filterCanonicalRuns drops non-canonical runs (no 0.5B on the board)', () => {
+    const runs = [
+      run({ model: 'meta-llama/Llama-3.1-8B-Instruct' }),
+      run({ model: 'Qwen/Qwen2.5-0.5B-Instruct', hwModel: 'Atom+', vendor: 'rebellions' }),
+    ];
+    const kept = filterCanonicalRuns(runs);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].model).toBe('meta-llama/Llama-3.1-8B-Instruct');
+  });
+});
+
+// ----------------------------------------------------------------------
+// #10: hardware-model normalization + #8: current-cluster scoping
+// ----------------------------------------------------------------------
+
+describe('normalizeHwModel (#10)', () => {
+  it('collapses ATOM / ATOM+ / Atom+ / REBELLIONS-Atom+ to one canonical key', () => {
+    expect(normalizeHwModel('ATOM')).toBe('Atom+');
+    expect(normalizeHwModel('ATOM+')).toBe('Atom+');
+    expect(normalizeHwModel('Atom+')).toBe('Atom+');
+    expect(normalizeHwModel('REBELLIONS-Atom+')).toBe('Atom+');
+  });
+
+  it('collapses SKU prefixes for GPUs/NPU', () => {
+    expect(normalizeHwModel('NVIDIA-A30')).toBe('A30');
+    expect(normalizeHwModel('FURIOSA-RNGD')).toBe('RNGD');
+    expect(normalizeHwModel('NVIDIA-L40')).toBe('L40');
+    expect(normalizeHwModel('A40-44GiB')).toBe('A40');
+  });
+
+  it('aggregateByDevice merges fragmented Rebellions identities into ONE row', () => {
+    const runs = [
+      run({ vendor: 'rebellions', hwModel: 'ATOM', tt: 0.8 }),
+      run({ vendor: 'rebellions', hwModel: 'ATOM+', tt: 0.7 }),
+      run({ vendor: 'rebellions', hwModel: 'Atom+', tt: 0.75 }),
+    ];
+    const aggs = aggregateByDevice(runs).filter(d => d.vendor === 'rebellions');
+    expect(aggs).toHaveLength(1);
+    expect(aggs[0].hwModel).toBe('Atom+');
+    // best (lowest) TT100T wins.
+    expect(aggs[0].tt100t).toBeCloseTo(0.7, 6);
+  });
+
+  it('returns unknown / passes through unknown models unchanged', () => {
+    expect(normalizeHwModel(null)).toBe('unknown');
+    expect(normalizeHwModel('TPUv5')).toBe('TPUv5');
+  });
+});
+
+describe('filterToCurrentCluster (#8)', () => {
+  const agg = (hwModel: string): DeviceAgg => ({
+    key: `x/${hwModel}`, vendor: 'x', hwModel, label: hwModel,
+    tps: 1, tt100t: 1, accuracy: null, model: null, bestRunId: null,
+    efficiency: null, costPerMTok: null, tt100tStdev: null, tt100tSamples: null,
+    tpsStdev: null, paretoOptimal: false,
+  });
+
+  it('drops off-cluster hardware (L40/A40) and keeps current ones', () => {
+    const devices = [agg('A30'), agg('RNGD'), agg('Atom+'), agg('L40'), agg('A40')];
+    const current = new Set(['A30', 'RNGD', 'Atom+']);
+    const kept = filterToCurrentCluster(devices, current).map(d => d.hwModel);
+    expect(kept).toEqual(['A30', 'RNGD', 'Atom+']);
+  });
+
+  it('is a no-op when the registry set is null/empty (graceful degrade)', () => {
+    const devices = [agg('A30'), agg('L40')];
+    expect(filterToCurrentCluster(devices, null)).toHaveLength(2);
+    expect(filterToCurrentCluster(devices, new Set())).toHaveLength(2);
+  });
+});
+
+// ----------------------------------------------------------------------
+// #19: cost clamp
+// ----------------------------------------------------------------------
+
+describe('costPerMTok clamp (#19)', () => {
+  it('clamps a near-zero-throughput outlier to COST_PER_MTOK_CLAMP', () => {
+    // tps = 0.0001 would be billions of $/Mtok without the clamp.
+    expect(costPerMTok('A30', 0.0001)).toBe(COST_PER_MTOK_CLAMP);
+    expect(COST_PER_MTOK_CLAMP).toBe(10_000);
+  });
+
+  it('leaves normal values unclamped', () => {
+    const rate = deviceUsdPerHr('A30')!;
+    const expected = (rate / 3600 / 50) * 1_000_000;
+    expect(expected).toBeLessThan(COST_PER_MTOK_CLAMP);
+    expect(costPerMTok('A30', 50)).toBeCloseTo(expected, 9);
+  });
+});
+
+// ----------------------------------------------------------------------
+// #9: no NaN means / CI from empty pools
+// ----------------------------------------------------------------------
+
+describe('finite stats (#9)', () => {
+  it('a device with no valid runs never produces a NaN verdict/CI', () => {
+    // GPU has valid runs; NPU side has tt<=0 (invalid) -> filtered to n=0.
+    const runs = [
+      gpuRun(1.50), gpuRun(1.52), gpuRun(1.48),
+      npuRun(0), npuRun(-1), // invalid -> no NPU stat -> no cross-type pair
+    ];
+    const v = topCrossDeviceComparison(runs);
+    // No valid NPU side -> no pair at all.
+    expect(v).toBeNull();
+  });
+
+  it('welch verdict bounds are finite for a real pair', () => {
+    const runs = [
+      npuRun(1.20), npuRun(1.25), npuRun(1.22),
+      gpuRun(1.50), gpuRun(1.55), gpuRun(1.52),
+    ];
+    const v = topCrossDeviceComparison(runs)!;
+    expect(Number.isFinite(v.verdict.delta)).toBe(true);
+    expect(Number.isFinite(v.verdict.ciLow)).toBe(true);
+    expect(Number.isFinite(v.verdict.ciHigh)).toBe(true);
   });
 });

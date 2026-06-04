@@ -112,6 +112,11 @@ export function deviceSpec(hwModel: string | null | undefined): DeviceSpec | nul
   if (upper.includes('L40')) return DEVICE_SPECS.L40;
   if (upper.includes('A40')) return DEVICE_SPECS.A40;
   if (upper.includes('A30')) return DEVICE_SPECS.A30;
+  // #29: a silent null drops the device off the roofline. Warn so a changed
+  // hwModel format is visible in the console instead of vanishing quietly.
+  if (typeof console !== 'undefined') {
+    console.warn(`[deviceSpec] no hardware spec match for hwModel="${hwModel}" — device omitted from the roofline`);
+  }
   return null;
 }
 

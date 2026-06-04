@@ -37,36 +37,44 @@ export const PerformanceExamGraph = (props: PerformanceExamGraphProps) => {
     test_scenario
   } = props;
 
+  // Guard nullable metrics so the chart never receives undefined/NaN (bug #14).
+  // Latency/TTFT/TPOT are stored in microseconds (→ ms); TT100T is already in seconds.
   const latencyGraphData =
     test_scenario === TestScenarioEnum.SERVER
       ? [
           {
             label: 'Latency',
-            value: result_perf_latency! / 1_000_000
+            value: (result_perf_latency ?? 0) / 1_000_000
           },
           {
             label: 'TTFT',
-            value: result_perf_serv_ttft! / 1_000_000
+            value: (result_perf_serv_ttft ?? 0) / 1_000_000
           },
           {
             label: 'TPOT',
-            value: result_perf_serv_tpot! / 1_000_000
+            value: (result_perf_serv_tpot ?? 0) / 1_000_000
           },
           {
             label: 'TT100T',
-            value: result_tt100t!
+            value: result_tt100t ?? 0
           }
         ]
       : [
           {
             label: 'Latency',
-            value: result_perf_latency! / 1_000_000
+            value: (result_perf_latency ?? 0) / 1_000_000
           },
           {
             label: 'TT100T',
-            value: result_tt100t!
+            value: result_tt100t ?? 0
           }
         ];
+
+  // Dynamic upper bound so slow runs aren't hard-clipped at 2500ms (bug #24).
+  const latencyAxisMax = Math.max(
+    2_500,
+    ...latencyGraphData.map(d => (Number.isFinite(d.value) ? d.value : 0) * 1.1)
+  );
 
   return (
     <Fragment>
@@ -76,11 +84,11 @@ export const PerformanceExamGraph = (props: PerformanceExamGraphProps) => {
           dataset={[
             {
               label: 'Samples(queries) per second',
-              value: result_perf_sps
+              value: result_perf_sps ?? 0
             },
             {
               label: 'Tokens per second',
-              value: result_perf_tps!
+              value: result_perf_tps ?? 0
             }
           ]}
           height={300}
@@ -117,7 +125,7 @@ export const PerformanceExamGraph = (props: PerformanceExamGraphProps) => {
             {
               label: 'Value (milliseconds)',
               min: 0,
-              max: 2_500
+              max: latencyAxisMax
             }
           ]}
           series={[
@@ -132,11 +140,11 @@ export const PerformanceExamGraph = (props: PerformanceExamGraphProps) => {
           dataset={[
             {
               label: 'VRAM peak (GB)',
-              value: result_vram_peak!
+              value: result_vram_peak ?? 0
             },
             {
               label: 'GPU Util (avg %)',
-              value: result_gpu_util!
+              value: result_gpu_util ?? 0
             }
           ]}
           height={300}

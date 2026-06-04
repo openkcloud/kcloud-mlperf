@@ -35,44 +35,52 @@ export class CreateNpuExamDto {
   @Length(1, 100)
   framework: string;
 
+  // B-validation #23: batch_size must be >= 1 (zero-sized batch is invalid).
   @IsInt()
-  @Min(0)
+  @Min(1)
   batch_size: number;
 
   @IsString()
   @Length(1, 100)
   dataset: string;
 
-  // B3: reject data_number <= 0 — run id 103 ("tt") with data_number=0
-  // issued 8000+ HTTP-400 inference errors. 0 is NOT "use default".
+  // B-validation #23: data_number=0 is the valid "full dataset" sentinel for
+  // NPU runs (the UI renders 0 as "Full" and the worker treats 0 as no cap).
+  // Keep the lower bound at 0; reject only negatives.
   @IsInt()
-  @Min(1)
+  @Min(0)
   data_number: number;
 
   @IsString()
   @Length(1, 100)
   npu_type: string;
 
+  // B-validation #23: at least one NPU device must be requested.
   @IsInt()
   @Min(1)
   npu_num: number;
 
+  // B-validation #23: at least one CPU core must be requested.
   @IsInt()
-  @Min(0)
+  @Min(1)
   cpu_core: number;
 
+  // B-validation #23: RAM capacity may be 0 (operator default), reject negatives.
   @IsInt()
   @Min(0)
   ram_capacity: number;
 
-  @IsInt()
-  @Min(0)
-  retry_num: number;
-
-  // B3: reject max_output_tokens <= 0 — generation must request at least
-  // one token. 0 caused runs to issue continuous HTTP-400s.
+  // B-validation #6 + #23: retry_num drives totalRepeatCount; 0 makes the
+  // operator loop run zero iterations and hang. Must be at least 1.
   @IsInt()
   @Min(1)
+  retry_num: number;
+
+  // B-validation #23: max_output_tokens=0 is the valid "unlimited" sentinel for
+  // NPU runs (the UI renders 0 as "Unlimited"). Keep the lower bound at 0;
+  // reject only negatives.
+  @IsInt()
+  @Min(0)
   max_output_tokens: number;
 
   @IsString()

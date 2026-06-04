@@ -64,19 +64,19 @@ export const AccuracyExamGraph = (props: AccuracyExamGraphProps) => {
         dataset={[
           {
             label: 'ROUGE-1',
-            value: (result_acc_rg_1! / 38.7792) * 100
+            value: ((result_acc_rg_1 ?? 0) / 38.7792) * 100
           },
           {
             label: 'ROUGE-2',
-            value: (result_acc_rg_2! / 15.9075) * 100
+            value: ((result_acc_rg_2 ?? 0) / 15.9075) * 100
           },
           {
             label: 'ROUGE-L',
-            value: (result_acc_rg_l! / 24.4957) * 100
+            value: ((result_acc_rg_l ?? 0) / 24.4957) * 100
           },
           {
             label: 'ROUGE-Lsum',
-            value: (result_acc_rg_lsum! / 35.793) * 100
+            value: ((result_acc_rg_lsum ?? 0) / 35.793) * 100
           }
         ]}
         xAxis={[

@@ -68,6 +68,13 @@ function elapsedSec(row: ComparisonRunRow): number | null {
   return isFinite(diff) ? diff : null;
 }
 
+// A row is "data pending" when its core comparison metrics (TT100T) are missing.
+// These rows sink to the bottom under the nullLast sort (bug #17); flag them so the
+// user can tell a still-loading/failed run from a real low-latency result.
+function isDataPending(row: ComparisonRunRow): boolean {
+  return row.metrics.tt100t_seconds == null;
+}
+
 // ----------------------------------------------------------------------
 
 type StatusBadgeProps = { status: string; failureReason?: string | null };
@@ -417,6 +424,7 @@ export const ComparisonRunTable = ({
               const elapsed = elapsedSec(run);
               const hasDrift = !!run.drift_flag;
               const isSubset = run.is_canonical === false;
+              const pending = isDataPending(run);
 
               return [
                 goalLineIdx === idx && <GoalLineRow key={`goal-${idx}`} colSpan={colCount} />,
@@ -425,7 +433,15 @@ export const ComparisonRunTable = ({
                   hover
                   selected={isSelected}
                   onClick={onSelectRun ? () => onSelectRun(run) : undefined}
-                  sx={{ cursor: onSelectRun ? 'pointer' : 'default' }}
+                  sx={{
+                    cursor: onSelectRun ? 'pointer' : 'default',
+                    // bug #17: gray out rows missing core metrics so users can tell a
+                    // "data pending" run from a genuinely fast one. These sort to the end.
+                    ...(pending && {
+                      opacity: 0.6,
+                      bgcolor: 'action.hover',
+                    }),
+                  }}
                 >
                   <TableCell>
                     <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
@@ -483,17 +499,36 @@ export const ComparisonRunTable = ({
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Stack direction="row" spacing={0.75} alignItems="center">
-                      <Typography
-                        variant="caption"
-                        fontFamily="monospace"
-                        fontWeight={700}
-                        sx={{ color: 'text.primary' }}
+                    {pending ? (
+                      <Tooltip
+                        title="Metrics not yet available — missing-metric runs are sorted to the end. The run may still be loading or may have failed."
+                        arrow
                       >
-                        {fmtSec(run.metrics.tt100t_seconds)}
-                      </Typography>
-                      <Tt100tBadge value={run.metrics.tt100t_seconds} size="small" />
-                    </Stack>
+                        <Chip
+                          size="small"
+                          label="data pending"
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: '0.6875rem',
+                            bgcolor: 'rgba(148,163,184,0.15)',
+                            color: statusColor('neutral', mode),
+                            cursor: 'default',
+                          }}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        <Typography
+                          variant="caption"
+                          fontFamily="monospace"
+                          fontWeight={700}
+                          sx={{ color: 'text.primary' }}
+                        >
+                          {fmtSec(run.metrics.tt100t_seconds)}
+                        </Typography>
+                        <Tt100tBadge value={run.metrics.tt100t_seconds} size="small" />
+                      </Stack>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Typography variant="caption" fontFamily="monospace" sx={{ color: 'text.secondary' }}>

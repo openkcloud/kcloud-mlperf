@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Button, Typography, TextField, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Pagination, Stack, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
+import { Alert, Box, Button, Typography, TextField, MenuItem, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Pagination, Stack, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import { Delete as DeleteIcon, Visibility as VisibilityIcon, Stop as StopIcon, CompareArrows as CompareIcon } from '@mui/icons-material';
 import {
   precisionInfoFor,
@@ -163,6 +163,20 @@ const statusLabel = (status: string) => {
 };
 
 // ----------------------------------------------------------------------
+// B-validation #22: pull a human-readable message out of an Axios/API error.
+// NestJS class-validator failures arrive as { message: string | string[] }.
+
+const extractApiErrorMessage = (error: unknown): string => {
+  const response = (error as { response?: { data?: { message?: unknown }; statusText?: string } })?.response;
+  const apiMessage = response?.data?.message;
+  if (Array.isArray(apiMessage)) return apiMessage.join(', ');
+  if (typeof apiMessage === 'string' && apiMessage.trim()) return apiMessage;
+  if (response?.statusText) return response.statusText;
+  if (error instanceof Error && error.message) return error.message;
+  return 'Unknown error';
+};
+
+// ----------------------------------------------------------------------
 
 const NpuEvalPage = () => {
   const navigate = useNavigate();
@@ -192,6 +206,12 @@ const NpuEvalPage = () => {
       reset(DEFAULT_VALUES);
     }
   });
+
+  // B-validation #22: surface create errors (e.g. DTO validation rejections)
+  // to the user instead of swallowing them silently.
+  const createErrorMessage = createMutation.isError
+    ? extractApiErrorMessage(createMutation.error)
+    : null;
 
   const deleteMutation = useMutation({
     mutationFn: NpuEvalApi.deleteExam,
@@ -310,36 +330,132 @@ const NpuEvalPage = () => {
             <Controller name="framework" control={control} render={({ field }) => (
               <TextField {...field} label="Framework" size="small" disabled />
             )} />
-            <Controller name="batch_size" control={control} render={({ field }) => (
-              <TextField {...field} label="Batch Size" size="small" type="number" />
-            )} />
+            <Controller
+              name="batch_size"
+              control={control}
+              rules={{ min: { value: 1, message: 'Batch size must be at least 1' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="Batch Size"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 1 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
+            />
             <Controller name="dataset" control={control} render={({ field }) => (
               <TextField {...field} label="Dataset" size="small" />
             )} />
-            <Controller name="data_number" control={control} render={({ field }) => (
-              <TextField {...field} label="Data Samples (0=full)" size="small" type="number" />
-            )} />
+            <Controller
+              name="data_number"
+              control={control}
+              rules={{ min: { value: 0, message: 'Data samples cannot be negative' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="Data Samples (0=full)"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message ?? '0 = full dataset'}
+                />
+              )}
+            />
             <Controller name="npu_type" control={control} render={({ field }) => (
               <TextField {...field} label="NPU Type" size="small" disabled />
             )} />
-            <Controller name="npu_num" control={control} render={({ field }) => (
-              <TextField {...field} label="NPU Count" size="small" type="number" />
-            )} />
-            <Controller name="cpu_core" control={control} render={({ field }) => (
-              <TextField {...field} label="CPU Cores" size="small" type="number" />
-            )} />
-            <Controller name="ram_capacity" control={control} render={({ field }) => (
-              <TextField {...field} label="RAM (GB)" size="small" type="number" />
-            )} />
-            <Controller name="retry_num" control={control} render={({ field }) => (
-              <TextField {...field} label="Repetitions" size="small" type="number" />
-            )} />
-            <Controller name="max_output_tokens" control={control} render={({ field }) => (
-              <TextField {...field} label="Max Output Tokens (0=unlimited)" size="small" type="number" />
-            )} />
+            <Controller
+              name="npu_num"
+              control={control}
+              rules={{ min: { value: 1, message: 'At least 1 NPU required' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="NPU Count"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 1 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
+            />
+            <Controller
+              name="cpu_core"
+              control={control}
+              rules={{ min: { value: 1, message: 'At least 1 CPU core required' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="CPU Cores"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 1 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
+            />
+            <Controller
+              name="ram_capacity"
+              control={control}
+              rules={{ min: { value: 0, message: 'RAM cannot be negative' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="RAM (GB)"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
+            />
+            <Controller
+              name="retry_num"
+              control={control}
+              rules={{ min: { value: 1, message: 'At least 1 repetition required' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="Repetitions"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 1 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
+            />
+            <Controller
+              name="max_output_tokens"
+              control={control}
+              rules={{ min: { value: 0, message: 'Max output tokens cannot be negative' } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="Max Output Tokens (0=unlimited)"
+                  size="small"
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message ?? '0 = unlimited'}
+                />
+              )}
+            />
             <Controller name="started_at" control={control} render={({ field }) => (
               <TextField {...field} label="Start Time" size="small" type="datetime-local" InputLabelProps={{ shrink: true }} />
             )} />
+            {createErrorMessage && (
+              <Alert severity="error" sx={{ gridColumn: '1 / -1' }} onClose={() => createMutation.reset()}>
+                Failed to create test: {createErrorMessage}
+              </Alert>
+            )}
             <Box sx={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
               <Button variant="outlined" onClick={() => { setShowForm(false); reset(DEFAULT_VALUES); }}>Cancel</Button>
               <Button variant="contained" type="submit" disabled={createMutation.isPending}>
