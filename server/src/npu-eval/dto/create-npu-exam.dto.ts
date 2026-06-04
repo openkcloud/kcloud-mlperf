@@ -1,6 +1,7 @@
 import {
   IsInt,
   IsNotEmpty,
+  IsNumberString,
   IsOptional,
   IsString,
   Length,
@@ -42,8 +43,10 @@ export class CreateNpuExamDto {
   @Length(1, 100)
   dataset: string;
 
+  // B3: reject data_number <= 0 — run id 103 ("tt") with data_number=0
+  // issued 8000+ HTTP-400 inference errors. 0 is NOT "use default".
   @IsInt()
-  @Min(0)
+  @Min(1)
   data_number: number;
 
   @IsString()
@@ -66,8 +69,10 @@ export class CreateNpuExamDto {
   @Min(0)
   retry_num: number;
 
+  // B3: reject max_output_tokens <= 0 — generation must request at least
+  // one token. 0 caused runs to issue continuous HTTP-400s.
   @IsInt()
-  @Min(0)
+  @Min(1)
   max_output_tokens: number;
 
   @IsString()
@@ -84,4 +89,9 @@ export class CreateNpuExamDto {
   @IsString()
   @IsOptional()
   end_at: string;
+
+  // Optional — reproducibility seed (WS-D03). Stored as string for bigint safety.
+  @IsOptional()
+  @IsNumberString()
+  seed?: number | string;
 }

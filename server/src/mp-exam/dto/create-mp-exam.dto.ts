@@ -3,6 +3,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsNumberString,
   IsOptional,
   IsString,
   Length,
@@ -56,9 +57,9 @@ export class CreateMpExamDto {
   @Length(1, 100)
   dataset: string;
 
-  // Required
+  // Required — B3: reject data_number <= 0 (0 = continuous HTTP-400 storm).
   @IsInt()
-  @Min(0)
+  @Min(1)
   data_number: number;
 
   // Required
@@ -135,4 +136,9 @@ export class CreateMpExamDto {
   @IsString()
   @IsOptional()
   end_at: string;
+
+  // Optional — reproducibility seed (WS-D03). Stored as string for bigint safety.
+  @IsOptional()
+  @IsNumberString()
+  seed?: number | string;
 }

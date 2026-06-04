@@ -7,19 +7,25 @@ import {
   Button,
   CircularProgress,
   Drawer,
+  IconButton,
+  Tooltip,
   Typography,
   useTheme
 } from '@mui/material';
-import { ArrowBack } from '@mui/icons-material';
+import { ArrowBack, Refresh } from '@mui/icons-material';
 
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader/DeviceDashboardHeader';
 import { ComparisonDiagnosticPanel } from '@/components/ComparisonDiagnosticPanel';
 import { ComparisonCandidatePicker } from '@/components/ComparisonCandidatePicker';
 import { ComparisonRunTable } from '@/components/ComparisonRunTable';
 import { ComparisonDetailDialog } from '@/components/ComparisonDetailDialog';
+import { QueryBoundary } from '@/components/QueryBoundary';
+import { RenderErrorBoundary } from '@/components/ErrorBoundary';
 import { ComparisonApi } from '@/api/domains/comparison';
-import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate } from '@/api/domains/comparison';
+import type { ComparisonRunRow, ComparisonDiagnosticReason, ComparisonCandidate, ComparisonListResponse } from '@/api/domains/comparison';
+import type { FairnessAssessment } from '@/api/types/fairness-assessment';
 import { MpExamPageLinks } from '@/contexts/RouterContext/router.links';
+import { formatAge } from '@/helpers/format-age.helper';
 
 // ----------------------------------------------------------------------
 
@@ -34,12 +40,16 @@ const MlperfDeviceComparisonPage = () => {
   const [selectedB, setSelectedB] = useState<ComparisonRunRow | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
+  const [incompat, setIncompat] = useState<string[]>([]);
+  const [fairness, setFairness] = useState<FairnessAssessment | undefined>(undefined);
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const listQuery = useQuery({
     queryKey: ['comparison', 'list', 'mlperf'],
     queryFn: () => ComparisonApi.list({ benchmark: 'mlperf' }),
     refetchInterval: 30_000
   });
+
+  const { data, isLoading, error, refetch } = listQuery;
 
   const runs = data?.runs ?? [];
   const diagnosticReason: ComparisonDiagnosticReason = data?.diagnostic?.reason ?? 'no_runs_exist';
@@ -51,16 +61,21 @@ const MlperfDeviceComparisonPage = () => {
   };
 
   const handleSelectB = async (candidate: ComparisonCandidate) => {
+    if (!selectedA) return;
     setPickerOpen(false);
     const runB = candidate.run;
     setSelectedB(runB);
     setCompareLoading(true);
     setCompareError(null);
     setCompareData(null);
+    setIncompat([]);
+    setFairness(undefined);
     setDialogOpen(true);
     try {
-      const result = await ComparisonApi.compare('mlperf', selectedA!.id, runB.id);
+      const result = await ComparisonApi.compare('mlperf', selectedA.id, runB.id);
       setCompareData(result.metrics);
+      setIncompat(result.incompatibility_reasons ?? []);
+      setFairness(result.fairness_assessment);
     } catch {
       setCompareError('Failed to load comparison data.');
     } finally {
@@ -73,9 +88,13 @@ const MlperfDeviceComparisonPage = () => {
     setCompareLoading(true);
     setCompareError(null);
     setCompareData(null);
+    setIncompat([]);
+    setFairness(undefined);
     try {
       const result = await ComparisonApi.compare('mlperf', selectedA.id, selectedB.id);
       setCompareData(result.metrics);
+      setIncompat(result.incompatibility_reasons ?? []);
+      setFairness(result.fairness_assessment);
     } catch {
       setCompareError('Failed to load comparison data.');
     } finally {
@@ -86,13 +105,26 @@ const MlperfDeviceComparisonPage = () => {
   const isEmpty = !isLoading && !error && runs.length === 0;
 
   return (
+    <RenderErrorBoundary onRetry={refetch}>
     <Box>
-      <DeviceDashboardHeader
-        title="MLPerf — Cross-Device Comparison"
-        description="Select run A from the list below — comparable candidates will appear instantly for run B."
-        chipLabel="Historical"
-        chipColor={theme.palette.primary.main}
-      />
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <DeviceDashboardHeader
+          title="MLPerf — Cross-Device Comparison"
+          description="Select run A from the list below — comparable candidates will appear instantly for run B."
+          chipLabel="Historical"
+          chipColor={theme.palette.primary.main}
+        />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Updated {formatAge(listQuery.dataUpdatedAt)}
+          </Typography>
+          <Tooltip title="Refresh">
+            <IconButton size="small" onClick={() => refetch()} aria-label="refresh comparison list">
+              <Refresh fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -133,25 +165,30 @@ const MlperfDeviceComparisonPage = () => {
         </Box>
       )}
 
-      <ComparisonRunTable
-        runs={runs}
-        isLoading={isLoading}
-        onSelectRun={handleSelectA}
-        selectedId={selectedA?.id}
-        showBenchmark={false}
-        showVendor
-        exportParams={{ benchmark: 'mlperf' }}
-        renderRowAction={(run) => (
-          <Button
-            size="small"
-            variant={selectedA?.id === run.id ? 'contained' : 'outlined'}
-            onClick={(e) => { e.stopPropagation(); handleSelectA(run); }}
-          >
-            {selectedA?.id === run.id ? 'Selected' : 'Pick'}
-          </Button>
-        )}
-        onClearFilters={() => refetch()}
-      />
+      <QueryBoundary<ComparisonListResponse>
+        query={listQuery}
+        isEmpty={d => !d || d.runs.length === 0}
+      >
+        <ComparisonRunTable
+          runs={runs}
+          isLoading={isLoading}
+          onSelectRun={handleSelectA}
+          selectedId={selectedA?.id}
+          showBenchmark={false}
+          showVendor
+          exportParams={{ benchmark: 'mlperf' }}
+          renderRowAction={(run) => (
+            <Button
+              size="small"
+              variant={selectedA?.id === run.id ? 'contained' : 'outlined'}
+              onClick={(e) => { e.stopPropagation(); handleSelectA(run); }}
+            >
+              {selectedA?.id === run.id ? 'Selected' : 'Pick'}
+            </Button>
+          )}
+          onClearFilters={() => refetch()}
+        />
+      </QueryBoundary>
 
       <Drawer
         anchor="right"
@@ -185,12 +222,15 @@ const MlperfDeviceComparisonPage = () => {
         isLoading={compareLoading}
         error={compareError}
         onRetry={handleRetry}
+        incompatibilityReasons={incompat}
+        fairnessAssessment={fairness}
         accentA={theme.palette.secondary.main}
         accentB={theme.palette.primary.main}
         labelA="Run A"
         labelB="Run B"
       />
     </Box>
+    </RenderErrorBoundary>
   );
 };
 

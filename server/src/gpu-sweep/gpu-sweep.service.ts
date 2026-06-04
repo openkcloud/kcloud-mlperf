@@ -17,6 +17,7 @@ import utc from 'dayjs/plugin/utc';
 
 import { MpExamService } from '../mp-exam/mp-exam.service';
 import { MmExamService } from '../mm-exam/mm-exam.service';
+import { NpuEvalService } from '../npu-eval/npu-eval.service';
 import { MpExamModeEnum } from '../enums/mp-exam-mode.enum';
 
 import {
@@ -39,6 +40,7 @@ import {
 import {
   CalibrationResponse,
   SweepCellSpec,
+  SweepNode,
   SweepPreviewResponse,
   SweepStatusResponse,
   StartSweepDto,
@@ -62,15 +64,22 @@ interface NodeMutexState {
 @Injectable()
 export class GpuSweepService {
   private readonly logger = new Logger(GpuSweepService.name);
-  private readonly nodeMutex: Record<'node2' | 'node3', NodeMutexState> = {
+  // WS-E (mega-plan v2.2): mutex Record extended IN-PLACE to cover all 4
+  // worker nodes. NO new mutex Record was introduced — see test
+  // npu.matrix.spec.ts "exactly one nodeMutex declaration" guard.
+  private readonly nodeMutex: Record<SweepNode, NodeMutexState> = {
     node2: { busy: false, last_dispatch_at: null, current_cell_key: null },
     node3: { busy: false, last_dispatch_at: null, current_cell_key: null },
+    node4: { busy: false, last_dispatch_at: null, current_cell_key: null },
+    node5: { busy: false, last_dispatch_at: null, current_cell_key: null },
   };
   // Internal queue of dispatched cells per node, used by the unit test to
   // verify stagger discipline. Production reads pull from DB.
-  private readonly nodeQueue: Record<'node2' | 'node3', GpuSweepCell[]> = {
+  private readonly nodeQueue: Record<SweepNode, GpuSweepCell[]> = {
     node2: [],
     node3: [],
+    node4: [],
+    node5: [],
   };
   private activeSweepId: number | null = null;
   private staggerSeconds: number;
@@ -82,6 +91,10 @@ export class GpuSweepService {
     private readonly cellRepo: Repository<GpuSweepCell>,
     private readonly mpExamService: MpExamService,
     private readonly mmExamService: MmExamService,
+    // WS-E US-NEXT-2: NpuEvalService routes node4 (Furiosa RNGD) and node5
+    // (Rebellions Atom+) cells to the NPU benchmark path. Without this,
+    // dispatchCell would silently create GPU exams for NPU cells.
+    private readonly npuEvalService: NpuEvalService,
     private readonly config: ConfigService,
   ) {
     const cfg = this.config.get<string>('GPU_SWEEP_MIN_STAGGER_SECONDS');
@@ -376,8 +389,10 @@ export class GpuSweepService {
     return saved;
   }
 
+  // WS-E: signature widened from {node2,node3} to all 4 worker nodes so the
+  // canonical-cell mirror also runs on node4 (RNGD) and node5 (ATOM).
   private buildCanonicalCellOnNode(
-    node: 'node2' | 'node3',
+    node: SweepNode,
     gpu_index: 0 | 1,
     gpu_type: string,
   ): SweepCellSpec {
@@ -425,7 +440,7 @@ export class GpuSweepService {
       }
 
       for (const cell of pending) {
-        const node = cell.node as 'node2' | 'node3';
+        const node = cell.node as SweepNode;
         if (!this.canDispatchOn(node)) continue;
 
         try {
@@ -446,7 +461,9 @@ export class GpuSweepService {
     }
   }
 
-  private canDispatchOn(node: 'node2' | 'node3'): boolean {
+  // WS-E: signature widened to all 4 worker nodes. Same stagger discipline
+  // applies uniformly — NPU dispatches honor the same min-stagger gate.
+  private canDispatchOn(node: SweepNode): boolean {
     const state = this.nodeMutex[node];
     if (state.busy) return false;
     if (state.last_dispatch_at === null) return true;
@@ -458,7 +475,7 @@ export class GpuSweepService {
     sweep: GpuSweep,
     cell: GpuSweepCell,
   ): Promise<void> {
-    const node = cell.node as 'node2' | 'node3';
+    const node = cell.node as SweepNode;
     this.nodeMutex[node].busy = true;
     this.nodeMutex[node].current_cell_key = cell.cell_key;
     this.nodeMutex[node].last_dispatch_at = Date.now();
@@ -467,10 +484,43 @@ export class GpuSweepService {
     const startedAt = dayjs().tz(TZ).format(TS_FORMAT);
     const description = `[sweep:${sweep.id} cell:${cell.id}] ${cell.cell_key}`;
 
+    // WS-E US-NEXT-2: vendor branch. Cell entity does not persist `vendor`
+    // (only the SweepCellSpec carries it pre-save), so we re-derive vendor
+    // from `cell.node`: node4→furiosa(RNGD), node5→rebellions(Atom+),
+    // node2/node3→nvidia. This keeps NPU dispatch routed to NpuEvalService
+    // rather than silently creating GPU exams via Mp/MmExamService.
+    const vendor = vendorForNode(node);
+
     let exam_id: number | null = null;
 
     try {
-      if (cell.kind === GpuSweepCellKind.MLPERF) {
+      if (vendor === 'furiosa' || vendor === 'rebellions') {
+        const npu = await this.npuEvalService.create({
+          name: `sweep-${sweep.id}-cell-${cell.id}`,
+          description,
+          benchmark: cell.kind === GpuSweepCellKind.MLPERF ? 'mlperf' : 'mmlu',
+          model: 'Llama-3.1-8B-Instruct',
+          precision: cell.precision,
+          framework: vendor === 'furiosa' ? 'furiosa-llm' : 'vllm-rbln',
+          batch_size: cell.batch_size,
+          dataset:
+            cell.kind === GpuSweepCellKind.MLPERF ? 'cnn-dailymail' : 'mmlu',
+          data_number: cell.data_number,
+          // cell.gpu_type is the canonical NPU label ('RNGD' | 'Atom+') set
+          // by NPU_PLACEMENTS in matrix.ts. Verified by npu.matrix.spec.ts.
+          npu_type: cell.gpu_type,
+          npu_num: 1,
+          cpu_core: 8,
+          ram_capacity: 32,
+          retry_num: cell.retry_num,
+          max_output_tokens: 0,
+          started_at: startedAt,
+          status: undefined as never,
+          error_log: undefined as never,
+          end_at: undefined as never,
+        });
+        exam_id = npu?.id ?? null;
+      } else if (cell.kind === GpuSweepCellKind.MLPERF) {
         const mp = await this.mpExamService.create({
           name: `sweep-${sweep.id}-cell-${cell.id}`,
           description,
@@ -580,7 +630,7 @@ export class GpuSweepService {
       completed_at: dayjs().tz(TZ).format(TS_FORMAT),
     });
 
-    const node = cell.node as 'node2' | 'node3';
+    const node = cell.node as SweepNode;
     this.nodeMutex[node].busy = false;
     this.nodeMutex[node].current_cell_key = null;
 
@@ -613,7 +663,7 @@ export class GpuSweepService {
     // populated by markCellComplete; this method returns the *contract shape*
     // even when metrics are still pending so the UI can subscribe.
     const runs = cells.map((c) => ({
-      node: c.node as 'node2' | 'node3',
+      node: c.node as SweepNode,
       exam_id: c.exam_id ?? -1,
       tt100t_seconds: c.tt100t_seconds ?? 0,
       tps: c.tps ?? 0,
@@ -699,17 +749,15 @@ export class GpuSweepService {
       }),
     );
 
-    // Reset mutex regardless — drained means free.
-    this.nodeMutex.node2 = {
-      busy: false,
-      last_dispatch_at: this.nodeMutex.node2.last_dispatch_at,
-      current_cell_key: null,
-    };
-    this.nodeMutex.node3 = {
-      busy: false,
-      last_dispatch_at: this.nodeMutex.node3.last_dispatch_at,
-      current_cell_key: null,
-    };
+    // Reset mutex regardless — drained means free. WS-E: extended to all 4
+    // worker nodes so NPU runs are also released on drain().
+    for (const n of ['node2', 'node3', 'node4', 'node5'] as const) {
+      this.nodeMutex[n] = {
+        busy: false,
+        last_dispatch_at: this.nodeMutex[n].last_dispatch_at,
+        current_cell_key: null,
+      };
+    }
 
     return (await this.sweepRepo.findOne({ where: { id } }))!;
   }
@@ -775,6 +823,10 @@ export class GpuSweepService {
       node_state: {
         node2: fmtMutex(this.nodeMutex.node2),
         node3: fmtMutex(this.nodeMutex.node3),
+        // WS-E: NPU node mutex state surfaces uniformly with GPU nodes so
+        // the dashboard can render a single per-node view.
+        node4: fmtMutex(this.nodeMutex.node4),
+        node5: fmtMutex(this.nodeMutex.node5),
       },
       quiet_window,
     };
@@ -800,7 +852,7 @@ export class GpuSweepService {
     return this.nodeQueue;
   }
   /** @internal */
-  _testReleaseNode(node: 'node2' | 'node3') {
+  _testReleaseNode(node: SweepNode) {
     this.nodeMutex[node].busy = false;
     this.nodeMutex[node].current_cell_key = null;
   }
@@ -809,11 +861,11 @@ export class GpuSweepService {
     this.staggerSeconds = s;
   }
   /** @internal */
-  _testSetLastDispatch(node: 'node2' | 'node3', timestampMs: number | null) {
+  _testSetLastDispatch(node: SweepNode, timestampMs: number | null) {
     this.nodeMutex[node].last_dispatch_at = timestampMs;
   }
   /** @internal */
-  _testCanDispatchOn(node: 'node2' | 'node3') {
+  _testCanDispatchOn(node: SweepNode) {
     return this.canDispatchOn(node);
   }
 }
@@ -822,4 +874,14 @@ export class GpuSweepService {
 // service is invoked while disabled.
 export function disabledServiceError(): HttpException {
   return new HttpException({ enabled: false }, HttpStatus.SERVICE_UNAVAILABLE);
+}
+
+// WS-E US-NEXT-2: derive vendor from node. The cell entity does not persist
+// `vendor` (it lives on SweepCellSpec only), so dispatch resolves it from the
+// node assignment which IS persisted. node4=Furiosa RNGD, node5=Rebellions
+// Atom+, node2/node3=NVIDIA. Mirrors NPU_PLACEMENTS in matrix.ts.
+function vendorForNode(node: SweepNode): 'nvidia' | 'furiosa' | 'rebellions' {
+  if (node === 'node4') return 'furiosa';
+  if (node === 'node5') return 'rebellions';
+  return 'nvidia';
 }

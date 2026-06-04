@@ -93,7 +93,7 @@ const FIXTURE_GPU_PLUS_NPU: DeviceEntry[] = [
     slot_id: 0,
     state: 'pending_join',
     k8s_node_status: 'Absent',
-    allocatable_resource_name: 'rebellions.ai/atomplus',
+    allocatable_resource_name: 'rebellions.ai/ATOM',
     allocatable_count: null,
     source: 'k8s'
   }
@@ -112,8 +112,14 @@ vi.mock('@/hooks/useRealtimeExams', () => ({
       timestamp: ''
     },
     connected: true,
-    error: null
-  })
+    error: null,
+    // DeviceCard indexes telemetryHistory[key]; the real hook always returns an
+    // object (defaults to {}), so the mock must too or DeviceCard throws.
+    telemetryHistory: {}
+  }),
+  // Mirror the real module export consumed by DeviceCard — without it the
+  // mocked module returns undefined and DeviceCard throws on render.
+  telemetryHistoryKey: (node: string, slot_id: number) => `${node}/${slot_id}`
 }));
 
 const mockUseDeviceRegistry = vi.fn();

@@ -1,5 +1,10 @@
 import { GpuSweepCellKind } from './entities/gpu-sweep-cell.entity';
-import { SweepCellSpec, SweepTimelineEntry } from './dto/gpu-sweep.dto';
+import {
+  SweepCellSpec,
+  SweepNode,
+  SweepTimelineEntry,
+  SweepVendor,
+} from './dto/gpu-sweep.dto';
 
 // SKU → (node, gpu_index). The 4 SKUs are physically pinned by node and slot per
 // the cluster `kubectl get nodes -o json` snapshot referenced in the ralplan.
@@ -14,6 +19,38 @@ export const SKU_PLACEMENTS: SkuPlacement[] = [
   { gpu_type: 'NVIDIA-A40', node: 'node2', gpu_index: 1 },
   { gpu_type: 'NVIDIA-L40-44GiB', node: 'node3', gpu_index: 0 },
   { gpu_type: 'NVIDIA-A40-44GiB', node: 'node3', gpu_index: 1 },
+];
+
+// WS-E (mega-plan v2.2): NPU placements pinned to node4 (Furiosa RNGD) and
+// node5 (Rebellions ATOM). Resource keys verified live 2026-05-11 via
+// `kubectl get node node4 -o jsonpath='{.status.allocatable}'` →
+//   node4 → furiosa.ai/rngd: 1
+//   node5 → rebellions.ai/ATOM: 2
+// The codebase historically used 'atomplus' as the gpu_type label; the canonical
+// label per comparison.service.ts CanonicalHardwareLabel is 'Atom+'.
+export interface NpuPlacement {
+  gpu_type: string;
+  node: 'node4' | 'node5';
+  gpu_index: 0;
+  vendor: SweepVendor;
+  npu_resource: string;
+}
+
+export const NPU_PLACEMENTS: NpuPlacement[] = [
+  {
+    gpu_type: 'RNGD',
+    node: 'node4',
+    gpu_index: 0,
+    vendor: 'furiosa',
+    npu_resource: 'furiosa.ai/rngd',
+  },
+  {
+    gpu_type: 'Atom+',
+    node: 'node5',
+    gpu_index: 0,
+    vendor: 'rebellions',
+    npu_resource: 'rebellions.ai/ATOM',
+  },
 ];
 
 // Per-node "matched pair" SKUs that allow TP=2 (only same-SKU pairs qualify).
@@ -282,6 +319,86 @@ export function expandMatrix(options: MatrixOptions = {}): SweepCellSpec[] {
     }
   }
 
+  // ---- WS-E NPU axis (node4 RNGD + node5 ATOM) ----
+  // NPU runs are offline-only in v1 (no server@1qps yet — vendor SDK telemetry
+  // for QPS gating is not yet wired). TP is always 1 (single-NPU per node).
+  // Cell shape kept intentionally small to bound the matrix:
+  //   per NPU placement (×2):
+  //     mlperf: precision×{bs=1}×{n=500} offline       → 2 cells × 2 placements = 4
+  //     mlperf: precision×{bs=1}×{n=13368} offline     → 2 cells × 2 placements = 4
+  //     mmlu:   precision×{n=100}                      → 2 cells × 2 placements = 4
+  //     mmlu:   precision×{n=25} (fp8 only — bf16 trim)→ 1 cell  × 2 placements = 2
+  //   Subtotal: 14 NPU cells = (4+4+4+2)
+  // Combined matrix: 110 (GPU) + 14 (NPU) = 124 canonical cells.
+  for (const npu of NPU_PLACEMENTS) {
+    if (skuFilter && !skuFilter.has(npu.gpu_type)) continue;
+
+    if (benchmarks.has('mlperf')) {
+      for (const precision of precisions) {
+        for (const data_number of [500, 13368]) {
+          const cell: SweepCellSpec = {
+            cell_key: buildCellKey({
+              kind: GpuSweepCellKind.MLPERF,
+              gpu_type: npu.gpu_type,
+              precision,
+              batch_size: 1,
+              data_number,
+              tensor_parallel_size: 1,
+              scenario: 'offline',
+            }),
+            kind: GpuSweepCellKind.MLPERF,
+            gpu_type: npu.gpu_type,
+            node: npu.node,
+            gpu_index: npu.gpu_index,
+            precision,
+            batch_size: 1,
+            data_number,
+            tensor_parallel_size: 1,
+            scenario: 'offline',
+            retry_num: 3,
+            vendor: npu.vendor,
+            npu_resource: npu.npu_resource,
+          };
+          cells.push(cell);
+        }
+      }
+    }
+
+    if (benchmarks.has('mmlu')) {
+      for (const precision of precisions) {
+        for (const data_number of MMLU_SAMPLE_SIZES) {
+          // Reuse the GPU-side trim Rule 4 here for consistency: drop
+          // MMLU n=25 on bf16 (low-signal noise); keep on fp8.
+          if (data_number === 25 && precision === 'bf16') continue;
+          const cell: SweepCellSpec = {
+            cell_key: buildCellKey({
+              kind: GpuSweepCellKind.MMLU,
+              gpu_type: npu.gpu_type,
+              precision,
+              batch_size: 1,
+              data_number,
+              tensor_parallel_size: 1,
+              scenario: 'offline',
+            }),
+            kind: GpuSweepCellKind.MMLU,
+            gpu_type: npu.gpu_type,
+            node: npu.node,
+            gpu_index: npu.gpu_index,
+            precision,
+            batch_size: 1,
+            data_number,
+            tensor_parallel_size: 1,
+            scenario: 'offline',
+            retry_num: 3,
+            vendor: npu.vendor,
+            npu_resource: npu.npu_resource,
+          };
+          cells.push(cell);
+        }
+      }
+    }
+  }
+
   return cells;
 }
 
@@ -306,12 +423,23 @@ const STAGGER_SECONDS = 60;
 export function buildTimeline(cells: SweepCellSpec[]): {
   node2: SweepTimelineEntry[];
   node3: SweepTimelineEntry[];
+  node4: SweepTimelineEntry[];
+  node5: SweepTimelineEntry[];
 } {
-  const perNode: Record<'node2' | 'node3', SweepTimelineEntry[]> = {
+  // WS-E: timeline now spans all 4 worker nodes. node4 (RNGD) and node5 (ATOM)
+  // each get their own lane so the Gantt preview can render NPU-side schedules.
+  const perNode: Record<SweepNode, SweepTimelineEntry[]> = {
     node2: [],
     node3: [],
+    node4: [],
+    node5: [],
   };
-  const nodeCursor: Record<'node2' | 'node3', number> = { node2: 0, node3: 0 };
+  const nodeCursor: Record<SweepNode, number> = {
+    node2: 0,
+    node3: 0,
+    node4: 0,
+    node5: 0,
+  };
 
   for (const cell of cells) {
     const cursor = nodeCursor[cell.node];

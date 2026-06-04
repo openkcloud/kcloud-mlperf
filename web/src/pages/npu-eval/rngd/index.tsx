@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import {
   Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
   IconButton, MenuItem, Pagination, Paper, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Typography
+  TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import { Delete as DeleteIcon, Visibility as VisibilityIcon, Stop as StopIcon, CompareArrows as CompareIcon } from '@mui/icons-material';
+import { friendlyError } from '@/helpers/friendly-error.helper';
 import {
   precisionInfoFor,
   precisionOptionsFor
@@ -404,11 +405,26 @@ const RngdNpuEvalPage = () => {
                 </TableCell>
                 <TableCell>
                   {dayjs(exam.created_at).format('MM/DD HH:mm')}
-                  {exam.status === 'Error' && exam.error_log && (
-                    <Typography variant="caption" color="error" sx={{ display: 'block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={exam.error_log}>
-                      {exam.error_log}
-                    </Typography>
-                  )}
+                  {exam.status === 'Error' && exam.error_log && (() => {
+                    const fe = friendlyError(exam.error_log);
+                    return (
+                      <Tooltip
+                        arrow
+                        title={
+                          <Box sx={{ maxWidth: 320 }}>
+                            <Typography variant="caption" fontWeight={700} display="block">{fe?.title}</Typography>
+                            <Typography variant="caption" display="block">{fe?.detail}</Typography>
+                            {fe?.action && <Typography variant="caption" display="block" sx={{ mt: 0.5, fontStyle: 'italic' }}>Fix: {fe.action}</Typography>}
+                            <Typography variant="caption" display="block" sx={{ mt: 0.5, opacity: 0.6 }}>{fe?.raw}</Typography>
+                          </Box>
+                        }
+                      >
+                        <Typography variant="caption" color="error" sx={{ display: 'block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'help', fontWeight: 600 }}>
+                          {fe?.title}
+                        </Typography>
+                      </Tooltip>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell align="right">
                   <IconButton size="small" aria-label={`View results for ${exam.name}`} onClick={() => navigate(NpuEvalPageLinks.testResult(exam.id))}>

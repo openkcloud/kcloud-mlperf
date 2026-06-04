@@ -295,13 +295,13 @@ const MLPerfPage = () => {
       <MpExamConfirmationModal modalState={modalData} handleClose={handleCloseModal} />
 
       <LiveBenchDashboard
-        title="Live GPU Dashboard (MLPerf — L40)"
+        title="Live GPU Dashboard (MLPerf — A30 / jw2)"
         src={getL40LiveBenchUrl()}
         height={900}
       />
 
       <LiveBenchDashboard
-        title="Live GPU Dashboard (MLPerf — A40)"
+        title="Live GPU Dashboard (MLPerf — A30 / jw3)"
         src={getA40LiveBenchUrl()}
         height={900}
       />

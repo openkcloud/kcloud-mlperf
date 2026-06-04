@@ -10,10 +10,12 @@ import {
 } from './entities/gpu-sweep.entity';
 import {
   GpuSweepCell,
+  GpuSweepCellKind,
   GpuSweepCellStatus,
 } from './entities/gpu-sweep-cell.entity';
 import { MpExamService } from '../mp-exam/mp-exam.service';
 import { MmExamService } from '../mm-exam/mm-exam.service';
+import { NpuEvalService } from '../npu-eval/npu-eval.service';
 import { FIXTURE_CELL_COUNT } from './matrix.fixture';
 
 // ---------------------------------------------------------------------------
@@ -47,17 +49,28 @@ const mockMmExamService = () => ({
   stopMmExam: jest.fn().mockResolvedValue({}),
 });
 
+const mockNpuEvalService = () => ({
+  create: jest.fn().mockResolvedValue({ id: 300 }),
+  stopNpuExam: jest.fn().mockResolvedValue({}),
+});
+
 // ---------------------------------------------------------------------------
 
 describe('GpuSweepService', () => {
   let service: GpuSweepService;
   let sweepRepo: ReturnType<typeof mockSweepRepo>;
   let cellRepo: ReturnType<typeof mockCellRepo>;
+  let mpExamService: ReturnType<typeof mockMpExamService>;
+  let mmExamService: ReturnType<typeof mockMmExamService>;
+  let npuEvalService: ReturnType<typeof mockNpuEvalService>;
   let configService: { get: jest.Mock };
 
   function buildModule(enabled: boolean, staggerSeconds = 60) {
     sweepRepo = mockSweepRepo();
     cellRepo = mockCellRepo();
+    mpExamService = mockMpExamService();
+    mmExamService = mockMmExamService();
+    npuEvalService = mockNpuEvalService();
     configService = {
       get: jest.fn((key: string) => {
         if (key === 'GPU_SWEEP_ENABLED') return enabled ? 'true' : 'false';
@@ -72,8 +85,9 @@ describe('GpuSweepService', () => {
         GpuSweepService,
         { provide: getRepositoryToken(GpuSweep), useValue: sweepRepo },
         { provide: getRepositoryToken(GpuSweepCell), useValue: cellRepo },
-        { provide: MpExamService, useValue: mockMpExamService() },
-        { provide: MmExamService, useValue: mockMmExamService() },
+        { provide: MpExamService, useValue: mpExamService },
+        { provide: MmExamService, useValue: mmExamService },
+        { provide: NpuEvalService, useValue: npuEvalService },
         { provide: ConfigService, useValue: configService },
       ],
     }).compile();
@@ -369,6 +383,141 @@ describe('GpuSweepService', () => {
       expect(updateCall[1].tt100t_seconds).toBe(1.588);
       expect(updateCall[1].tps).toBe(62.94);
       expect(updateCall[1].status).toBe(GpuSweepCellStatus.COMPLETED);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // dispatchCell() — WS-E US-NEXT-2 vendor branch.
+  // Asserts that node4 (Furiosa RNGD) and node5 (Rebellions Atom+) cells
+  // route to NpuEvalService.create instead of silently creating GPU exams
+  // via Mp/MmExamService. node2/node3 (NVIDIA) cells must keep the existing
+  // GPU dispatch path — no regression.
+  // -------------------------------------------------------------------------
+
+  describe('dispatchCell() — vendor branch', () => {
+    const sweep = Object.assign(new GpuSweep(), {
+      id: 7,
+      status: GpuSweepStatus.RUNNING,
+    });
+
+    function makeCell(
+      overrides: Partial<GpuSweepCell> & {
+        node: 'node2' | 'node3' | 'node4' | 'node5';
+        kind: GpuSweepCellKind;
+        gpu_type: string;
+      },
+    ): GpuSweepCell {
+      return Object.assign(new GpuSweepCell(), {
+        id: 99,
+        sweep_id: 7,
+        cell_key: 'test|cell|key',
+        precision: 'fp8',
+        batch_size: 1,
+        data_number: 500,
+        tensor_parallel_size: 1,
+        scenario: 'offline',
+        retry_num: 3,
+        status: GpuSweepCellStatus.PENDING,
+        ...overrides,
+      });
+    }
+
+    beforeEach(async () => {
+      const module = await buildModule(true);
+      service = module.get<GpuSweepService>(GpuSweepService);
+      // dispatchCell calls cellRepo.update on success
+      cellRepo.update.mockResolvedValue({});
+    });
+
+    it('routes a node4 (vendor=furiosa) mlperf cell to NpuEvalService.create with npu_type=RNGD', async () => {
+      const cell = makeCell({
+        node: 'node4',
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: 'RNGD',
+      });
+
+      // dispatchCell is private — access via bracket notation in test only.
+      await (
+        service as unknown as {
+          dispatchCell: (s: GpuSweep, c: GpuSweepCell) => Promise<void>;
+        }
+      ).dispatchCell(sweep, cell);
+
+      expect(npuEvalService.create).toHaveBeenCalledTimes(1);
+      expect(mpExamService.create).not.toHaveBeenCalled();
+      expect(mmExamService.create).not.toHaveBeenCalled();
+      const dto = npuEvalService.create.mock.calls[0][0];
+      expect(dto.npu_type).toBe('RNGD');
+      expect(dto.benchmark).toBe('mlperf');
+      expect(dto.framework).toBe('furiosa-llm');
+      expect(dto.model).toBe('Llama-3.1-8B-Instruct');
+      expect(dto.precision).toBe('fp8');
+      // CRITICAL: NPU dispatch must NOT carry device_type='GPU'.
+      expect((dto as Record<string, unknown>).device_type).toBeUndefined();
+    });
+
+    it('routes a node5 (vendor=rebellions) mmlu cell to NpuEvalService.create with npu_type=Atom+', async () => {
+      const cell = makeCell({
+        node: 'node5',
+        kind: GpuSweepCellKind.MMLU,
+        gpu_type: 'Atom+',
+      });
+
+      await (
+        service as unknown as {
+          dispatchCell: (s: GpuSweep, c: GpuSweepCell) => Promise<void>;
+        }
+      ).dispatchCell(sweep, cell);
+
+      expect(npuEvalService.create).toHaveBeenCalledTimes(1);
+      expect(mpExamService.create).not.toHaveBeenCalled();
+      expect(mmExamService.create).not.toHaveBeenCalled();
+      const dto = npuEvalService.create.mock.calls[0][0];
+      expect(dto.npu_type).toBe('Atom+');
+      expect(dto.benchmark).toBe('mmlu');
+      expect(dto.framework).toBe('vllm-rbln');
+      expect(dto.dataset).toBe('mmlu');
+      expect((dto as Record<string, unknown>).device_type).toBeUndefined();
+    });
+
+    it('routes a node2 (vendor=nvidia) mlperf cell to MpExamService.create — no NPU regression', async () => {
+      const cell = makeCell({
+        node: 'node2',
+        kind: GpuSweepCellKind.MLPERF,
+        gpu_type: 'NVIDIA-L40',
+      });
+
+      await (
+        service as unknown as {
+          dispatchCell: (s: GpuSweep, c: GpuSweepCell) => Promise<void>;
+        }
+      ).dispatchCell(sweep, cell);
+
+      expect(mpExamService.create).toHaveBeenCalledTimes(1);
+      expect(npuEvalService.create).not.toHaveBeenCalled();
+      const dto = mpExamService.create.mock.calls[0][0];
+      expect(dto.device_type).toBe('GPU');
+      expect(dto.gpu_type).toBe('NVIDIA-L40');
+    });
+
+    it('routes a node3 (vendor=nvidia) mmlu cell to MmExamService.create — no NPU regression', async () => {
+      const cell = makeCell({
+        node: 'node3',
+        kind: GpuSweepCellKind.MMLU,
+        gpu_type: 'NVIDIA-L40-44GiB',
+      });
+
+      await (
+        service as unknown as {
+          dispatchCell: (s: GpuSweep, c: GpuSweepCell) => Promise<void>;
+        }
+      ).dispatchCell(sweep, cell);
+
+      expect(mmExamService.create).toHaveBeenCalledTimes(1);
+      expect(npuEvalService.create).not.toHaveBeenCalled();
+      const dto = mmExamService.create.mock.calls[0][0];
+      expect(dto.device_type).toBe('GPU');
+      expect(dto.gpu_type).toBe('NVIDIA-L40-44GiB');
     });
   });
 });

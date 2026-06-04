@@ -63,3 +63,9 @@ export const NpuEvalAtomPlusPaths = {
 
   DEVICE_COMPARISON_PATH: 'device-comparison'
 } as const;
+
+// ----------------------------------------------------------------------
+
+export const MethodologyPaths = {
+  ROOT_PATH: '/methodology'
+} as const;

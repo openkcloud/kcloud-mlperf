@@ -48,11 +48,18 @@ export class StartSweepDto {
   name?: string;
 }
 
+// WS-E (mega-plan v2.2): node union extended from {node2,node3} (NVIDIA-only)
+// to {node2,node3,node4,node5} to add Furiosa RNGD (node4) + Rebellions ATOM
+// (node5). Cells may now optionally carry NPU dispatch metadata so the
+// dispatch path can resolve the correct allocatable resource.
+export type SweepNode = 'node2' | 'node3' | 'node4' | 'node5';
+export type SweepVendor = 'nvidia' | 'furiosa' | 'rebellions';
+
 export interface SweepCellSpec {
   cell_key: string;
   kind: GpuSweepCellKind;
   gpu_type: string;
-  node: 'node2' | 'node3';
+  node: SweepNode;
   gpu_index: 0 | 1;
   precision: 'bf16' | 'fp8';
   batch_size: number;
@@ -60,6 +67,11 @@ export interface SweepCellSpec {
   tensor_parallel_size: number;
   scenario: 'offline' | 'server';
   retry_num: number;
+  // WS-E NPU dispatch metadata (optional — present only on node4/node5 cells).
+  // `vendor` and `npu_resource` carry the live-cluster allocatable key so the
+  // dispatcher can request the correct device without re-deriving it.
+  vendor?: SweepVendor;
+  npu_resource?: string;
 }
 
 export interface SweepTimelineEntry {
@@ -76,12 +88,14 @@ export interface SweepPreviewResponse {
   timeline: {
     node2: SweepTimelineEntry[];
     node3: SweepTimelineEntry[];
+    node4: SweepTimelineEntry[];
+    node5: SweepTimelineEntry[];
   };
   dedup_keys_excluded: string[];
 }
 
 export interface CalibrationRunResult {
-  node: 'node2' | 'node3';
+  node: SweepNode;
   exam_id: number;
   tt100t_seconds: number;
   tps: number;
@@ -167,6 +181,18 @@ export interface SweepStatusResponse {
       current_cell_key: string | null;
     };
     node3: {
+      busy: boolean;
+      last_dispatch_at: string | null;
+      current_cell_key: string | null;
+    };
+    // WS-E: NPU nodes carry the same shape as GPU nodes; vendor-specific
+    // metadata is exposed via the `hardware` catalog in /options.
+    node4: {
+      busy: boolean;
+      last_dispatch_at: string | null;
+      current_cell_key: string | null;
+    };
+    node5: {
       busy: boolean;
       last_dispatch_at: string | null;
       current_cell_key: string | null;

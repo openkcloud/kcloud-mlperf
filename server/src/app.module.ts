@@ -28,6 +28,7 @@ import { DeviceRegistryModule } from './device-registry/device-registry.module';
 import { GpuSweep } from './gpu-sweep/entities/gpu-sweep.entity';
 import { GpuSweepCell } from './gpu-sweep/entities/gpu-sweep-cell.entity';
 import { RunReconcilerModule } from './run-reconciler/run-reconciler.module';
+import { ReproMetricsModule } from './metrics/repro-metrics.module';
 
 @Module({
   imports: [
@@ -56,6 +57,14 @@ import { RunReconcilerModule } from './run-reconciler/run-reconciler.module';
           GpuSweepCell,
         ],
         synchronize: configService.get('NODE_ENV') === 'development',
+        // NOTE: migrationsRun is intentionally OFF. The live prod DB was created
+        // via `synchronize` (no `migrations` table), and 1714276800000-gpu-sweep
+        // uses UNGUARDED `CREATE TYPE ... ENUM` — auto-running all migrations on
+        // boot would throw "type already exists" and crashloop the backend.
+        // The R8/BB-3 columns are nullable and were applied directly as
+        // `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (see migration file
+        // 1715100000000-add-power-and-percentiles for the exact DDL / record).
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
       }),
       inject: [ConfigService],
     }),
@@ -73,6 +82,7 @@ import { RunReconcilerModule } from './run-reconciler/run-reconciler.module';
     ComparisonModule,
     DeviceRegistryModule,
     RunReconcilerModule,
+    ReproMetricsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -52,6 +52,24 @@ export class CreateNpuExamResultDto {
   @IsNumber()
   npuPower: number | null;
 
+  // BB-3: latency percentiles (seconds), computed from per-sample latencies.
+  @IsOptional()
+  @IsNumber()
+  p50LatencyS?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  p90LatencyS?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  p99LatencyS?: number | null;
+
+  // R8: mean device power (Watts) over the run window.
+  @IsOptional()
+  @IsNumber()
+  avgPowerW?: number | null;
+
   @IsOptional()
   @IsString()
   valid: string | null;

@@ -4,9 +4,10 @@ import { MpExamResultController } from './mp-exam-result.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MpExamResult } from 'src/entities/mp-exam-result.entity';
 import { MpExam } from 'src/entities/mp-exam.entity';
+import { PrometheusModule } from '../prometheus/prometheus.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MpExamResult, MpExam])],
+  imports: [TypeOrmModule.forFeature([MpExamResult, MpExam]), PrometheusModule],
   providers: [MpExamResultService],
   controllers: [MpExamResultController],
   exports: [MpExamResultService],

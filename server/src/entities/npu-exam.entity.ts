@@ -86,6 +86,45 @@ export class NpuExam {
   @Column({ type: 'varchar', nullable: true, default: null })
   error_log: string;
 
+  // --- Reproducibility metadata (US-003). All nullable — captured at
+  // create-time from process.env so unwired deployments degrade gracefully.
+  @Column({ type: 'varchar', length: 40, nullable: true, default: null })
+  platform_commit_sha: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true, default: null })
+  image_digest: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, default: null })
+  k8s_pod_name: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, default: null })
+  k8s_node_name: string | null;
+
+  @Column({ type: 'bigint', nullable: true, default: null })
+  seed: string | null;
+
+  @Column({ type: 'text', nullable: true, default: null })
+  runtime_versions: string | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true, default: null })
+  result_schema_version: string | null;
+
+  // --- US-0.5 canonical N=11 additions (mega-plan v2.2). All nullable.
+  @Column({ type: 'varchar', length: 64, nullable: true, default: null })
+  tokenizer_sha: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, default: null })
+  model_sha: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, default: null })
+  dataset_sha: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true, default: null })
+  seed_value: string | null;
+
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  fairness_assessment: Record<string, unknown> | null;
+
   // Test starting time
   @Column({ type: 'varchar', nullable: true, default: null })
   started_at: string;

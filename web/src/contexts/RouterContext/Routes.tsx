@@ -7,6 +7,7 @@ import {
   AdminPageLinks,
   DashboardPageLinks,
   HomePageLinks,
+  MethodologyPageLinks,
   MmluPageLinks,
   MpExamPageLinks,
   NpuEvalPageLinks,
@@ -42,6 +43,7 @@ const NpuRealtimePage = lazy(() => import('@/pages/dashboard/npu-realtime'));
 const SweepControlPage = lazy(() => import('@/pages/dashboard/sweep-control'));
 const MlperfDeviceComparisonPage = lazy(() => import('@/pages/mlperf/device-comparison'));
 const MmluDeviceComparisonPage = lazy(() => import('@/pages/mmlu/device-comparison'));
+const MethodologyPage = lazy(() => import('@/pages/methodology/MethodologyPage'));
 
 // ----------------------------------------------------------------------
 
@@ -201,6 +203,12 @@ export const Routes = () => {
     {
       path: AdminPageLinks.sweepControl,
       element: <AdminSweepControlPage />
+    },
+
+    // methodology page
+    {
+      path: MethodologyPageLinks.main,
+      element: <MethodologyPage />
     },
 
     // not found pages

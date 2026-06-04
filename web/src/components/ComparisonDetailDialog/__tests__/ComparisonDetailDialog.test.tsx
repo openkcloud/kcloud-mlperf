@@ -97,7 +97,9 @@ describe('ComparisonDetailDialog', () => {
       />
     );
     expect(screen.getByTestId('metrics-table')).toBeInTheDocument();
-    expect(screen.getByText('tt100t_seconds')).toBeInTheDocument();
+    // The metric key is rendered via METRIC_META as a human label + unit
+    // ('tt100t_seconds' -> 'TT100T (s)') rather than the raw key.
+    expect(screen.getByText('TT100T (s)')).toBeInTheDocument();
     expect(screen.getByText('Delta (B − A)')).toBeInTheDocument();
   });
 

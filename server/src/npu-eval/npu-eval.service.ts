@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -17,7 +18,11 @@ import { CreateNpuExamResultDto } from './dto/create-npu-exam-result.dto';
 import { PaginationQueryDto } from '../common-dto/pagination-query.dto';
 import { captureReproducibilityMetadata } from '../reproducibility/reproducibility.metadata';
 import { formatSeed } from '../reproducibility/seed-format';
-import { scoreMmluRun, type MmluLetter } from '../mm-exam/mmlu-scoring';
+import {
+  scoreMmluRun,
+  isMmluLetter,
+  type MmluLetter,
+} from '../mm-exam/mmlu-scoring';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -25,6 +30,8 @@ import { StatusEnum } from '../enums/status.enum';
 import { selfFairnessSnapshot } from '../comparison/fairness-assessment';
 import { type HardwareVendor } from '../comparison/comparison.service';
 import { LatencyMeasurementContext } from '../enums/latency-measurement-context.enum';
+import { validateDevicePrecision } from '../common-validation/device-precision';
+import { PowerCaptureService } from '../prometheus/power-capture.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -38,15 +45,15 @@ dayjs.extend(timezone);
 // URL and Atom+ exams were silently served by the RNGD silicon, breaking
 // any cross-vendor comparison.
 //
-// ATOM now defaults to the in-cluster Service DNS (vllm-atomplus.npu) backed
-// by the Lane A deployment in app/atomplus/.  The legacy node5:30093 manual
-// bypass is being retired — override via NPU_INFERENCE_URL_ATOM only when
-// running outside the cluster (local dev, smoke harnesses).
+// v37 Fix #(new): cross-node Calico VXLAN to node5 is currently broken
+// (admin issue), but pod → node5-underlay-IP:NodePort works fine. Default
+// the ATOM URL to the node5 NodePort `10.254.202.111:30093` so the
+// backend → Atom+ inference path works without VXLAN. Override via
+// NPU_INFERENCE_URL_ATOM (e.g. back to vllm-atomplus.npu Service DNS)
+// once networking is repaired — no rebuild needed.
 const NPU_INFERENCE_URLS: Record<string, string> = {
   RNGD: process.env.NPU_INFERENCE_URL_RNGD || 'http://10.254.202.114:8000',
-  ATOM:
-    process.env.NPU_INFERENCE_URL_ATOM ||
-    'http://vllm-atomplus.npu.svc.cluster.local:8000',
+  ATOM: process.env.NPU_INFERENCE_URL_ATOM || 'http://10.254.202.111:30093',
 };
 
 const FALLBACK_NPU_INFERENCE_URL =
@@ -96,9 +103,27 @@ export class NpuEvalService implements OnModuleInit {
     @InjectRepository(NpuExamResult)
     private readonly npuExamResultRepo: Repository<NpuExamResult>,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly powerCapture: PowerCaptureService,
   ) {}
 
+  // R8: map an npu_type label to the power-metric vendor used by
+  // PowerCaptureService (RNGD → furiosa, Atom+ → rebellions).
+  private powerVendorForNpuType(
+    npuType: string | null | undefined,
+  ): 'furiosa' | 'rebellions' | null {
+    const upper = (npuType ?? '').toUpperCase().trim();
+    if (upper.startsWith('RNGD')) return 'furiosa';
+    if (upper.startsWith('ATOM')) return 'rebellions';
+    return null;
+  }
+
   async onModuleInit() {
+    // v37 Fix #4: relax failure_reason to nullable so successful npu-eval runs
+    // can clear the default UNKNOWN_NO_LOGS classification. Idempotent ALTER
+    // — safe to run on every boot. Mirrors the mm-exam pattern at
+    // mm-exam.service.ts:ensureResultAccMathColumn.
+    await this.ensureFailureReasonNullable();
+
     // Resume any pending/preparing exams on server restart
     const pendingExams = await this.npuExamRepo.find({
       where: [{ status: StatusEnum.PENDING }, { status: StatusEnum.PREPARING }],
@@ -109,6 +134,47 @@ export class NpuEvalService implements OnModuleInit {
         `Resuming NPU exam ${exam.id} from status=${exam.status}`,
       );
       await this.scheduleBenchmark(exam);
+    }
+  }
+
+  /** v37 Fix #4: drop NOT NULL on failure_reason for npu_exam_result so a
+   * successful run can write `NULL` instead of the bogus UNKNOWN_NO_LOGS
+   * default. Idempotent — only ALTERs when the column is still NOT NULL. */
+  private async ensureFailureReasonNullable(): Promise<void> {
+    const tables = [
+      'npu_exam_result',
+      'mp_exam_result',
+      'mm_exam_result',
+    ];
+    for (const table of tables) {
+      try {
+        const queryRunner =
+          this.npuExamRepo.manager.connection.createQueryRunner();
+        try {
+          const hasTable = await queryRunner.hasTable(table);
+          if (!hasTable) continue;
+          const rows = await queryRunner.query(
+            `SELECT is_nullable FROM information_schema.columns
+             WHERE table_name = $1 AND column_name = 'failure_reason'`,
+            [table],
+          );
+          const isNullable = rows?.[0]?.is_nullable === 'YES';
+          if (!isNullable) {
+            await queryRunner.query(
+              `ALTER TABLE ${table} ALTER COLUMN failure_reason DROP NOT NULL`,
+            );
+            this.logger.log(
+              `Dropped NOT NULL on ${table}.failure_reason (v37 Fix #4)`,
+            );
+          }
+        } finally {
+          await queryRunner.release();
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to ensure failure_reason nullable on ${table}: ${(err as Error).message}`,
+        );
+      }
     }
   }
 
@@ -125,11 +191,55 @@ export class NpuEvalService implements OnModuleInit {
           memory_gb: 48,
           compute_tflops: 256,
         },
+        // B1: Atom+ (Rebellions RBLN-CA22) surfaced for /api/npu-eval/npu-list
+        // so the frontend NPU picker can offer the second vendor. FP16 only —
+        // see validateDevicePrecision() for the runtime guard.
+        {
+          npu_model: 'Atom+',
+          npu_count: 2,
+          memory_gb: 32,
+          compute_tflops: 128,
+        },
       ],
     };
   }
 
+  // B2 lives in src/common-validation/device-precision.ts and is invoked at
+  // the top of create() so the 400 isn't laundered to a 500 by the try/catch.
+
   async create(createNpuExamDto: CreateNpuExamDto) {
+    // B2: validate (device, precision) BEFORE the try/catch so the 400 isn't
+    // swallowed and re-thrown as a 500 by the catch arm below.
+    validateDevicePrecision(
+      'npu',
+      createNpuExamDto.npu_type,
+      createNpuExamDto.precision,
+    );
+    // B3 defense-in-depth: class-validator already enforces @Min(1) on
+    // data_number / max_output_tokens in CreateNpuExamDto, but if a caller
+    // bypasses the global ValidationPipe (e.g., gRPC path), explicitly reject
+    // values <= 0 here so we never enqueue an exam that will issue 8000+
+    // HTTP-400 inference errors (see run id 103 "tt").
+    if (
+      createNpuExamDto.data_number !== undefined &&
+      createNpuExamDto.data_number !== null &&
+      createNpuExamDto.data_number < 1
+    ) {
+      throw new HttpException(
+        'data_number must be >= 1 (0 is not "use default"; the benchmark needs at least one sample).',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (
+      createNpuExamDto.max_output_tokens !== undefined &&
+      createNpuExamDto.max_output_tokens !== null &&
+      createNpuExamDto.max_output_tokens < 1
+    ) {
+      throw new HttpException(
+        'max_output_tokens must be >= 1.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     try {
       const currentTime = dayjs().tz(this.timezone);
       const startTime = dayjs(createNpuExamDto.started_at).tz(this.timezone);
@@ -340,10 +450,29 @@ export class NpuEvalService implements OnModuleInit {
       result_npu_mem_peak: dto.npuMemPeak,
       result_npu_util: dto.npuUtil,
       result_npu_power: dto.npuPower,
+      result_perf_p50_latency_s: dto.p50LatencyS ?? null,
+      result_perf_p90_latency_s: dto.p90LatencyS ?? null,
+      result_perf_p99_latency_s: dto.p99LatencyS ?? null,
+      avg_power_w: dto.avgPowerW ?? null,
       result_valid: dto.valid,
     });
 
-    return await this.npuExamResultRepo.save(result);
+    const saved = await this.npuExamResultRepo.save(result);
+
+    // Fix #4 (FINAL-SUMMARY flag): on a successful run, clear the default
+    // UNKNOWN_NO_LOGS failure_reason so the row reflects "OK" rather than a
+    // bogus failure classification. The Job-watcher only writes failure_reason
+    // for failed Jobs, so successful npu-eval rows otherwise inherit the
+    // entity-default forever.
+    if (dto.valid === 'true') {
+      await this.npuExamResultRepo.update(
+        { id: saved.id },
+        { failure_reason: null },
+      );
+      saved.failure_reason = null;
+    }
+
+    return saved;
   }
 
   async findAllResults(examId: number) {
@@ -448,8 +577,46 @@ export class NpuEvalService implements OnModuleInit {
         started_at: now,
       });
 
+      // Fix #21: cap cpu_core ≤7 to preserve 1-core headroom on shared nodes
+      // (matches mm-exam.service.ts:156 `Math.min(data.cpu_core, 7)`). Without
+      // this, an in-process MMLU loop on a maxed-out cpu_core starves the
+      // event loop and the run hangs indefinitely. cpu_core is currently only
+      // used as documentation on the in-process path, but we cap it at read
+      // time and log so any future thread-pool / k8s-resource consumer of
+      // exam.cpu_core inherits the guard.
+      const cappedCpuCore = Math.min(exam.cpu_core ?? 7, 7);
+      if (cappedCpuCore !== exam.cpu_core) {
+        this.logger.log(
+          `NPU exam ${examId}: cpu_core capped ${exam.cpu_core} → ${cappedCpuCore} ` +
+            `(7-core ceiling for shared node3 headroom)`,
+        );
+      }
+
+      // Optional MMLU-Pro subject filter via dataset "mmlu-pro:<subject>" so an
+      // NPU run can match a GPU mm-exam's subject for strict apples-to-apples
+      // accuracy. Plain "mmlu-pro" (no suffix) keeps the full multi-subject set.
+      const dsParts = String(exam.dataset ?? '').split(':');
+      this.mmluSubjectFilter =
+        exam.benchmark === 'mmlu' && dsParts.length > 1 && dsParts[1].trim()
+          ? dsParts[1].trim().toLowerCase()
+          : null;
+
       // Load dataset samples
       const samples = this.loadDatasetSamples(exam.benchmark);
+
+      // Fix #21: for MMLU, error out hard if the real MMLU-Pro dataset was not
+      // loaded (fell back to DEFAULT_PROMPTS). Silently running on 10 generic
+      // prompts produces useless accuracy numbers and the user cannot tell
+      // from /status that the dataset was missing.
+      if (
+        exam.benchmark === 'mmlu' &&
+        (samples.length === 0 || this.lastLoadFellBackToDefaults)
+      ) {
+        throw new BadRequestException(
+          'MMLU dataset not loaded; expected /mnt/datasets/mmlu-pro to be available',
+        );
+      }
+
       const numSamples =
         exam.data_number === 0
           ? samples.length
@@ -522,6 +689,13 @@ export class NpuEvalService implements OnModuleInit {
           }
         }
 
+        // BB-3: per-run latency percentiles (seconds) from the run's
+        // per-sample wall latencies (nearest-rank). Null when the run
+        // collected no per-sample latencies (e.g. every sample errored).
+        const p50 = this.percentile(runResult.sampleLatencies, 50);
+        const p90 = this.percentile(runResult.sampleLatencies, 90);
+        const p99 = this.percentile(runResult.sampleLatencies, 99);
+
         // Store result
         await this.createResult({
           examId,
@@ -537,6 +711,9 @@ export class NpuEvalService implements OnModuleInit {
           npuMemPeak: 0,
           npuUtil: 0,
           npuPower: 0,
+          p50LatencyS: p50,
+          p90LatencyS: p90,
+          p99LatencyS: p99,
           valid: runResult.errors === 0 ? 'true' : 'false',
         });
 
@@ -559,6 +736,39 @@ export class NpuEvalService implements OnModuleInit {
           end_at: endTime,
         });
         this.logger.log(`NPU exam ${examId}: COMPLETED`);
+
+        // R8 (perf/Watt): now that end_at is known, capture the mean device
+        // power over the run window [started_at..end_at] and write it onto
+        // every result row of this exam. Best-effort — wrapped so a Prometheus
+        // failure/empty result never affects the completed run. Cannot be
+        // backfilled (Prometheus retention); only future runs get a value.
+        try {
+          const finalExam = await this.npuExamRepo.findOne({
+            where: { id: examId },
+          });
+          const vendor = this.powerVendorForNpuType(finalExam?.npu_type);
+          if (vendor && finalExam) {
+            const avgPowerW = await this.powerCapture.captureAvgPower(
+              vendor,
+              finalExam.k8s_node_name,
+              finalExam.started_at,
+              finalExam.end_at,
+            );
+            if (avgPowerW != null) {
+              await this.npuExamResultRepo.update(
+                { exam_id: examId },
+                { avg_power_w: avgPowerW },
+              );
+              this.logger.log(
+                `NPU exam ${examId}: avg_power_w=${avgPowerW.toFixed(2)}W (${vendor})`,
+              );
+            }
+          }
+        } catch (powerErr) {
+          this.logger.warn(
+            `NPU exam ${examId}: avg power capture failed (best-effort): ${(powerErr as Error).message}`,
+          );
+        }
       }
     } catch (error) {
       this.logger.error(
@@ -597,6 +807,9 @@ export class NpuEvalService implements OnModuleInit {
     /** US-004: collected completion bodies, in sample order. Empty string for
      * samples that errored, so the array length equals samples.length. */
     completions: string[];
+    /** BB-3: per-sample wall latency in SECONDS (one entry per completed
+     * sample). Used to compute p50/p90/p99 at result-write time. */
+    sampleLatencies: number[];
   }> {
     const runStart = performance.now();
     let totalTokens = 0;
@@ -604,6 +817,7 @@ export class NpuEvalService implements OnModuleInit {
     let totalTpotSum = 0;
     const tt100tValues: number[] = [];
     const completions: string[] = [];
+    const sampleLatencies: number[] = [];
     let samplesCompleted = 0;
     let errors = 0;
 
@@ -638,6 +852,9 @@ export class NpuEvalService implements OnModuleInit {
           const tt100t = (result.token100Time - result.startTime) / 1000;
           tt100tValues.push(tt100t);
         }
+
+        // BB-3: per-sample wall latency (end-to-end) in seconds.
+        sampleLatencies.push((result.endTime - result.startTime) / 1000);
 
         totalTokens += result.tokenCount;
         completions.push(result.body ?? '');
@@ -676,7 +893,21 @@ export class NpuEvalService implements OnModuleInit {
       errors,
       bestTt100t: tt100tValues.length > 0 ? Math.min(...tt100tValues) : null,
       completions,
+      sampleLatencies,
     };
+  }
+
+  // BB-3: nearest-rank percentile over a list of values (seconds). Returns
+  // null when the list is empty. Nearest-rank: sort ascending, take the
+  // ceil(p/100 * n)-th value (1-indexed), clamped to the array bounds.
+  private percentile(values: number[], p: number): number | null {
+    const xs = values
+      .filter((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+      .sort((a, b) => a - b);
+    if (xs.length === 0) return null;
+    const rank = Math.ceil((p / 100) * xs.length);
+    const idx = Math.min(Math.max(rank, 1), xs.length) - 1;
+    return xs[idx];
   }
 
   // US-004: load MMLU expected-letter answers in the same order as
@@ -684,6 +915,17 @@ export class NpuEvalService implements OnModuleInit {
   // files from DATASET_BASE_PATH/mmlu-pro and extracts the `answer` field.
   // Returns null if the dataset is unavailable (e.g., dev box without NFS),
   // in which case accuracy stays 0 because expected answers are unknown.
+  // Optional MMLU-Pro subject filter (e.g. "biology"). Set from the exam's
+  // dataset field ("mmlu-pro:<subject>") so an NPU MMLU run can be restricted
+  // to the SAME category a GPU mm-exam used → strictly comparable accuracy.
+  // Single-flight is safe: benchmark execution is serialized per the same
+  // assumption as lastLoadFellBackToDefaults.
+  private mmluSubjectFilter: string | null = null;
+  private mmluItemMatchesSubject(item: { category?: unknown }): boolean {
+    if (!this.mmluSubjectFilter) return true;
+    return String(item?.category ?? '').toLowerCase() === this.mmluSubjectFilter;
+  }
+
   private loadMmluExpectedLetters(): MmluLetter[] | null {
     try {
       const datasetDir = path.join(DATASET_BASE_PATH, 'mmlu-pro');
@@ -699,10 +941,12 @@ export class NpuEvalService implements OnModuleInit {
             if (!line.trim()) continue;
             try {
               const item = JSON.parse(line.trim());
+              if (!this.mmluItemMatchesSubject(item)) continue;
               const a = String(item.answer ?? '').toUpperCase();
-              if (a === 'A' || a === 'B' || a === 'C' || a === 'D')
-                answers.push(a as MmluLetter);
-              else answers.push('A'); // unknown → placeholder; scoring will mark wrong
+              // MMLU-Pro is 10-option (A–J). Push the real letter; keep array
+              // aligned with prompts by using an 'A' placeholder for the rare
+              // unparseable answer (scoring then marks that sample wrong).
+              answers.push(isMmluLetter(a) ? a : 'A');
             } catch {
               /* skip malformed line */
             }
@@ -712,10 +956,9 @@ export class NpuEvalService implements OnModuleInit {
             const data = JSON.parse(fs.readFileSync(fpath, 'utf-8'));
             if (Array.isArray(data)) {
               for (const item of data) {
+                if (!this.mmluItemMatchesSubject(item)) continue;
                 const a = String(item.answer ?? '').toUpperCase();
-                if (a === 'A' || a === 'B' || a === 'C' || a === 'D')
-                  answers.push(a as MmluLetter);
-                else answers.push('A');
+                answers.push(isMmluLetter(a) ? a : 'A');
               }
             }
           } catch {
@@ -948,7 +1191,17 @@ export class NpuEvalService implements OnModuleInit {
   // Dataset Loading
   // =====================================================================
 
+  /**
+   * Fix #21: indicates whether the most recent `loadDatasetSamples()` call
+   * fell back to DEFAULT_PROMPTS (no real dataset on disk). `executeBenchmark`
+   * inspects this for MMLU to fail hard rather than silently scoring against
+   * generic prompts. Single-shot flag is fine because benchmark execution
+   * is serialized per-exam.
+   */
+  private lastLoadFellBackToDefaults = false;
+
   private loadDatasetSamples(benchmark: string): string[] {
+    this.lastLoadFellBackToDefaults = false;
     const samples: string[] = [];
 
     try {
@@ -1000,6 +1253,7 @@ export class NpuEvalService implements OnModuleInit {
                   if (!line.trim()) continue;
                   try {
                     const item = JSON.parse(line.trim());
+                    if (!this.mmluItemMatchesSubject(item)) continue;
                     const q = item.question || item.input || '';
                     if (q) samples.push(q);
                   } catch {}
@@ -1008,6 +1262,7 @@ export class NpuEvalService implements OnModuleInit {
                 const data = JSON.parse(raw);
                 if (Array.isArray(data)) {
                   for (const item of data) {
+                    if (!this.mmluItemMatchesSubject(item)) continue;
                     const q = item.question || item.input || '';
                     if (q) samples.push(q);
                   }
@@ -1032,6 +1287,7 @@ export class NpuEvalService implements OnModuleInit {
       this.logger.warn(
         `No dataset samples found for ${benchmark}. Using ${DEFAULT_PROMPTS.length} default prompts.`,
       );
+      this.lastLoadFellBackToDefaults = true;
       return [...DEFAULT_PROMPTS];
     }
 

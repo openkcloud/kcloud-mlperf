@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MpExamResult } from 'src/entities/mp-exam-result.entity';
@@ -18,6 +19,7 @@ import { PaginationQueryDto } from '../common-dto/pagination-query.dto';
 import { MpExamModeEnum } from 'src/enums/mp-exam-mode.enum';
 import { MpExam } from '../entities/mp-exam.entity';
 import { canonicalize } from '../comparison/config-fingerprint';
+import { PowerCaptureService } from '../prometheus/power-capture.service';
 
 const TPS_BEST_VALUES: Record<TestScenarioEnum, number> = {
   [TestScenarioEnum.OFFLINE]: 146_960,
@@ -25,13 +27,77 @@ const TPS_BEST_VALUES: Record<TestScenarioEnum, number> = {
 };
 
 @Injectable()
-export class MpExamResultService {
+export class MpExamResultService implements OnModuleInit {
   private readonly logger = new Logger(MpExamResultService.name);
 
   constructor(
     @InjectRepository(MpExamResult)
     private readonly mpExamResultRepo: Repository<MpExamResult>,
+    private readonly powerCapture: PowerCaptureService,
   ) {}
+
+  // R8: derive the power-metric vendor from the exam's device_type/gpu_type.
+  // GPU rows are nvidia; an NPU-typed mp_exam maps to furiosa (RNGD) or
+  // rebellions (Atom+). Returns null when the vendor can't be determined.
+  private powerVendorForExam(
+    exam: MpExam,
+  ): 'nvidia' | 'furiosa' | 'rebellions' | null {
+    const dt = (exam.device_type || '').toUpperCase();
+    const hw = (exam.gpu_type || '').toUpperCase();
+    if (dt === 'NPU') {
+      if (hw.includes('RNGD')) return 'furiosa';
+      if (hw.includes('ATOM')) return 'rebellions';
+      return null;
+    }
+    // Default GPU path.
+    return hw ? 'nvidia' : null;
+  }
+
+  async onModuleInit(): Promise<void> {
+    // v37 Fix #20: ensure result_acc column exists on mp_exam_result.
+    // Idempotent ALTER — mirrors mm-exam.service.ts ensureResultAccMathColumn.
+    await this.ensureResultAccColumn();
+  }
+
+  private async ensureResultAccColumn(): Promise<void> {
+    try {
+      const queryRunner =
+        this.mpExamResultRepo.manager.connection.createQueryRunner();
+      try {
+        const hasTable = await queryRunner.hasTable('mp_exam_result');
+        if (!hasTable) return;
+        const rows = await queryRunner.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.columns
+            WHERE table_name = 'mp_exam_result'
+            AND column_name = 'result_acc'
+          ) AS exists
+        `);
+        if (!rows?.[0]?.exists) {
+          this.logger.log(
+            'Adding result_acc column to mp_exam_result (v37 Fix #20)',
+          );
+          await queryRunner.query(`
+            ALTER TABLE mp_exam_result
+            ADD COLUMN result_acc float8 DEFAULT NULL
+          `);
+        }
+        // Back-fill any existing rows where rouge1 was parsed but
+        // result_acc is still null.
+        await queryRunner.query(`
+          UPDATE mp_exam_result
+          SET result_acc = result_acc_rg_1
+          WHERE result_acc IS NULL AND result_acc_rg_1 IS NOT NULL
+        `);
+      } finally {
+        await queryRunner.release();
+      }
+    } catch (err) {
+      this.logger.warn(
+        `ensureResultAccColumn failed: ${(err as Error).message}`,
+      );
+    }
+  }
 
   private async writeResultJson(params: {
     exam: MpExam;
@@ -133,6 +199,11 @@ export class MpExamResultService {
     return match ? Number(match[1]) : null;
   }
 
+  // BB-3: convert a nanosecond value (or null) to seconds (or null).
+  private nsToSeconds(ns: number | null): number | null {
+    return ns == null ? null : ns / 1_000_000_000;
+  }
+
   private getString(regex: RegExp, text: string): string | null {
     const match = text.match(regex);
     return match ? match[1] : null;
@@ -152,6 +223,8 @@ export class MpExamResultService {
     | 'result_vram_peak'
     | 'result_tt100t'
     | 'result_gpu_util'
+    // R8: avg_power_w is attached in create() from Prometheus, not parsed here.
+    | 'avg_power_w'
   > {
     try {
       let accuracyObj: {
@@ -210,6 +283,21 @@ export class MpExamResultService {
               )
             : null,
 
+        // BB-3: latency percentiles in seconds. MLPerf LoadGen summary emits
+        // lines like "50.00 percentile latency (ns) : 123456789" (also 90.00,
+        // 99.00). Same parse pattern as result_perf_serv_ttft — getNumber()
+        // matches the ns integer, then /1e9 normalises to seconds. Null when
+        // the summary lacks the line (e.g. some non-server scenarios).
+        result_perf_p50_latency_s: this.nsToSeconds(
+          this.getNumber(/50\.00 percentile latency \(ns\)\s*:\s*([0-9]+)/, text),
+        ),
+        result_perf_p90_latency_s: this.nsToSeconds(
+          this.getNumber(/90\.00 percentile latency \(ns\)\s*:\s*([0-9]+)/, text),
+        ),
+        result_perf_p99_latency_s: this.nsToSeconds(
+          this.getNumber(/99\.00 percentile latency \(ns\)\s*:\s*([0-9]+)/, text),
+        ),
+
         // Accuracy (ROUGE)
         result_acc_rg_1: accuracyObj.rouge1 ? Number(accuracyObj.rouge1) : null,
         result_acc_rg_2: accuracyObj.rouge2 ? Number(accuracyObj.rouge2) : null,
@@ -217,6 +305,9 @@ export class MpExamResultService {
         result_acc_rg_lsum: accuracyObj.rougeLsum
           ? Number(accuracyObj.rougeLsum)
           : null,
+        // v37 Fix #20: surface rouge1 as the canonical accuracy value so
+        // /api/comparison/list maps it into metrics.accuracy_pct.
+        result_acc: accuracyObj.rouge1 ? Number(accuracyObj.rouge1) : null,
       };
     } catch (error) {
       throw new Error(error as string);
@@ -298,6 +389,23 @@ export class MpExamResultService {
     exam?: MpExam;
   }) {
     try {
+      // R8 (perf/Watt): capture mean device power over the run window once per
+      // create() call (the window is shared across the repeat rows). Best-effort
+      // — null on any failure; never blocks the result write. Only attempted
+      // when we have the exam (carrying node + started/end timestamps).
+      let avgPowerW: number | null = null;
+      if (params.exam) {
+        const vendor = this.powerVendorForExam(params.exam);
+        if (vendor) {
+          avgPowerW = await this.powerCapture.captureAvgPower(
+            vendor,
+            params.exam.k8s_node_name,
+            params.exam.started_at,
+            params.exam.end_at,
+          );
+        }
+      }
+
       const response: MpExamResult[] = [];
       for (let i = 1; i <= params.repeatCount; i++) {
         const summaryData = await this.extractSummaryData({
@@ -311,6 +419,14 @@ export class MpExamResultService {
           i,
         );
 
+        // v37 Fix #4: a row reaching here has a parsed summary file with no
+        // exception, so the worker pod completed and the row is OK. Clear the
+        // default UNKNOWN_NO_LOGS failure_reason so /api/comparison and the
+        // mp-exam details endpoint don't display a bogus failure label on
+        // successful runs.
+        const isValid =
+          (summaryData as { result_perf_valid?: string | null })
+            .result_perf_valid !== 'INVALID';
         const merged = {
           ...summaryData,
           ...addedResultData,
@@ -318,6 +434,9 @@ export class MpExamResultService {
           result_perf_sps_best:
             (summaryData as { result_perf_sps_best?: number | null })
               .result_perf_sps_best ?? null,
+          // R8: mean device power over the run window (null when unavailable).
+          avg_power_w: avgPowerW,
+          failure_reason: isValid ? null : undefined,
         };
 
         const existedExamResult = await this.mpExamResultRepo.findOne({
@@ -352,12 +471,42 @@ export class MpExamResultService {
           }
         : response;
     } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new HttpException(
+          `Duplicate result for exam_id=${params.examId} repeat_count=${params.repeatCount} (UNIQUE constraint violated; a concurrent insert won the race)`,
+          HttpStatus.CONFLICT,
+        );
+      }
       console.error(error);
       throw new HttpException(
         (error?.message as string) || 'Creating error',
         HttpStatus.BAD_REQUEST,
       );
     }
+  }
+
+  // Detects Postgres unique-violation surfaced via the pg driver or via
+  // TypeORM's QueryFailedError wrapper. We match on SQLSTATE 23505 first,
+  // then fall back to the canonical message text used by both pg and sqlite
+  // when the structured code is missing (e.g., when the driver wraps it).
+  private isUniqueViolation(err: unknown): boolean {
+    if (!err) return false;
+    const candidate = err as {
+      code?: string;
+      driverError?: { code?: string };
+      message?: string;
+    };
+    if (candidate.code === '23505') return true;
+    if (candidate.driverError?.code === '23505') return true;
+    if (
+      typeof candidate.message === 'string' &&
+      candidate.message.includes(
+        'duplicate key value violates unique constraint',
+      )
+    ) {
+      return true;
+    }
+    return false;
   }
 
   // Get all MLPerf exam result list

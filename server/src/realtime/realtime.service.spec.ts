@@ -4,6 +4,7 @@ import {
   RealtimeService,
   IGpuSweepService,
   GPU_SWEEP_SERVICE_TOKEN,
+  computeSlotStatus,
 } from './realtime.service';
 import { MpExam } from '../entities/mp-exam.entity';
 import { MmExam } from '../entities/mm-exam.entity';
@@ -11,6 +12,7 @@ import { MpExamResult } from '../entities/mp-exam-result.entity';
 import { NpuExam } from '../entities/npu-exam.entity';
 import { NpuExamResult } from '../entities/npu-exam-result.entity';
 import { DeviceRegistryService } from '../device-registry/device-registry.service';
+import { DeviceTelemetryService } from './device-telemetry.service';
 import { StatusEnum } from '../enums/status.enum';
 import type { SweepStatusResponse } from '../gpu-sweep/dto/gpu-sweep.dto';
 
@@ -44,6 +46,18 @@ async function buildModule(
       { provide: getRepositoryToken(NpuExamResult), useValue: npuResultRepo },
       { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: gpuSweepService },
       { provide: DeviceRegistryService, useValue: deviceRegistry },
+      // DeviceTelemetryService was added to RealtimeService's constructor;
+      // existing tests pre-date the addition, so we stub it here. The
+      // resolvers all return null so slot.telemetry stays undefined and
+      // existing assertions are unaffected.
+      {
+        provide: DeviceTelemetryService,
+        useValue: {
+          getGpuTelemetry: jest.fn().mockResolvedValue(null),
+          getNpuTelemetry: jest.fn().mockResolvedValue(null),
+          getVllmTelemetry: jest.fn().mockResolvedValue(null),
+        },
+      },
     ],
   }).compile();
 
@@ -67,7 +81,11 @@ describe('RealtimeService', () => {
 
   it('buildSnapshot returns 4 GPU slots when no exams are running', async () => {
     const snap = await service.buildSnapshot();
-    expect(snap.slots).toHaveLength(4);
+    // Snapshot includes 4 GPU slots (node2 L40+A40, node3 L40-44+A40-44)
+    // and 2 NPU slots (node4 RNGD, node5 Atom+). Filter to GPU for this
+    // test's intent.
+    const gpuSlots = snap.slots.filter((s) => s.device_type === 'gpu');
+    expect(gpuSlots).toHaveLength(4);
     snap.slots.forEach((s) => {
       expect(s.status).toBe('idle');
       expect(s.current_exam).toBeNull();
@@ -150,6 +168,14 @@ describe('RealtimeService', () => {
         { provide: getRepositoryToken(NpuExamResult), useValue: mockRepo() },
         { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: null },
         { provide: DeviceRegistryService, useValue: null },
+        {
+          provide: DeviceTelemetryService,
+          useValue: {
+            getGpuTelemetry: jest.fn().mockResolvedValue(null),
+            getNpuTelemetry: jest.fn().mockResolvedValue(null),
+            getVllmTelemetry: jest.fn().mockResolvedValue(null),
+          },
+        },
       ],
     }).compile();
 
@@ -205,6 +231,9 @@ describe('RealtimeService', () => {
       node_state: {
         node2: { busy: true, last_dispatch_at: null, current_cell_key: null },
         node3: { busy: false, last_dispatch_at: null, current_cell_key: null },
+        // WS-E: NPU nodes added to SweepStatusResponse contract.
+        node4: { busy: false, last_dispatch_at: null, current_cell_key: null },
+        node5: { busy: false, last_dispatch_at: null, current_cell_key: null },
       },
     };
 
@@ -236,6 +265,9 @@ describe('RealtimeService', () => {
       node_state: {
         node2: { busy: false, last_dispatch_at: null, current_cell_key: null },
         node3: { busy: false, last_dispatch_at: null, current_cell_key: null },
+        // WS-E: NPU nodes added to SweepStatusResponse contract.
+        node4: { busy: false, last_dispatch_at: null, current_cell_key: null },
+        node5: { busy: false, last_dispatch_at: null, current_cell_key: null },
       },
     };
 
@@ -253,6 +285,9 @@ describe('RealtimeService', () => {
       node_state: {
         node2: { busy: false, last_dispatch_at: null, current_cell_key: null },
         node3: { busy: false, last_dispatch_at: null, current_cell_key: null },
+        // WS-E: NPU nodes added to SweepStatusResponse contract.
+        node4: { busy: false, last_dispatch_at: null, current_cell_key: null },
+        node5: { busy: false, last_dispatch_at: null, current_cell_key: null },
       },
     };
 
@@ -275,5 +310,146 @@ describe('RealtimeService', () => {
     const snap = await service.buildSnapshot();
     expect(() => new Date(snap.timestamp)).not.toThrow();
     expect(new Date(snap.timestamp).toISOString()).toBe(snap.timestamp);
+  });
+});
+
+/**
+ * Regression for the node-aware GPU matcher (Bug 6, 2026-05-18 audit):
+ * when k8s schedules `gpu_type=NVIDIA-A40` onto node3 (which actually has
+ * A40-44GiB SKU), the realtime snapshot must attribute the exam to
+ * node3's A40-44GiB slot, NOT node2's A40 slot. The old matcher used
+ * strict SKU match only, so the exam was painted on the wrong host's
+ * slot and the dashboard misled the demo audience about which GPU was
+ * doing the work.
+ */
+describe('GPU slot matcher — cross-node refusal + family fallback', () => {
+  it('attributes an A40 exam scheduled on node3 to node3 A40-44GiB, not node2 A40', async () => {
+    const a40Node2: import('../device-registry/device-registry.types').DeviceEntry = {
+      node: 'node2',
+      type: 'gpu',
+      vendor: 'nvidia',
+      model: 'NVIDIA-A40',
+      slot_id: 1,
+      state: 'ready',
+      k8s_node_status: 'Ready',
+      allocatable_resource_name: 'nvidia.com/gpu',
+      allocatable_count: 2,
+      source: 'k8s',
+    };
+    const a40Node3: import('../device-registry/device-registry.types').DeviceEntry = {
+      node: 'node3',
+      type: 'gpu',
+      vendor: 'nvidia',
+      model: 'NVIDIA-A40-44GiB',
+      slot_id: 1,
+      state: 'ready',
+      k8s_node_status: 'Ready',
+      allocatable_resource_name: 'nvidia.com/gpu',
+      allocatable_count: 2,
+      source: 'k8s',
+    };
+    const deviceRegistry: Partial<DeviceRegistryService> = {
+      getDevices: jest.fn().mockResolvedValue([a40Node2, a40Node3]),
+    };
+    const { service: svc, mpRepo } = await buildModule(null, deviceRegistry);
+    const exam: Partial<MpExam> = {
+      id: 281,
+      name: 'FULL-A40-mlperf-full',
+      gpu_type: 'NVIDIA-A40',
+      // k8s scheduled the worker onto node3 even though the request named
+      // the bare 'NVIDIA-A40' SKU (node2's SKU). Without the cross-node
+      // refusal fix, the snapshot would attribute it to node2's A40 slot.
+      k8s_node_name: 'node3',
+      status: StatusEnum.RUNNING,
+      started_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+    mpRepo.find.mockResolvedValue([exam]);
+    const snap = await svc.buildSnapshot();
+    const n2A40 = snap.slots.find((s) => s.node === 'node2' && s.model === 'NVIDIA-A40');
+    const n3A40 = snap.slots.find((s) => s.node === 'node3' && s.model === 'NVIDIA-A40-44GiB');
+    expect(n2A40?.current_exam).toBeNull();
+    expect(n3A40?.current_exam?.id).toBe(281);
+  });
+});
+
+/**
+ * Regression for computeSlotStatus: full-MLPerf demo runs (n=13368) showed
+ * status="stale" within 2 min during model load because no heartbeat was
+ * emitted yet. The grace window keeps healthy warmup phases on "running"
+ * and only flips to "stale" if the worker truly never heartbeats.
+ */
+describe('computeSlotStatus — heartbeat-aware slot state', () => {
+  const NOW = new Date('2026-05-18T05:00:00Z').getTime();
+  const MIN = 60 * 1000;
+
+  it('returns "running" when last_seen is recent', () => {
+    expect(
+      computeSlotStatus(
+        StatusEnum.RUNNING,
+        new Date(NOW - 5 * MIN).toISOString(),
+        new Date(NOW - 30 * 1000).toISOString(),
+        NOW,
+      ),
+    ).toBe('running');
+  });
+
+  it('returns "stale" when last_seen is older than STALE_THRESHOLD (2 min)', () => {
+    expect(
+      computeSlotStatus(
+        StatusEnum.RUNNING,
+        new Date(NOW - 10 * MIN).toISOString(),
+        new Date(NOW - 5 * MIN).toISOString(),
+        NOW,
+      ),
+    ).toBe('stale');
+  });
+
+  it('returns "running" when no heartbeat yet but exam started recently (pre-first-heartbeat grace)', () => {
+    expect(
+      computeSlotStatus(
+        StatusEnum.RUNNING,
+        new Date(NOW - 90 * 1000).toISOString(),
+        null,
+        NOW,
+      ),
+    ).toBe('running');
+  });
+
+  it('returns "running" when started 5 min ago but never heartbeat — within grace window', () => {
+    expect(
+      computeSlotStatus(
+        StatusEnum.RUNNING,
+        new Date(NOW - 5 * MIN).toISOString(),
+        null,
+        NOW,
+      ),
+    ).toBe('running');
+  });
+
+  it('returns "stale" when never-heartbeat exceeds NEVER_HEARTBEAT_THRESHOLD (30 min)', () => {
+    expect(
+      computeSlotStatus(
+        StatusEnum.RUNNING,
+        new Date(NOW - 31 * MIN).toISOString(),
+        null,
+        NOW,
+      ),
+    ).toBe('stale');
+  });
+
+  it('maps PREPARING → "preparing"', () => {
+    expect(computeSlotStatus(StatusEnum.PREPARING, null, null, NOW)).toBe(
+      'preparing',
+    );
+  });
+
+  it('maps ERROR → "error"', () => {
+    expect(computeSlotStatus(StatusEnum.ERROR, null, null, NOW)).toBe('error');
+  });
+
+  it('maps COMPLETED → "idle"', () => {
+    expect(computeSlotStatus(StatusEnum.COMPLETED, null, null, NOW)).toBe(
+      'idle',
+    );
   });
 });

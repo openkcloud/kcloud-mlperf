@@ -12,7 +12,7 @@ import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import { Repository } from 'typeorm';
 import { lastValueFrom, Observable } from 'rxjs';
-import { SchedulerRegistry } from '@nestjs/schedule';
+import { SchedulerRegistry, Cron, CronExpression } from '@nestjs/schedule';
 
 import { MmExam } from '../entities/mm-exam.entity';
 import { MmExamResult } from '../entities/mm-exam-result.entity';
@@ -527,6 +527,23 @@ export class MmExamService implements OnModuleInit {
   }
 
   // Get all MMLU exam list
+  // Periodic auto-ingestion (durability). Mirrors mp-exam: the 30s cron calls
+  // findAll, which refreshes in-flight MMLU exams and ingests finished results,
+  // so they appear without anyone viewing the page.
+  private mmIngestPollRunning = false;
+  @Cron(CronExpression.EVERY_30_SECONDS)
+  async pollInFlightIngestion(): Promise<void> {
+    if (this.mmIngestPollRunning) return;
+    this.mmIngestPollRunning = true;
+    try {
+      await this.findAll({ page: 1, limit: 25 } as PaginationQueryDto);
+    } catch {
+      /* best-effort; never throw from a scheduled job */
+    } finally {
+      this.mmIngestPollRunning = false;
+    }
+  }
+
   async findAll(params: PaginationQueryDto) {
     const { page = 1, limit = 10 } = params;
 

@@ -7,7 +7,9 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { MpExam } from 'src/entities/mp-exam.entity';
+import { MpExamResult } from 'src/entities/mp-exam-result.entity';
 import { Repository } from 'typeorm';
 import { CreateMpExamDto } from './dto/create-mp-exam.dto';
 import { UpdateMpExamDto } from './dto/update-mp-exam.dto';
@@ -26,7 +28,12 @@ import {
 } from '../../proto-types/exam';
 import { type ClientGrpc, RpcException } from '@nestjs/microservices';
 import { LokiService } from '../loki/loki.service';
-import { clampLokiValuesToCap, capLokiValuesByMinDuration } from '../loki/clamp-loki-values';
+import { captureReproducibilityMetadata } from '../reproducibility/reproducibility.metadata';
+import { formatSeed } from '../reproducibility/seed-format';
+import {
+  clampLokiValuesToCap,
+  capLokiValuesByMinDuration,
+} from '../loki/clamp-loki-values';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Empty } from 'proto-types/google/protobuf/empty';
 import { lastValueFrom, Observable } from 'rxjs';
@@ -38,6 +45,10 @@ import { LokiInstantQueryResponseDto } from '../loki/dto/loki-instant-query-resp
 import { MpExamResultService } from '../mp-exam-result/mp-exam-result.service';
 import { TestScenarioEnum } from '../enums/test-scenario.enum';
 import { MpExamModeEnum } from 'src/enums/mp-exam-mode.enum';
+import { selfFairnessSnapshot } from '../comparison/fairness-assessment';
+import { LatencyMeasurementContext } from '../enums/latency-measurement-context.enum';
+import { validateDevicePrecision } from '../common-validation/device-precision';
+import * as k8s from '@kubernetes/client-node';
 
 // ----------------------------------------------------------------------
 
@@ -46,15 +57,30 @@ dayjs.extend(timezone);
 
 // ----------------------------------------------------------------------
 
+// MLPerf worker image per framework. The operator hardcodes the vllm image as the
+// default; for `framework=pytorch` runs we patch the Exam CRD's spec.image right
+// after gRPC creation so the operator-spawned Job picks up the pytorch worker.
+const FRAMEWORK_IMAGE_MAP: Record<string, string> = {
+  vllm: 'mondrianai/etri-llm-mlperf:v0.2',
+  pytorch: 'jungwooshim/etri-llm-mlperf-pytorch:v1',
+};
+const EXAM_CRD_GROUP = 'resources.etri.llm';
+const EXAM_CRD_VERSION = 'v1';
+const EXAM_CRD_PLURAL = 'exams';
+const EXAM_CRD_NAMESPACE = process.env.OPERATOR_NAMESPACE || 'llm-evaluation';
+
 @Injectable()
 export class MpExamService implements OnModuleInit {
   private grpcService: ExamServiceClient;
   private timezone: string = 'Asia/Seoul';
   private timestampFormat: string = 'YYYY-MM-DDTHH:mm:ssZ';
   private examBenchmark: 'mmlu' | 'mlperf' = 'mlperf';
+  private k8sCustomObjects: k8s.CustomObjectsApi | null = null;
 
   constructor(
     @InjectRepository(MpExam) private readonly mpExamRepo: Repository<MpExam>,
+    @InjectRepository(MpExamResult)
+    private readonly mpExamResultRepo: Repository<MpExamResult>,
     @Inject('EXAM_PACKAGE') private client: ClientGrpc,
     private readonly lokiService: LokiService,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -65,6 +91,20 @@ export class MpExamService implements OnModuleInit {
     this.grpcService =
       this.client.getService<ExamServiceClient>(EXAM_SERVICE_NAME);
 
+    // Build a CustomObjects client so we can patch Exam CRD spec.image for
+    // framework=pytorch runs. Soft-fail: if cluster auth is missing (local dev)
+    // we log and continue without the patch capability.
+    try {
+      const kc = new k8s.KubeConfig();
+      kc.loadFromDefault();
+      this.k8sCustomObjects = kc.makeApiClient(k8s.CustomObjectsApi);
+    } catch (err) {
+      console.warn(
+        `[MpExamService] k8s client init failed; framework-image patching disabled: ${(err as Error)?.message}`,
+      );
+      this.k8sCustomObjects = null;
+    }
+
     const pendingExams = await this.mpExamRepo.find({
       where: { status: StatusEnum.IDLE },
     });
@@ -74,8 +114,121 @@ export class MpExamService implements OnModuleInit {
     }
   }
 
+  /**
+   * Patch the Exam CRD's spec.image so the operator-spawned Job uses the worker
+   * matching `framework`. Best-effort: retries briefly while the CRD is created,
+   * then applies a JSON-Merge-Patch to spec.image.
+   */
+  private async patchExamImageForFramework(
+    examId: number,
+    framework: string,
+  ): Promise<void> {
+    const image = FRAMEWORK_IMAGE_MAP[framework?.toLowerCase?.()];
+    if (!image) {
+      console.log(
+        `[MpExamService] Unknown framework='${framework}'; leaving operator default image.`,
+      );
+      return;
+    }
+    if (!this.k8sCustomObjects) {
+      console.warn(
+        `[MpExamService] k8s client unavailable; cannot route framework=${framework} (exam=${examId}).`,
+      );
+      return;
+    }
+
+    const name = `mlperf-${examId}`;
+    const maxAttempts = 10;
+    let lastErr: unknown = null;
+    // The default content-type for patchNamespacedCustomObject in
+    // @kubernetes/client-node v1 is application/json-patch+json, which expects
+    // an array of {op,path,value} ops at the JSON-Pointer path.
+    const jsonPatchBody = [
+      { op: 'replace', path: '/spec/image', value: image },
+    ];
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // Workaround: the v1 client throws when it sees `headers` in the params
+        // typebox, so for cross-version safety we also pass `body` as the
+        // JSON-Patch array; CR apiserver accepts both shapes when content-type
+        // is application/json-patch+json (the default for this method).
+        await this.k8sCustomObjects.patchNamespacedCustomObject({
+          group: EXAM_CRD_GROUP,
+          version: EXAM_CRD_VERSION,
+          namespace: EXAM_CRD_NAMESPACE,
+          plural: EXAM_CRD_PLURAL,
+          name,
+          body: jsonPatchBody,
+        } as any);
+        console.log(
+          `[MpExamService] Patched Exam ${name} spec.image=${image} (framework=${framework}, attempt=${attempt}).`,
+        );
+        return;
+      } catch (err) {
+        lastErr = err;
+        // Likely 404 until the operator finishes creating the CRD via gRPC,
+        // or a transient apiserver error; retry briefly.
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+    console.error(
+      `[MpExamService] Failed to patch Exam ${name} after ${maxAttempts} attempts: ${(lastErr as Error)?.message}`,
+    );
+  }
+
   private generateScheduleExamId(id: number): string {
     return `${this.examBenchmark}-exam-${id}`;
+  }
+
+  /**
+   * v42 Defect #39 fix: read the worker's actual completion timestamp from the
+   * Exam CR (set by the operator on the `Completed` phase transition) rather
+   * than using server-side wall-clock at status-poll time.
+   *
+   * The operator may lag gRPC by several seconds after the worker finishes, so
+   * we retry up to 12× with 5 s gaps (≤60 s total) waiting for the CR phase
+   * to transition to Completed. Falls back to wall-clock if the client is
+   * unavailable or the CR never shows Completed within the retry window.
+   */
+  private async resolveExamCompletionTime(examId: number): Promise<string> {
+    const fallback = dayjs().tz(this.timezone).format(this.timestampFormat);
+    if (!this.k8sCustomObjects) return fallback;
+    const maxAttempts = 12;
+    const delayMs = 5_000;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const cr = (await this.k8sCustomObjects.getNamespacedCustomObject({
+          group: EXAM_CRD_GROUP,
+          version: EXAM_CRD_VERSION,
+          namespace: EXAM_CRD_NAMESPACE,
+          plural: EXAM_CRD_PLURAL,
+          name: `mlperf-${examId}`,
+        } as any)) as { status?: { phase?: { type?: string; lastTransitionTime?: string } } };
+        const phase = cr?.status?.phase;
+        if (phase?.type === 'Completed' && phase.lastTransitionTime) {
+          console.log(
+            `[MpExamService] Exam CR mlperf-${examId} Completed phase found on attempt ${attempt}: ${phase.lastTransitionTime}`,
+          );
+          return dayjs(phase.lastTransitionTime)
+            .tz(this.timezone)
+            .format(this.timestampFormat);
+        }
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      } catch (err) {
+        console.warn(
+          `[MpExamService] Could not read Exam CR mlperf-${examId} (attempt ${attempt}): ${(err as Error)?.message}`,
+        );
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
+    }
+    console.warn(
+      `[MpExamService] Exam CR mlperf-${examId} did not show Completed phase after ${maxAttempts} attempts; falling back to wall-clock end_at.`,
+    );
+    return fallback;
   }
 
   private async scheduleExam(exam: MpExam) {
@@ -92,7 +245,7 @@ export class MpExamService implements OnModuleInit {
         // before gRPC status is queried. Without this, the gRPC returns empty
         // and the exam is permanently marked as Undefined.
         const minDelay = 30_000;
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+
         const timeout = setTimeout(async () => {
           await this.executeCreateGrpcExam(exam);
           this.schedulerRegistry.deleteTimeout(
@@ -106,7 +259,6 @@ export class MpExamService implements OnModuleInit {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       const timeout = setTimeout(async () => {
         await this.executeCreateGrpcExam(exam);
         this.schedulerRegistry.deleteTimeout(
@@ -206,20 +358,47 @@ export class MpExamService implements OnModuleInit {
 
     const examStatus = (res.status || StatusEnum.UNDEFINED) as StatusEnum;
 
+    let resolvedStatus: StatusEnum = examStatus;
+    let safetyGateLog: string | null = null;
     if (
       examStatus === StatusEnum.COMPLETED &&
       res.currentRepeatCount === data.retry_num.toString()
     ) {
-      const now = dayjs().tz(this.timezone).format(this.timestampFormat);
-      await this.update(data.id, { end_at: now.toString() });
+      // v42 Defect #39: use worker's actual finish timestamp (from Exam CR)
+      // instead of the server's wall-clock at status-poll time.
+      const completionTs = await this.resolveExamCompletionTime(data.id);
+      await this.update(data.id, { end_at: completionTs });
 
-      await this.mpExamResultService.create({
-        examId: data.id,
-        repeatCount: data.retry_num,
-        testScenario: data.scenario as TestScenarioEnum,
-        mode: data.mode as MpExamModeEnum,
-        exam: data,
-      });
+      // v42 Defect #38: catch result-service exceptions (e.g. ENOENT when
+      // the worker crashed before writing mlperf_log_detail.txt). A thrown
+      // exception here means zero results — treat it as a safety-gate trigger.
+      try {
+        await this.mpExamResultService.create({
+          examId: data.id,
+          repeatCount: data.retry_num,
+          testScenario: data.scenario as TestScenarioEnum,
+          mode: data.mode as MpExamModeEnum,
+          exam: data,
+        });
+      } catch (createErr) {
+        console.error(
+          `[MpExamService] result create failed for exam ${data.id}: ${(createErr as Error)?.message}`,
+        );
+        resolvedStatus = StatusEnum.ERROR;
+        safetyGateLog =
+          `Worker exited cleanly but result extraction failed (${(createErr as Error)?.message}) — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.`;
+      }
+
+      // Safety gate: also fire when create() succeeds but produces zero rows
+      // (e.g. result file present but empty — no exception thrown).
+      if (resolvedStatus !== StatusEnum.ERROR) {
+        const after = await this.findOne(data.id);
+        if (!after.results || after.results.length === 0) {
+          resolvedStatus = StatusEnum.ERROR;
+          safetyGateLog =
+            'Worker exited cleanly but produced no result rows — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.';
+        }
+      }
     }
 
     if (examStatus === StatusEnum.ERROR) {
@@ -228,11 +407,15 @@ export class MpExamService implements OnModuleInit {
       });
     }
 
+    if (safetyGateLog) {
+      await this.update(data.id, { error_log: safetyGateLog });
+    }
+
     console.log(
-      `🚀 Executing MLPerf exam ID=${data.id} at ${dayjs().tz(this.timezone).format('YYYY-MM-DD HH:mm:ss')} status: ${examStatus}`,
+      `🚀 Executing MLPerf exam ID=${data.id} at ${dayjs().tz(this.timezone).format('YYYY-MM-DD HH:mm:ss')} status: ${resolvedStatus}`,
     );
 
-    return await this.update(data.id, { status: examStatus });
+    return await this.update(data.id, { status: resolvedStatus });
   }
 
   async updateMpExamStartTime(id: number) {
@@ -276,6 +459,35 @@ export class MpExamService implements OnModuleInit {
 
   // Create MP Exam
   async create(createMpExamDto: CreateMpExamDto) {
+    // B2: validate (device, precision) BEFORE the try/catch so the 400 isn't
+    // swallowed and re-thrown as an RpcException by the catch arm below.
+    // MP exams are GPU-only (gpu_type populated from NVIDIA-* SKUs).
+    validateDevicePrecision(
+      'gpu',
+      createMpExamDto.gpu_type,
+      createMpExamDto.precision,
+    );
+    // B3 defense-in-depth — see DTO @Min(1) on data_number.
+    if (
+      createMpExamDto.data_number !== undefined &&
+      createMpExamDto.data_number !== null &&
+      createMpExamDto.data_number < 1
+    ) {
+      throw new HttpException(
+        'data_number must be >= 1.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (
+      createMpExamDto.max_output_tokens !== undefined &&
+      createMpExamDto.max_output_tokens !== null &&
+      createMpExamDto.max_output_tokens < 1
+    ) {
+      throw new HttpException(
+        'max_output_tokens must be >= 1.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     try {
       // Check if started_at is in the past and replace with current time
       const currentTime = dayjs().tz(this.timezone);
@@ -285,11 +497,42 @@ export class MpExamService implements OnModuleInit {
         createMpExamDto.started_at = currentTime.format(this.timestampFormat);
       }
 
-      const mmExam = this.mpExamRepo.create(createMpExamDto);
+      const reproMeta = captureReproducibilityMetadata();
+      const seedValue = formatSeed(
+        createMpExamDto.seed,
+        process.env.BENCHMARK_DETERMINISTIC === '1',
+      );
+      // Destructure seed out so the number|string DTO field doesn't conflict
+      // with the entity's bigint seed column when TypeORM creates the record.
+      const { seed: _dtoSeed, ...mpExamData } = createMpExamDto;
+      // US-NEXT-1: persist a self-fairness snapshot so the jsonb
+      // `fairness_assessment` column is populated at create-time.
+      const fairnessAssessment = selfFairnessSnapshot({
+        vendor: 'nvidia',
+        precision: createMpExamDto.precision ?? null,
+        latency_measurement_context:
+          LatencyMeasurementContext.CLIENT_WALL_CLOCK,
+      });
+      const examPayload: Partial<MpExam> = {
+        ...mpExamData,
+        ...reproMeta,
+        fairness_assessment: fairnessAssessment as unknown as Record<
+          string,
+          unknown
+        >,
+      };
+      if (seedValue !== null) examPayload.seed_value = seedValue;
+      const mmExam = this.mpExamRepo.create(examPayload);
 
       const rowData = await this.mpExamRepo.save(mmExam);
 
       await this.createGrpcExam(rowData);
+
+      // Phase B routing: if framework=pytorch, override the operator's default
+      // worker image by patching the freshly-created Exam CRD's spec.image.
+      // Runs in parallel with the gRPC-create race so the patch lands before
+      // the operator's first Job spawn at startTime.
+      void this.patchExamImageForFramework(rowData.id, rowData.framework);
 
       await this.scheduleExam(rowData);
 
@@ -331,9 +574,18 @@ export class MpExamService implements OnModuleInit {
       testResult = lokiRes.data.result;
     }
 
-    const mpExam = await this.update(id, {
-      status: examStatus,
-    });
+    // Read the current DB state BEFORE updating status, so we can guard
+    // against re-running the COMPLETED processing block on concurrent polls.
+    const prevExam = await this.findOne(id);
+    const alreadyTerminal =
+      prevExam.status === StatusEnum.ERROR ||
+      prevExam.status === StatusEnum.STOPPED;
+    const alreadyHasResults = prevExam.results && prevExam.results.length > 0;
+
+    // Only write the new gRPC status if we're not preserving a terminal state.
+    const mpExam = alreadyTerminal
+      ? prevExam
+      : await this.update(id, { status: examStatus });
 
     if (examStatus === StatusEnum.RUNNING) {
       testResult = clampLokiValuesToCap(testResult, mpExam.data_number);
@@ -344,40 +596,94 @@ export class MpExamService implements OnModuleInit {
       );
     }
 
+    let resolvedStatus: StatusEnum = alreadyTerminal
+      ? (prevExam.status as StatusEnum)
+      : examStatus;
+    let safetyGateLog: string | null = null;
+
     if (
       examStatus === StatusEnum.COMPLETED &&
-      res.currentRepeatCount === mpExam.retry_num.toString()
+      res.currentRepeatCount === mpExam.retry_num.toString() &&
+      !alreadyTerminal &&
+      !alreadyHasResults
     ) {
-      const now = dayjs().tz(this.timezone).format(this.timestampFormat);
+      // v42 Defect #39: use worker's actual finish timestamp (from Exam CR)
+      // instead of the server's wall-clock at status-poll time.
+      const completionTs = await this.resolveExamCompletionTime(id);
 
       const exam = await this.update(id, {
-        end_at: now.toString(),
+        end_at: completionTs,
       });
 
-      await this.mpExamResultService.create({
-        examId: id,
-        repeatCount: exam.retry_num,
-        testScenario: exam.scenario as TestScenarioEnum,
-        mode: exam.mode as MpExamModeEnum,
-        exam,
-      });
+      // v42 Defect #38: catch result-service exceptions (see executeCreateGrpcExam).
+      try {
+        await this.mpExamResultService.create({
+          examId: id,
+          repeatCount: exam.retry_num,
+          testScenario: exam.scenario as TestScenarioEnum,
+          mode: exam.mode as MpExamModeEnum,
+          exam,
+        });
+      } catch (createErr) {
+        console.error(
+          `[MpExamService] result create failed for exam ${id}: ${(createErr as Error)?.message}`,
+        );
+        resolvedStatus = StatusEnum.ERROR;
+        safetyGateLog =
+          `Worker exited cleanly but result extraction failed (${(createErr as Error)?.message}) — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.`;
+      }
+
+      // Safety gate: also fire when create() succeeds but produces zero rows.
+      if (resolvedStatus !== StatusEnum.ERROR) {
+        const after = await this.findOne(id);
+        if (!after.results || after.results.length === 0) {
+          resolvedStatus = StatusEnum.ERROR;
+          safetyGateLog =
+            'Worker exited cleanly but produced no result rows — likely worker-internal crash (check pod logs). Marked Error by backend safety gate.';
+        }
+      }
     }
 
-    if (examStatus === StatusEnum.ERROR) {
+    if (examStatus === StatusEnum.ERROR && !alreadyTerminal) {
       await this.update(id, {
         error_log: res.message,
       });
     }
 
+    if (safetyGateLog) {
+      await this.update(id, {
+        status: resolvedStatus,
+        error_log: safetyGateLog,
+      });
+    }
+
     return {
       ...res,
-      status: examStatus,
+      status: resolvedStatus,
       result: testResult,
       start_time: mpExam.started_at,
     };
   }
 
   // Get all MP Exam list
+  // Periodic auto-ingestion (durability). Without this, mp_exam_result rows are
+  // only written when the UI hits /list or /status. This 30s cron calls findAll,
+  // which refreshes in-flight exams via gRPC and lazily ingests finished results
+  // from NFS — so results appear even when nobody is viewing the page.
+  private mpIngestPollRunning = false;
+  @Cron(CronExpression.EVERY_30_SECONDS)
+  async pollInFlightIngestion(): Promise<void> {
+    if (this.mpIngestPollRunning) return;
+    this.mpIngestPollRunning = true;
+    try {
+      await this.findAll({ page: 1, limit: 25 } as PaginationQueryDto);
+    } catch {
+      /* best-effort; never throw from a scheduled job */
+    } finally {
+      this.mpIngestPollRunning = false;
+    }
+  }
+
   async findAll(params: PaginationQueryDto) {
     const { page = 1, limit = 10 } = params;
 
@@ -402,7 +708,9 @@ export class MpExamService implements OnModuleInit {
       .filter((r) => inFlightStatuses.includes(r.status as StatusEnum))
       .slice(0, 5);
     if (inFlight.length > 0) {
-      await Promise.all(inFlight.map((r) => this.getMpExamStatus(r.id).catch(() => null)));
+      await Promise.all(
+        inFlight.map((r) => this.getMpExamStatus(r.id).catch(() => null)),
+      );
       // Re-read the refreshed rows
       [data, total] = await this.mpExamRepo.findAndCount({
         skip: (page - 1) * limit,
@@ -441,7 +749,8 @@ export class MpExamService implements OnModuleInit {
 
   // Update MP Exam info
   async update(id: number, updateMpExamDto: UpdateMpExamDto) {
-    await this.mpExamRepo.update(id, updateMpExamDto);
+    const { seed: _s, ...updateData } = updateMpExamDto;
+    await this.mpExamRepo.update(id, updateData);
 
     return this.findOne(id);
   }
@@ -464,6 +773,19 @@ export class MpExamService implements OnModuleInit {
       //     id: id.toString(),
       //   }),
       // );
+
+      // US-NEXT-5: purge partial result rows BEFORE marking the exam stopped so
+      // a re-submitted exam under the same exam_id (or new exam reusing the
+      // logical name) does not inherit stale rows that latestResult() would
+      // pick up via max(result_number).
+      try {
+        await this.mpExamResultRepo.delete({ exam_id: id });
+      } catch (purgeError) {
+        console.error(
+          `Failed to purge mp_exam_result rows for exam ${id} on stop:`,
+          purgeError,
+        );
+      }
 
       const now = dayjs().tz(this.timezone).format(this.timestampFormat);
 

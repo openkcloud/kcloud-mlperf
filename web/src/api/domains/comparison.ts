@@ -1,4 +1,5 @@
 import { httpClient } from '@/libs/http-client';
+import type { FairnessAssessment } from '@/api/types/fairness-assessment';
 
 // ----------------------------------------------------------------------
 
@@ -21,6 +22,23 @@ export type ComparisonMetrics = {
   tps?: number | null;
   accuracy_pct?: number | null;
   throughput?: number | null;
+  // Round-2 statistical rigor: run-to-run variation across measured result rows.
+  tps_stdev?: number | null;
+  tt100t_stdev?: number | null;
+  tt100t_samples?: number | null;
+  tps_samples?: number | null;
+  // R9: time-to-first-token in seconds. Null for MMLU.
+  ttft_seconds?: number | null;
+  ttft_stdev?: number | null;
+  ttft_samples?: number | null;
+  // BB-3: latency percentiles in seconds (MLPerf server log / NPU per-sample).
+  p50_latency_s?: number | null;
+  p90_latency_s?: number | null;
+  p99_latency_s?: number | null;
+  // R8: mean device power over the run window (W, captured at completion;
+  // future runs only — Prometheus retention can't backfill) + derived perf/W.
+  avg_power_w?: number | null;
+  tokens_per_watt?: number | null;
 };
 
 export type ComparisonRunRow = {
@@ -106,6 +124,10 @@ export type ComparisonPairResponse = {
   runA: ComparisonRunRow;
   runB: ComparisonRunRow;
   metrics: Record<string, { a: number | null; b: number | null }>;
+  /** Legacy array of incompatibility reason keys — present when runs differ on key config. */
+  incompatibility_reasons: string[];
+  /** Rich fairness struct introduced in WS-B05. May be absent on older backends. */
+  fairness_assessment?: FairnessAssessment;
 };
 
 // Valid benchmark values for the pair endpoint (backend rejects 'all').
@@ -221,10 +243,13 @@ export const ComparisonApi = {
       a: ComparisonRunRow;
       b: ComparisonRunRow;
       delta: Record<string, number | null>;
+      incompatibility_reasons?: string[];
+      fairness_assessment?: FairnessAssessment;
     }>(`/comparison/${safeBenchmark}/${idA}/${idB}`);
     // Map delta {field: number} → metrics {field: {a: valA, b: valB}}
     const METRIC_KEYS: Array<keyof ComparisonMetrics> = [
-      'tt100t_seconds', 'tps', 'accuracy_pct', 'throughput'
+      'tt100t_seconds', 'tps', 'accuracy_pct', 'throughput', 'ttft_seconds',
+      'p50_latency_s', 'p90_latency_s', 'p99_latency_s', 'avg_power_w', 'tokens_per_watt'
     ];
     const metrics: Record<string, { a: number | null; b: number | null }> = {};
     for (const key of METRIC_KEYS) {
@@ -241,6 +266,8 @@ export const ComparisonApi = {
       runA: data.a,
       runB: data.b,
       metrics,
+      incompatibility_reasons: data.incompatibility_reasons ?? [],
+      fairness_assessment: data.fairness_assessment,
     };
   },
 

@@ -103,10 +103,11 @@ describe('matrix.fixture (snapshot)', () => {
     expect(bad).toHaveLength(0);
   });
 
-  it('cells should be assigned to node2 or node3 only', () => {
-    const badNodes = cells.filter(
-      (c) => c.node !== 'node2' && c.node !== 'node3',
-    );
+  // WS-E (mega-plan v2.2): cells now span all 4 worker nodes.
+  // node2/node3 → NVIDIA GPUs, node4 → Furiosa RNGD, node5 → Rebellions ATOM.
+  it('cells should be assigned to node2/node3/node4/node5 only', () => {
+    const allowed = new Set(['node2', 'node3', 'node4', 'node5']);
+    const badNodes = cells.filter((c) => !allowed.has(c.node));
     expect(badNodes).toHaveLength(0);
   });
 

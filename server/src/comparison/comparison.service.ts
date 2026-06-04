@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { canonicalize, CanonicalRunConfig } from './config-fingerprint';
+import { assessFairness, FairnessAssessment } from './fairness-assessment';
+import { LatencyMeasurementContext } from '../enums/latency-measurement-context.enum';
 import { MpExam } from '../entities/mp-exam.entity';
 import { MpExamResult } from '../entities/mp-exam-result.entity';
 import { MmExam } from '../entities/mm-exam.entity';
@@ -60,6 +62,32 @@ export interface NormalizedMetrics {
   tps: number | null;
   accuracy_pct: number | null;
   throughput: number | null;
+  // Round-2 statistical rigor: run-to-run variation across the measured result
+  // rows (retry_num runs). `samples` is the number of measured runs used; stdev
+  // is the sample standard deviation. Null when only one (or zero) run exists.
+  tps_stdev?: number | null;
+  tt100t_stdev?: number | null;
+  // Per-metric measured-run counts (a run can have a different number of valid
+  // TPS rows vs TT100T rows; a shared `samples` would misreport one of them).
+  tt100t_samples?: number | null;
+  tps_samples?: number | null;
+  // R9: time-to-first-token in seconds. Null for MMLU (no TTFT measurement).
+  // MLPerf: parsed from "Mean First Token latency (ns)" → divided by 1e9.
+  // NPU: stored in seconds by npu-eval.service.ts → no conversion needed.
+  ttft_seconds?: number | null;
+  ttft_stdev?: number | null;
+  ttft_samples?: number | null;
+  // BB-3: latency percentiles in seconds (from the representative/latest
+  // result row). Null for MMLU and for runs whose logs lacked percentiles.
+  p50_latency_s?: number | null;
+  p90_latency_s?: number | null;
+  p99_latency_s?: number | null;
+  // R8 (perf/Watt): mean device power over the run window (Watts) — mean of
+  // available result rows. Null when telemetry was unavailable.
+  avg_power_w?: number | null;
+  // R8 derived: tokens-per-watt = tps / avg_power_w. Null if either is
+  // missing or avg_power_w is 0.
+  tokens_per_watt?: number | null;
 }
 
 export interface NormalizedRun {
@@ -90,6 +118,9 @@ export interface NormalizedRun {
   is_canonical: boolean;
   // W7/W10 contract: BF16 fallback on MLPerf where FP8 is canonical (A40, RNGD-bf16, Atom+).
   precision_mismatch: boolean;
+  // US-005: how the latency for this run was measured. Defaults to UNKNOWN
+  // when neither the result row nor a sensible per-source default applies.
+  latency_measurement_context: LatencyMeasurementContext;
 }
 
 export type EmptyReason =
@@ -126,7 +157,123 @@ export interface PairComparisonResponse {
     tps: number | null;
     accuracy_pct: number | null;
     throughput: number | null;
+    ttft_seconds: number | null;
+    // BB-3 / R8 additions.
+    p50_latency_s: number | null;
+    p90_latency_s: number | null;
+    p99_latency_s: number | null;
+    avg_power_w: number | null;
+    tokens_per_watt: number | null;
   };
+  /**
+   * Each entry names a confounder axis on which `a` and `b` disagree, e.g.
+   * `'precision_mismatch'` or `'data_number_mismatch'`. Empty array means the
+   * runs are matched on every controlled variable this platform tracks.
+   * The frontend MUST surface a non-empty list as a warning before showing
+   * the delta to a researcher (US-002 fairness gate).
+   */
+  incompatibility_reasons: string[];
+  /**
+   * WS-B05 — canonical fairness verdict. The `incompatibility_reasons[]`
+   * field above is preserved for backward compatibility, but
+   * `fairness_assessment` is the richer struct also persisted on every
+   * result write into the `fairness_assessment` jsonb column (US-0.5).
+   */
+  fairness_assessment: FairnessAssessment;
+}
+
+// Top-level normalization helpers shared between `computeIncompatibilityReasons`
+// (top-level export) and the class's `classifyComparability` (instance method).
+// Keeping a single source of truth prevents the helper and the candidate
+// classifier from disagreeing on what counts as "same dataset" or "same
+// model" — earlier inline duplication caused `cnn_eval.json` vs
+// `cnn-dailymail` to falsely register as a dataset_mismatch in the API
+// response while the candidate page still treated them as identical.
+export function normalizeStrLower(s: string | null | undefined): string {
+  if (s == null) return '';
+  return String(s).trim().toLowerCase();
+}
+
+export function normalizeBaseModel(model: string | null | undefined): string {
+  if (!model) return '';
+  // Strip org/vendor prefixes ("meta-llama/Llama-3.1-8B-Instruct" →
+  // "llama-3.1-8b-instruct") and the vendor "-fp8" suffix added by
+  // furiosa-ai. The PRD's `tokenizer_unverified` reason still fires for
+  // cross-vendor pairs so quantized variants don't get falsely equated.
+  const bare = model.trim().split('/').pop() ?? '';
+  return bare.toLowerCase().replace(/-fp8$/i, '');
+}
+
+export function normalizeDatasetLabel(
+  dataset: string | null | undefined,
+): string {
+  if (!dataset) return '';
+  const s = dataset.trim().toLowerCase();
+  if (s === 'cnn_eval.json' || s === 'cnn_dailymail' || s === 'cnn-dailymail') {
+    return 'cnn-dailymail';
+  }
+  return s;
+}
+
+/**
+ * Pure helper: compares two NormalizedRuns and returns one string per axis
+ * on which they disagree. Designed for fairness gating in pair() and the
+ * frontend ComparisonDetailDialog (US-002).
+ *
+ * The returned reason codes are stable strings the UI can switch on:
+ *   - 'model_mismatch'         models differ after normalization
+ *   - 'precision_mismatch'     precision strings differ (case-insensitive)
+ *   - 'dataset_mismatch'       datasets differ after normalization
+ *   - 'data_number_mismatch'   sample counts differ
+ *   - 'max_output_tokens_mismatch'  decoding length cap differs
+ *   - 'tokenizer_unverified'   cross-vendor pair, tokenizer parity not
+ *                              independently verified by the platform
+ *   - 'latency_context_mismatch' (US-005) measurement contexts differ
+ */
+export function computeIncompatibilityReasons(
+  a: NormalizedRun,
+  b: NormalizedRun,
+): string[] {
+  const reasons: string[] = [];
+
+  if (normalizeBaseModel(a.model) !== normalizeBaseModel(b.model))
+    reasons.push('model_mismatch');
+  if (normalizeStrLower(a.precision) !== normalizeStrLower(b.precision))
+    reasons.push('precision_mismatch');
+  if (normalizeDatasetLabel(a.dataset) !== normalizeDatasetLabel(b.dataset))
+    reasons.push('dataset_mismatch');
+  if ((a.data_number ?? null) !== (b.data_number ?? null))
+    reasons.push('data_number_mismatch');
+  if ((a.max_output_tokens ?? null) !== (b.max_output_tokens ?? null))
+    reasons.push('max_output_tokens_mismatch');
+
+  // Cross-vendor pairs cannot have tokenizer parity asserted by the platform
+  // (no tokenizer SHA is captured today — see audit gap US-003). Always flag.
+  if (
+    a.hardware.vendor !== 'unknown' &&
+    b.hardware.vendor !== 'unknown' &&
+    a.hardware.vendor !== b.hardware.vendor
+  ) {
+    reasons.push('tokenizer_unverified');
+  }
+
+  // US-005: cross-context latency comparisons (client-side wall clock vs
+  // server-side token-stream timing) are not scientifically equivalent.
+  // Skip the flag when either side is UNKNOWN (e.g., MMLU rows have no
+  // latency to measure).
+  const ctxA = a.latency_measurement_context;
+  const ctxB = b.latency_measurement_context;
+  if (
+    ctxA &&
+    ctxB &&
+    ctxA !== LatencyMeasurementContext.UNKNOWN &&
+    ctxB !== LatencyMeasurementContext.UNKNOWN &&
+    ctxA !== ctxB
+  ) {
+    reasons.push('latency_context_mismatch');
+  }
+
+  return reasons;
 }
 
 export interface DiagnosticsResponse {
@@ -388,6 +535,8 @@ export class ComparisonService {
       benchmark,
       a,
       b,
+      incompatibility_reasons: computeIncompatibilityReasons(a, b),
+      fairness_assessment: assessFairness(a, b),
       delta: {
         tt100t_seconds: this.delta(
           a.metrics.tt100t_seconds,
@@ -399,6 +548,30 @@ export class ComparisonService {
           b.metrics.accuracy_pct,
         ),
         throughput: this.delta(a.metrics.throughput, b.metrics.throughput),
+        ttft_seconds: this.delta(
+          a.metrics.ttft_seconds ?? null,
+          b.metrics.ttft_seconds ?? null,
+        ),
+        p50_latency_s: this.delta(
+          a.metrics.p50_latency_s ?? null,
+          b.metrics.p50_latency_s ?? null,
+        ),
+        p90_latency_s: this.delta(
+          a.metrics.p90_latency_s ?? null,
+          b.metrics.p90_latency_s ?? null,
+        ),
+        p99_latency_s: this.delta(
+          a.metrics.p99_latency_s ?? null,
+          b.metrics.p99_latency_s ?? null,
+        ),
+        avg_power_w: this.delta(
+          a.metrics.avg_power_w ?? null,
+          b.metrics.avg_power_w ?? null,
+        ),
+        tokens_per_watt: this.delta(
+          a.metrics.tokens_per_watt ?? null,
+          b.metrics.tokens_per_watt ?? null,
+        ),
       },
     };
   }
@@ -424,12 +597,14 @@ export class ComparisonService {
 
     const allHardware = [
       ...mpExams.map((e) =>
-        this.classifyHardware(e.device_type, e.gpu_type, null),
+        this.classifyHardware(e.device_type, e.gpu_type, e.k8s_node_name ?? null),
       ),
       ...mmExams.map((e) =>
-        this.classifyHardware(e.device_type, e.gpu_type, null),
+        this.classifyHardware(e.device_type, e.gpu_type, e.k8s_node_name ?? null),
       ),
-      ...npuExams.map((e) => this.classifyHardware('NPU', e.npu_type, null)),
+      ...npuExams.map((e) =>
+        this.classifyHardware('NPU', e.npu_type, e.k8s_node_name ?? null),
+      ),
     ];
 
     const vendorsSeen = Array.from(
@@ -507,10 +682,35 @@ export class ComparisonService {
     // (npu_exam_result) already stores seconds (npu-eval.service.ts:522 divides
     // by 1000 explicitly). Without this conversion the /comparison page renders
     // GPU rows as ~1500 s next to NPU rows as ~1.3 s — a 1000× scale break.
+    const rows = exam.results || [];
+    const tpsStats = this.stats(rows.map((r) => r.result_perf_tps));
+    const ttStats = this.stats(
+      rows.map((r) => (r.result_tt100t != null ? r.result_tt100t / 1000 : null)),
+    );
+    // R9: result_perf_serv_ttft is parsed from "Mean First Token latency (ns)"
+    // — stored as raw nanoseconds. Divide by 1e9 to normalise to seconds, same
+    // scale as tt100t_seconds.
+    const ttftStats = this.stats(
+      rows.map((r) =>
+        r.result_perf_serv_ttft != null ? r.result_perf_serv_ttft / 1_000_000_000 : null,
+      ),
+    );
     const tt100t =
-      latest?.result_tt100t != null ? latest.result_tt100t / 1000 : null;
-    const tps = latest?.result_perf_tps ?? null;
+      ttStats.mean ??
+      (latest?.result_tt100t != null ? latest.result_tt100t / 1000 : null);
+    const tps = tpsStats.mean ?? latest?.result_perf_tps ?? null;
     const sps = latest?.result_perf_sps ?? null;
+    // R8/BB-3: percentiles from the representative (latest) row; mean power
+    // across the rows that captured it; tokens_per_watt derived from tps/power.
+    const mpAvgPower = this.meanOf(rows.map((r) => r.avg_power_w));
+    const mpTokensPerWatt = this.tokensPerWatt(tps, mpAvgPower);
+    // v37 Fix #20: surface MLPerf rouge1 via result_acc (preferred) or fall
+    // back to result_acc_rg_1 if a legacy row still has the rouge column but
+    // not the new `result_acc` mirror.
+    const mlperfAccuracy =
+      (latest as { result_acc?: number | null } | null)?.result_acc ??
+      latest?.result_acc_rg_1 ??
+      null;
 
     const cfg: CanonicalRunConfig = {
       benchmark: 'mlperf',
@@ -537,8 +737,20 @@ export class ComparisonService {
       metrics: {
         tt100t_seconds: tt100t,
         tps,
-        accuracy_pct: null,
+        accuracy_pct: mlperfAccuracy,
         throughput: sps,
+        tps_stdev: tpsStats.stdev,
+        tt100t_stdev: ttStats.stdev,
+        tt100t_samples: ttStats.n || null,
+        tps_samples: tpsStats.n || null,
+        ttft_seconds: ttftStats.mean,
+        ttft_stdev: ttftStats.stdev,
+        ttft_samples: ttftStats.n || null,
+        p50_latency_s: latest?.result_perf_p50_latency_s ?? null,
+        p90_latency_s: latest?.result_perf_p90_latency_s ?? null,
+        p99_latency_s: latest?.result_perf_p99_latency_s ?? null,
+        avg_power_w: mpAvgPower,
+        tokens_per_watt: mpTokensPerWatt,
       },
       artifacts: this.mlperfArtifacts(exam.id, exam.retry_num),
       precision: exam.precision ?? null,
@@ -551,12 +763,19 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
-      is_canonical: this.isCanonicalRun('mlperf', exam.data_number ?? null, null),
+      is_canonical: this.isCanonicalRun(
+        'mlperf',
+        exam.data_number ?? null,
+        null,
+      ),
       precision_mismatch: this.isPrecisionMismatch(
         'mlperf',
         this.canonicalizeHardwareLabel(exam.gpu_type ?? ''),
         exam.precision ?? null,
       ),
+      latency_measurement_context:
+        latest?.latency_measurement_context ??
+        LatencyMeasurementContext.CLIENT_WALL_CLOCK,
     };
   }
 
@@ -593,6 +812,14 @@ export class ComparisonService {
         tps: null,
         accuracy_pct: accuracy,
         throughput: null,
+        ttft_seconds: null,
+        ttft_stdev: null,
+        ttft_samples: null,
+        p50_latency_s: null,
+        p90_latency_s: null,
+        p99_latency_s: null,
+        avg_power_w: null,
+        tokens_per_watt: null,
       },
       artifacts: [],
       precision: exam.precision ?? null,
@@ -607,12 +834,26 @@ export class ComparisonService {
       drift_flag: false,
       is_canonical: this.isCanonicalRun('mmlu', exam.data_number ?? null),
       precision_mismatch: false, // MMLU never has precision mismatch
+      latency_measurement_context:
+        latest?.latency_measurement_context ??
+        LatencyMeasurementContext.UNKNOWN,
     };
   }
 
   private normalizeNpuExam(exam: NpuExam): NormalizedRun {
     const latest = this.latestResult(exam.results || []);
     const benchmark = exam.benchmark === 'mmlu' ? 'mmlu' : 'mlperf';
+    const npuRows = exam.results || [];
+    const npuTpsStats = this.stats(npuRows.map((r) => r.result_tps));
+    const npuTtStats = this.stats(npuRows.map((r) => r.result_tt100t));
+    // R9: result_ttft is already in seconds (npu-eval.service.ts divides by 1000
+    // at capture time). No further conversion needed.
+    const npuTtftStats = this.stats(npuRows.map((r) => r.result_ttft));
+    // R8/BB-3: power is mean of the rows that captured it; tps for the derived
+    // tokens_per_watt mirrors the metrics.tps used below.
+    const npuTps = npuTpsStats.mean ?? latest?.result_tps ?? null;
+    const npuAvgPower = this.meanOf(npuRows.map((r) => r.avg_power_w));
+    const npuTokensPerWatt = this.tokensPerWatt(npuTps, npuAvgPower);
 
     const cfg: CanonicalRunConfig = {
       benchmark,
@@ -637,10 +878,22 @@ export class ComparisonService {
       completed_at: exam.end_at ?? null,
       elapsed_seconds: this.calcElapsed(exam.started_at, exam.end_at),
       metrics: {
-        tt100t_seconds: latest?.result_tt100t ?? null,
-        tps: latest?.result_tps ?? null,
+        tt100t_seconds: npuTtStats.mean ?? latest?.result_tt100t ?? null,
+        tps: npuTps,
         accuracy_pct: latest?.result_accuracy ?? null,
         throughput: latest?.result_sps ?? null,
+        tps_stdev: npuTpsStats.stdev,
+        tt100t_stdev: npuTtStats.stdev,
+        tt100t_samples: npuTtStats.n || null,
+        tps_samples: npuTpsStats.n || null,
+        ttft_seconds: npuTtftStats.mean,
+        ttft_stdev: npuTtftStats.stdev,
+        ttft_samples: npuTtftStats.n || null,
+        p50_latency_s: latest?.result_perf_p50_latency_s ?? null,
+        p90_latency_s: latest?.result_perf_p90_latency_s ?? null,
+        p99_latency_s: latest?.result_perf_p99_latency_s ?? null,
+        avg_power_w: npuAvgPower,
+        tokens_per_watt: npuTokensPerWatt,
       },
       artifacts: [],
       precision: exam.precision ?? null,
@@ -653,12 +906,19 @@ export class ComparisonService {
       failure_reason: exam.error_log || null,
       config_fingerprint: canonicalize(cfg),
       drift_flag: false,
-      is_canonical: this.isCanonicalRun(benchmark, exam.data_number ?? null, exam.max_output_tokens ?? null),
+      is_canonical: this.isCanonicalRun(
+        benchmark,
+        exam.data_number ?? null,
+        exam.max_output_tokens ?? null,
+      ),
       precision_mismatch: this.isPrecisionMismatch(
         benchmark,
         this.canonicalizeHardwareLabel(exam.npu_type ?? ''),
         exam.precision ?? null,
       ),
+      latency_measurement_context:
+        latest?.latency_measurement_context ??
+        LatencyMeasurementContext.SERVER_TOKEN_STREAM,
     };
   }
 
@@ -669,6 +929,47 @@ export class ComparisonService {
     return results.reduce((acc, cur) =>
       cur.result_number > acc.result_number ? cur : acc,
     );
+  }
+
+  /**
+   * Sample mean + sample standard deviation over the finite positive values
+   * (e.g. tps or tt100t across the measured result rows). Used for round-2
+   * statistical-rigor reporting (mean +/- stdev, n = samples).
+   */
+  private stats(values: Array<number | null | undefined>): {
+    mean: number | null;
+    stdev: number | null;
+    n: number;
+  } {
+    const xs = values.filter(
+      (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
+    );
+    if (xs.length === 0) return { mean: null, stdev: null, n: 0 };
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    if (xs.length === 1) return { mean, stdev: 0, n: 1 };
+    const variance =
+      xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (xs.length - 1);
+    return { mean, stdev: Math.sqrt(variance), n: xs.length };
+  }
+
+  // R8/BB-3: mean of the finite values among the provided result-row fields.
+  // Used for avg_power_w (mean across the rows that captured power). Null when
+  // none are present.
+  private meanOf(values: Array<number | null | undefined>): number | null {
+    const xs = values.filter(
+      (v): v is number => typeof v === 'number' && Number.isFinite(v),
+    );
+    if (xs.length === 0) return null;
+    return xs.reduce((a, b) => a + b, 0) / xs.length;
+  }
+
+  // R8 derived: tokens-per-watt. Null if tps or power is missing or power<=0.
+  private tokensPerWatt(
+    tps: number | null,
+    power: number | null,
+  ): number | null {
+    if (tps == null || power == null || power <= 0) return null;
+    return tps / power;
   }
 
   private canonicalizeHardwareLabel(raw: string): CanonicalHardwareLabel {
@@ -996,11 +1297,11 @@ export class ComparisonService {
       this.normalizeDataset(source.dataset) ===
       this.normalizeDataset(candidate.dataset);
     const samePrecision =
-      this.normalizeStr(source.precision) ===
-      this.normalizeStr(candidate.precision);
+      normalizeStrLower(source.precision) ===
+      normalizeStrLower(candidate.precision);
     const sameScenario =
-      this.normalizeStr(source.scenario) ===
-      this.normalizeStr(candidate.scenario);
+      normalizeStrLower(source.scenario) ===
+      normalizeStrLower(candidate.scenario);
     const sameBatch = source.batch_size === candidate.batch_size;
     const sameDataNumber = source.data_number === candidate.data_number;
     const sameMaxOutput =
@@ -1100,12 +1401,10 @@ export class ComparisonService {
     return this.classifyComparability(source, run);
   }
 
+  // Class delegates to the top-level helper so callers in classifyComparability
+  // and the exported computeIncompatibilityReasons share one source of truth.
   private normalizeModel(model: string | null | undefined): string {
-    if (!model) return '';
-    // Strip org/vendor prefixes: "meta-llama/Llama-3.1-8B-Instruct" → "llama-3.1-8b-instruct"
-    // Also strip vendor-specific suffixes like "-fp8" added by furiosa-ai.
-    const bare = model.trim().split('/').pop() ?? '';
-    return bare.toLowerCase().replace(/-fp8$/i, '');
+    return normalizeBaseModel(model);
   }
 
   // W7/W10 contract: data_number=0 means full dataset (canonical). 1..13367 = subset (not canonical).
@@ -1140,23 +1439,9 @@ export class ComparisonService {
     return p === 'BF16' || p === 'BFLOAT16';
   }
 
+  // Class delegates to the top-level helper (single source of truth).
   private normalizeDataset(dataset: string | null | undefined): string {
-    if (!dataset) return '';
-    const s = dataset.trim().toLowerCase();
-    // Canonicalize CNN-DailyMail variants: cnn_eval.json, cnn-dailymail, cnn_dailymail → cnn-dailymail
-    if (
-      s === 'cnn_eval.json' ||
-      s === 'cnn_dailymail' ||
-      s === 'cnn-dailymail'
-    ) {
-      return 'cnn-dailymail';
-    }
-    return s;
-  }
-
-  private normalizeStr(s: string | null | undefined): string {
-    if (s == null) return '';
-    return String(s).trim().toLowerCase();
+    return normalizeDatasetLabel(dataset);
   }
 
   // Test-only helper exposed via DI in unit tests.

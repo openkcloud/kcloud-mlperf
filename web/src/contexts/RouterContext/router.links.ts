@@ -1,7 +1,7 @@
 import { generatePath } from 'react-router-dom';
 
 import { join } from '@/contexts/RouterContext/router.helpers';
-import { AdminPaths, DashboardPaths, HomePaths, MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths, NpuEvalAtomPlusPaths } from '@/contexts/RouterContext/router.paths';
+import { AdminPaths, DashboardPaths, HomePaths, MethodologyPaths, MlPerfPaths, MmluPaths, NpuEvalPaths, NpuEvalRngdPaths, NpuEvalAtomPlusPaths } from '@/contexts/RouterContext/router.paths';
 
 export const HomePageLinks = {
   main: HomePaths.ROOT_PATH
@@ -75,4 +75,10 @@ export const DashboardPageLinks = {
 
 export const AdminPageLinks = {
   sweepControl: join(AdminPaths.ROOT_PATH, AdminPaths.SWEEP_CONTROL_PATH)
+} as const;
+
+// ----------------------------------------------------------------------
+
+export const MethodologyPageLinks = {
+  main: MethodologyPaths.ROOT_PATH
 } as const;

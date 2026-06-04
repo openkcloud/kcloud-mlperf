@@ -31,6 +31,23 @@ export const VENDOR_COLORS: Record<string, string> = {
   intel: '#0284C7'
 };
 
+// Dark-surface-safe variants chosen for >=4.5:1 contrast on #0F172A/#1E293B.
+// NVIDIA indigo #4F46E5 → 3.1:1 on dark bg; lightened to #818CF8 (6.0:1).
+// Furiosa teal #14B8A6 → 2.9:1; lightened to #2DD4BF (5.1:1).
+// Rebellions purple #A855F7 → 4.7:1 (already passes, kept slightly lighter).
+// Intel blue #0284C7 → 3.3:1; lightened to #38BDF8 (6.6:1).
+export const VENDOR_COLORS_DARK: Record<string, string> = {
+  NVIDIA: '#818CF8',    // indigo-400  ~6.0:1 on #0F172A
+  nvidia: '#818CF8',
+  Furiosa: '#2DD4BF',  // teal-400    ~5.1:1 on #0F172A
+  FuriosaAI: '#2DD4BF',
+  furiosa: '#2DD4BF',
+  Rebellions: '#C084FC', // purple-400  ~6.2:1 on #0F172A
+  rebellions: '#C084FC',
+  Intel: '#38BDF8',    // sky-400     ~6.6:1 on #0F172A
+  intel: '#38BDF8'
+};
+
 export const getDeviceColor = (key: string): string => {
   if (key in DEVICE_COLORS) return DEVICE_COLORS[key as DeviceColorKey];
   // Heuristic fallbacks by substring
@@ -43,7 +60,11 @@ export const getDeviceColor = (key: string): string => {
   return DEVICE_COLORS.GPU;
 };
 
-export const getVendorColor = (vendor: string | null | undefined): string => {
-  if (!vendor) return DEVICE_COLORS.GPU;
-  return VENDOR_COLORS[vendor] ?? DEVICE_COLORS.GPU;
+export const getVendorColor = (
+  vendor: string | null | undefined,
+  mode: 'light' | 'dark' = 'light',
+): string => {
+  if (!vendor) return mode === 'dark' ? '#818CF8' : DEVICE_COLORS.GPU;
+  const map = mode === 'dark' ? VENDOR_COLORS_DARK : VENDOR_COLORS;
+  return map[vendor] ?? (mode === 'dark' ? '#818CF8' : DEVICE_COLORS.GPU);
 };

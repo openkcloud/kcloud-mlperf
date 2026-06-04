@@ -12,10 +12,11 @@ import {
   RESOURCE_NAMES,
   RegistryHealth,
   RegistrySource,
+  VENDOR_RESOURCE_CANDIDATES,
 } from './device-registry.types';
 
 const DEFAULT_CLUSTER_YAML =
-  '/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/cluster.yaml';
+  '/home/kcloud/etri-llm-deployments/app/config/cluster.yaml';
 
 interface K8sNodeView {
   name: string;
@@ -183,15 +184,57 @@ export class DeviceRegistryService implements OnModuleInit {
     return null;
   }
 
-  private parseAllocatableCount(
+  /**
+   * Look up the allocatable count by walking the vendor's candidate list.
+   * Returns the first match's count plus the resource name that satisfied
+   * the lookup. Decoupling vendor → resource from a single hardcoded string
+   * keeps detection working when a vendor ships a new NPU family name.
+   */
+  private resolveAllocatable(
     allocatable: Record<string, string>,
-    resourceName: string | null,
-  ): number | null {
-    if (!resourceName) return null;
-    const raw = allocatable[resourceName];
-    if (raw === undefined) return null;
-    const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? n : null;
+    vendor: DeviceVendor | null,
+  ): { count: number | null; resourceName: string | null } {
+    if (!vendor) return { count: null, resourceName: null };
+    const candidates = VENDOR_RESOURCE_CANDIDATES[vendor] ?? [];
+    for (const name of candidates) {
+      const raw = allocatable[name];
+      if (raw === undefined) continue;
+      const n = parseInt(raw, 10);
+      if (Number.isFinite(n)) return { count: n, resourceName: name };
+    }
+    return { count: null, resourceName: null };
+  }
+
+  /**
+   * Warn when the node advertises a `<vendor>.ai/*` (or `nvidia.com/*`)
+   * allocatable resource that isn't in VENDOR_RESOURCE_CANDIDATES. This is
+   * the smoke alarm: if a new NPU family ships and we forget to add it to
+   * the candidate list, /api/devices/health.device_plugin_warnings will
+   * say so explicitly instead of silently returning false.
+   */
+  private detectUnknownVendorResources(
+    allocatable: Record<string, string>,
+    vendor: DeviceVendor | null,
+    nodeName: string,
+  ): string[] {
+    if (!vendor) return [];
+    const candidates = new Set(VENDOR_RESOURCE_CANDIDATES[vendor] ?? []);
+    const vendorPrefixes: Record<DeviceVendor, string[]> = {
+      nvidia: ['nvidia.com/'],
+      furiosa: ['furiosa.ai/'],
+      rebellions: ['rebellions.ai/'],
+      intel: [],
+    };
+    const prefixes = vendorPrefixes[vendor] ?? [];
+    const warnings: string[] = [];
+    for (const key of Object.keys(allocatable)) {
+      if (!prefixes.some((p) => key.startsWith(p))) continue;
+      if (candidates.has(key)) continue;
+      warnings.push(
+        `node=${nodeName} vendor=${vendor} unknown allocatable resource ${key}=${allocatable[key]} — add to VENDOR_RESOURCE_CANDIDATES`,
+      );
+    }
+    return warnings;
   }
 
   /** Split a model label like "L40 + A40" into individual SKU tokens. */
@@ -260,17 +303,24 @@ export class DeviceRegistryService implements OnModuleInit {
     const devices: DeviceEntry[] = [];
     const nodes: NodeSummary[] = [];
     const devicePlugins: Record<string, boolean> = {};
+    const devicePluginResource: Record<string, string | null> = {};
+    const devicePluginWarnings: string[] = [];
 
     for (const yamlNode of yamlNodes) {
       const k8sNode = k8sIndex.get(yamlNode.name);
       const { state, k8s_status } = this.k8sNodeStateFor(yamlNode, k8sNode);
       const type = this.typeOf(yamlNode);
       const vendor = this.vendorOf(yamlNode);
-      const resourceName = this.resourceNameFor(vendor);
-      const allocatableCount =
-        k8sNode && resourceName
-          ? this.parseAllocatableCount(k8sNode.allocatable, resourceName)
-          : null;
+      // Resolve allocatable via the vendor-candidate list so that any of
+      // VENDOR_RESOURCE_CANDIDATES[vendor] (e.g. furiosa.ai/rngd OR
+      // furiosa.ai/npu) satisfies detection.
+      const { count: allocatableCount, resourceName: detectedResourceName } =
+        k8sNode
+          ? this.resolveAllocatable(k8sNode.allocatable, vendor)
+          : { count: null, resourceName: null };
+      // Display label falls back to the legacy vendor default when nothing
+      // matched; keeps existing UI strings stable.
+      const resourceName = detectedResourceName ?? this.resourceNameFor(vendor);
       const declaredCount = yamlNode.accelerator?.count ?? 0;
       const skuTokens = this.splitModels(yamlNode.accelerator?.model);
       const role: 'master' | 'worker' =
@@ -279,7 +329,23 @@ export class DeviceRegistryService implements OnModuleInit {
       // Device plugin detection: resource present in allocatable, with count > 0
       const pluginDetected =
         type !== 'cpu' && allocatableCount !== null && allocatableCount > 0;
-      if (type !== 'cpu') devicePlugins[yamlNode.name] = pluginDetected;
+      if (type !== 'cpu') {
+        devicePlugins[yamlNode.name] = pluginDetected;
+        devicePluginResource[yamlNode.name] = detectedResourceName;
+      }
+
+      // Safeguard: if k8s advertises a vendor-prefixed allocatable we don't
+      // recognise, surface it as a warning rather than silently mis-detecting.
+      if (k8sNode && type !== 'cpu') {
+        for (const w of this.detectUnknownVendorResources(
+          k8sNode.allocatable,
+          vendor,
+          yamlNode.name,
+        )) {
+          devicePluginWarnings.push(w);
+          this.logger.warn(w);
+        }
+      }
 
       // Compose node summary
       nodes.push({
@@ -360,6 +426,8 @@ export class DeviceRegistryService implements OnModuleInit {
       k8s_api_error: this.lastK8sError,
       source_used: this.lastSourceUsed,
       device_plugins: devicePlugins,
+      device_plugin_resource: devicePluginResource,
+      device_plugin_warnings: devicePluginWarnings,
       last_refresh: this.lastRefresh,
     };
 

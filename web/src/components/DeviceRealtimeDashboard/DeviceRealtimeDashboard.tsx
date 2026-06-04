@@ -10,17 +10,53 @@ import {
   TableHead,
   TableRow,
   Tooltip,
-  Typography
+  Typography,
+  useTheme
 } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
+import { LineChart } from '@mui/x-charts/LineChart';
 
 import type { DeviceEntry, DeviceState, DeviceVendor } from '@/api/types/devices.types';
 import { DeviceDashboardHeader } from '@/components/DeviceDashboardHeader';
 import { DEVICE_COLORS, getDeviceColor, getVendorColor } from '@/constants/device-colors';
+import { statusColor } from '@/components/home/deviceAggregates';
 
 import { deviceLabel, slotKeyFromDevice, useDeviceRegistry } from '@/hooks/useDeviceRegistry';
-import { useRealtimeExams } from '@/hooks/useRealtimeExams';
-import type { RealtimeExamSlot } from '@/hooks/useRealtimeExams';
+import { telemetryHistoryKey, useRealtimeExams } from '@/hooks/useRealtimeExams';
+import type {
+  RealtimeExamSlot,
+  TelemetryHistory,
+  WireSlotTelemetry
+} from '@/hooks/useRealtimeExams';
+
+/**
+ * Render `value` to `digits` fixed places, or '—' when undefined/null.
+ * Used by the per-card telemetry tiles so we never display fake zeros — but
+ * once Prometheus has emitted a sample (even `0`) we DO render it, because
+ * the backend has already validated `exporter_status === 'ok'`.
+ */
+const fmt = (value: number | undefined | null, digits = 0, suffix = ''): string => {
+  if (value === undefined || value === null || Number.isNaN(value)) return '—';
+  return `${value.toFixed(digits)}${suffix}`;
+};
+
+/** Pick the right utilization field by device type. */
+const utilPct = (t: WireSlotTelemetry | null | undefined, deviceType: 'gpu' | 'npu' | 'cpu'): number | undefined => {
+  if (!t) return undefined;
+  if (deviceType === 'gpu') return t.gpu_util_pct;
+  return t.util_pct;
+};
+
+/** Compose the DRAM / FB usage tile string ("used / total GB" or "MiB"). */
+const memUsage = (t: WireSlotTelemetry | null | undefined, deviceType: 'gpu' | 'npu' | 'cpu'): string => {
+  if (!t) return '—';
+  if (deviceType === 'gpu') {
+    if (t.fb_used_mib === undefined || t.fb_total_mib === undefined) return '—';
+    return `${(t.fb_used_mib / 1024).toFixed(1)} / ${(t.fb_total_mib / 1024).toFixed(1)} GiB`;
+  }
+  if (t.dram_used_gb === undefined || t.dram_total_gb === undefined) return '—';
+  return `${t.dram_used_gb.toFixed(1)} / ${t.dram_total_gb.toFixed(1)} GB`;
+};
 
 // -----------------------------------------------------------------------
 
@@ -57,12 +93,14 @@ const VENDOR_DISPLAY: Record<DeviceVendor, string> = {
   intel: 'Intel'
 };
 
-const STATE_CHIP: Record<DeviceState, { label: string; color: string }> = {
-  ready: { label: 'Ready', color: '#16A34A' },
-  pending_join: { label: 'Pending Join', color: '#D97706' },
-  not_ready: { label: 'Not Ready', color: '#DC2626' },
-  degraded: { label: 'Degraded', color: '#EA580C' },
-  unknown: { label: 'Unknown', color: '#64748B' }
+// STATE_CHIP colors are referenced only inside components that call useTheme(),
+// so we keep the static label map and derive the color at render time via statusColor().
+const STATE_CHIP_LABEL: Record<DeviceState, { label: string; kind: 'success' | 'warning' | 'error' | 'neutral' }> = {
+  ready: { label: 'Ready', kind: 'success' },
+  pending_join: { label: 'Pending Join', kind: 'warning' },
+  not_ready: { label: 'Not Ready', kind: 'error' },
+  degraded: { label: 'Degraded', kind: 'warning' },
+  unknown: { label: 'Unknown', kind: 'neutral' }
 };
 
 // -----------------------------------------------------------------------
@@ -70,6 +108,9 @@ const STATE_CHIP: Record<DeviceState, { label: string; color: string }> = {
 type StatusChipProps = { status: string };
 
 const StatusChip = ({ status }: StatusChipProps) => {
+  // StatusChip uses a solid-background style (color: '#fff'), so the background
+  // itself is the brand color. These are already saturated enough to carry white
+  // text on both themes — no mode switch needed for the bg. We keep '#fff' fg.
   const map: Record<string, { label: string; color: string; strikethrough?: boolean }> = {
     Running: { label: 'Running', color: '#16A34A' },
     running: { label: 'Running', color: '#16A34A' },
@@ -114,15 +155,18 @@ const StatusChip = ({ status }: StatusChipProps) => {
 };
 
 const RegistryStateChip = ({ state }: { state: DeviceState }) => {
-  const cfg = STATE_CHIP[state] ?? STATE_CHIP.unknown;
+  const { palette } = useTheme();
+  const mode = palette.mode;
+  const cfg = STATE_CHIP_LABEL[state] ?? STATE_CHIP_LABEL.unknown;
+  const color = statusColor(cfg.kind, mode);
   return (
     <Chip
       label={cfg.label}
       size="small"
       variant="outlined"
       sx={{
-        borderColor: cfg.color,
-        color: cfg.color,
+        borderColor: color,
+        color,
         fontWeight: 600,
         fontSize: '0.625rem',
         height: 18
@@ -136,13 +180,31 @@ const RegistryStateChip = ({ state }: { state: DeviceState }) => {
 type DeviceCardProps = {
   device: DeviceEntry;
   slot: RealtimeExamSlot | null;
+  telemetryHistory: TelemetryHistory;
 };
 
-const DeviceCard = ({ device, slot }: DeviceCardProps) => {
+const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
+  const { palette } = useTheme();
+  const mode = palette.mode;
   const slotKey = slotKeyFromDevice(device);
   const color = getDeviceColor(slotKey);
-  const vendorColor = getVendorColor(VENDOR_DISPLAY[device.vendor] ?? device.vendor);
+  const vendorColor = getVendorColor(VENDOR_DISPLAY[device.vendor] ?? device.vendor, mode);
   const status = slot?.status ?? (device.state === 'ready' ? 'Idle' : 'Pending');
+
+  // Latest telemetry is always sourced from the slot (idle slots already
+  // emit telemetry in the snapshot). The history buffer is keyed by
+  // `${node}/${slot_id}` and may be undefined on the very first frame.
+  const telemetry: WireSlotTelemetry | null = slot?.telemetry ?? null;
+  // slot_id is always a required number on DeviceEntry; no undefined guard needed.
+  // Even idle devices emit telemetry in every SSE snapshot, so history is
+  // populated regardless of whether an exam is running.
+  const historyKey = telemetryHistoryKey(device.node, device.slot_id);
+  const history = telemetryHistory[historyKey];
+  // Sparkline data: 60-point utilization timeline. Falls back to []
+  // (LineChart still renders an empty axis) until samples arrive.
+  const utilSeries: number[] = (history ?? [])
+    .map(t => utilPct(t, device.type as 'gpu' | 'npu' | 'cpu') ?? 0);
+  const xAxisIdx: number[] = utilSeries.map((_v, i) => i);
   const isRunning = status.toLowerCase() === 'running';
   const isStale = status.toLowerCase() === 'stale';
   const badgeText = device.type === 'npu' ? 'NPU' : device.type === 'cpu' ? 'CPU' : 'GPU';
@@ -255,10 +317,87 @@ const DeviceCard = ({ device, slot }: DeviceCardProps) => {
         </Box>
       </Box>
 
+      {/* Telemetry tile row: util %, power W, temp C, DRAM/FB used/total.
+          Always rendered — idle slots still get fresh values from SSE. */}
+      <Box
+        sx={{
+          mt: 1.25,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 1,
+          pt: 1,
+          borderTop: '1px dashed rgba(0,0,0,0.08)'
+        }}
+      >
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            Util %
+          </Typography>
+          <Typography fontSize="0.8125rem" fontWeight={600}>
+            {fmt(utilPct(telemetry, device.type as 'gpu' | 'npu' | 'cpu'), 0, '%')}
+          </Typography>
+        </Box>
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            Power W
+          </Typography>
+          <Typography fontSize="0.8125rem" fontWeight={600}>
+            {fmt(telemetry?.power_w, 1)}
+          </Typography>
+        </Box>
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            Temp °C
+          </Typography>
+          <Typography fontSize="0.8125rem" fontWeight={600}>
+            {fmt(telemetry?.temp_c, 1)}
+          </Typography>
+        </Box>
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            {device.type === 'gpu' ? 'FB' : 'DRAM'}
+          </Typography>
+          <Typography fontSize="0.75rem" fontWeight={600} noWrap>
+            {memUsage(telemetry, device.type as 'gpu' | 'npu' | 'cpu')}
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Utilization sparkline — last 60 readings (~2 min @ 2s cadence). */}
+      <Box sx={{ mt: 1, height: 60 }}>
+        {utilSeries.length > 1 ? (
+          <LineChart
+            xAxis={[{ data: xAxisIdx, scaleType: 'point', disableTicks: true, disableLine: true }]}
+            series={[
+              {
+                data: utilSeries,
+                color,
+                showMark: false,
+                area: true,
+                curve: 'monotoneX',
+                valueFormatter: (v: number | null) => (v == null ? '—' : `${v.toFixed(0)}%`)
+              }
+            ]}
+            yAxis={[{ min: 0, max: 100, disableLine: true, disableTicks: true }]}
+            height={60}
+            margin={{ top: 4, right: 4, bottom: 4, left: 4 }}
+            slotProps={{ legend: { sx: { display: 'none' } } }}
+            sx={{
+              '& .MuiChartsAxis-root': { display: 'none' },
+              '& .MuiAreaElement-root': { fillOpacity: 0.15 }
+            }}
+          />
+        ) : (
+          <Typography variant="caption" color="text.secondary" sx={{ pl: 0.5 }}>
+            Collecting utilization history…
+          </Typography>
+        )}
+      </Box>
+
       {isPending && (
         <Typography
           variant="caption"
-          sx={{ mt: 1.5, display: 'block', color: STATE_CHIP.pending_join.color, fontWeight: 600 }}
+          sx={{ mt: 1.5, display: 'block', color: statusColor('warning', mode), fontWeight: 600 }}
         >
           Awaiting cluster join — slot reserved.
         </Typography>
@@ -267,7 +406,7 @@ const DeviceCard = ({ device, slot }: DeviceCardProps) => {
       {isStale && (
         <Typography
           variant="caption"
-          sx={{ mt: 1.5, display: 'block', color: '#64748B', fontWeight: 600 }}
+          sx={{ mt: 1.5, display: 'block', color: statusColor('neutral', mode), fontWeight: 600 }}
         >
           No heartbeat for &gt;2 min — benchmark may have crashed.
           {slot?.last_seen
@@ -305,13 +444,15 @@ type Props = {
 };
 
 export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }: Props) => {
+  const { palette } = useTheme();
+  const mode = palette.mode;
   const {
     devices,
     health,
     isLoading: registryLoading,
     error: registryError
   } = useDeviceRegistry({ deviceType });
-  const { snapshot, connected, error } = useRealtimeExams();
+  const { snapshot, connected, error, telemetryHistory } = useRealtimeExams();
 
   const allSlots = snapshot?.slots ?? [];
   const progress = snapshot?.sweep_progress ?? { completed: 0, total: 96, paused: true };
@@ -363,8 +504,8 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
             variant="outlined"
             sx={{
               fontSize: '0.6875rem',
-              borderColor: health.source_used === 'k8s' ? '#16A34A' : '#D97706',
-              color: health.source_used === 'k8s' ? '#16A34A' : '#D97706'
+              borderColor: health.source_used === 'k8s' ? statusColor('success', mode) : statusColor('warning', mode),
+              color: health.source_used === 'k8s' ? statusColor('success', mode) : statusColor('warning', mode)
             }}
           />
           <Chip
@@ -373,8 +514,8 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
             variant="outlined"
             sx={{
               fontSize: '0.6875rem',
-              borderColor: health.k8s_api_reachable ? '#16A34A' : '#DC2626',
-              color: health.k8s_api_reachable ? '#16A34A' : '#DC2626'
+              borderColor: health.k8s_api_reachable ? statusColor('success', mode) : statusColor('error', mode),
+              color: health.k8s_api_reachable ? statusColor('success', mode) : statusColor('error', mode)
             }}
           />
           {health.k8s_api_error && (
@@ -487,6 +628,7 @@ export const DeviceRealtimeDashboard = ({ deviceType = 'gpu', benchmarkFilter }:
               key={`${device.node}-${slotKeyFromDevice(device)}-${device.slot_id}`}
               device={device}
               slot={getSlotForDevice(device)}
+              telemetryHistory={telemetryHistory}
             />
           ))}
         </Box>

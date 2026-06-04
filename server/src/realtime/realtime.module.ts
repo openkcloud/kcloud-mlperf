@@ -11,6 +11,8 @@ import { RealtimeGateway } from './realtime.gateway';
 import { GpuSweepModule } from '../gpu-sweep/gpu-sweep.module';
 import { GpuSweepService } from '../gpu-sweep/gpu-sweep.service';
 import { DeviceRegistryModule } from '../device-registry/device-registry.module';
+import { PrometheusModule } from '../prometheus/prometheus.module';
+import { DeviceTelemetryService } from './device-telemetry.service';
 
 @Module({
   imports: [
@@ -23,11 +25,13 @@ import { DeviceRegistryModule } from '../device-registry/device-registry.module'
     ]),
     GpuSweepModule,
     DeviceRegistryModule,
+    PrometheusModule,
   ],
   controllers: [RealtimeController],
   providers: [
     RealtimeService,
     RealtimeGateway,
+    DeviceTelemetryService,
     { provide: GPU_SWEEP_SERVICE_TOKEN, useExisting: GpuSweepService },
   ],
   exports: [RealtimeService, RealtimeGateway],

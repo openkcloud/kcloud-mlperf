@@ -1,16 +1,24 @@
 import { type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 
-import { Box, Drawer, IconButton, Typography, useMediaQuery, useTheme, styled } from '@mui/material';
-import { Menu as MenuIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Box, Drawer, IconButton, Tooltip, Typography, useMediaQuery, useTheme, styled } from '@mui/material';
+import {
+  Menu as MenuIcon,
+  Close as CloseIcon,
+  DarkModeOutlined as DarkIcon,
+  LightModeOutlined as LightIcon,
+  ArticleOutlined as ArticleIcon,
+} from '@mui/icons-material';
 import _clsx from 'clsx';
+
+import { useColorMode } from '@/contexts/ThemeContext/ThemeContext';
 
 import ChevronRightSVG from '@/assets/icons/chevron-right.svg?react';
 import CloudSVG from '@/assets/icons/cloud.svg?react';
 import HexagonSVG from '@/assets/icons/hexagon.svg?react';
 import { AppLoader } from '@/components/AppLoader';
 
-import { DashboardPageLinks, HomePageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks, NpuEvalAtomPlusPageLinks } from '@/contexts/RouterContext/router.links.ts';
+import { DashboardPageLinks, HomePageLinks, MethodologyPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks, NpuEvalAtomPlusPageLinks } from '@/contexts/RouterContext/router.links.ts';
 
 // ----------------------------------------------------------------------
 
@@ -174,6 +182,22 @@ const OPERATIONS_NAV_ITEMS = [
 
 // ----------------------------------------------------------------------
 
+const ThemeToggleButton = () => {
+  const { mode, toggleColorMode } = useColorMode();
+  return (
+    <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} arrow>
+      <IconButton
+        onClick={toggleColorMode}
+        size="small"
+        aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        sx={{ color: 'rgba(148, 163, 184, 0.7)', '&:hover': { color: '#fff' } }}
+      >
+        {mode === 'dark' ? <LightIcon fontSize="small" /> : <DarkIcon fontSize="small" />}
+      </IconButton>
+    </Tooltip>
+  );
+};
+
 type SidebarProps = {
   onClose?: () => void;
 };
@@ -231,16 +255,19 @@ const Sidebar = ({ onClose }: SidebarProps) => (
           </Typography>
         </Box>
       </Link>
-      {onClose && (
-        <IconButton
-          onClick={onClose}
-          size="small"
-          sx={{ color: 'rgba(148, 163, 184, 0.6)', ml: 1, '&:hover': { color: '#fff' } }}
-          aria-label="Close sidebar"
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      )}
+      <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
+        <ThemeToggleButton />
+        {onClose && (
+          <IconButton
+            onClick={onClose}
+            size="small"
+            sx={{ color: 'rgba(148, 163, 184, 0.6)', '&:hover': { color: '#fff' } }}
+            aria-label="Close sidebar"
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        )}
+      </Box>
     </Box>
 
     {/* Divider */}
@@ -335,6 +362,34 @@ const Sidebar = ({ onClose }: SidebarProps) => (
       </StyledNavLink>
     ))}
 
+    {/* Section: About */}
+    <Box sx={{ height: '1px', background: 'rgba(255,255,255,0.06)', mx: -0.5, mt: 1.5, mb: 1 }} />
+    <Typography
+      sx={{
+        color: 'rgba(148, 163, 184, 0.4)',
+        fontSize: '0.625rem',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        px: 0.5,
+        mb: 1.25
+      }}
+    >
+      About
+    </Typography>
+    <StyledNavLink to={MethodologyPageLinks.main}>
+      <ArticleIcon className="nav-icon" />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', color: 'inherit', lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          Methodology
+        </Typography>
+        <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(148, 163, 184, 0.5)', fontWeight: 400, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          Reproducibility disclosure
+        </Typography>
+      </Box>
+      <ChevronRightSVG className="nav-chevron" />
+    </StyledNavLink>
+
     {/* Spacer */}
     <Box sx={{ flex: 1 }} />
 
@@ -384,6 +439,17 @@ export const MainLayout = (props: MainLayoutProps) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Top bar must track the active palette — a hardcoded white header floating
+  // above the dark body/sidebar is the jarring "hideous in dark mode" defect.
+  const isDark = theme.palette.mode === 'dark';
+  const headerBg = isDark
+    ? 'linear-gradient(90deg, #0F172A 0%, #172033 60%, #1E293B 100%)' // palette default→tableHead→paper
+    : 'linear-gradient(90deg, #FFFFFF 0%, #FAFBFF 60%, #F5F7FF 100%)';
+  const headerBorder = isDark ? 'rgba(148, 163, 184, 0.16)' : 'rgba(226, 232, 240, 0.8)';
+  const headerShadow = isDark ? '0 1px 0 rgba(0,0,0,0.3)' : '0 1px 4px rgba(15,23,42,0.04)';
+  const titleColor = isDark ? '#F1F5F9' : '#0F172A';
+  const menuColor = isDark ? '#94A3B8' : '#475569';
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -506,15 +572,15 @@ export const MainLayout = (props: MainLayoutProps) => {
           sx={{
             px: { xs: 2, sm: 3, md: 4 },
             py: { xs: 1.5, md: 2 },
-            borderBottom: '1px solid rgba(226, 232, 240, 0.8)',
-            background: 'linear-gradient(90deg, #FFFFFF 0%, #FAFBFF 60%, #F5F7FF 100%)',
+            borderBottom: `1px solid ${headerBorder}`,
+            background: headerBg,
             display: 'flex',
             alignItems: 'center',
             gap: 2,
             position: 'sticky',
             top: 0,
             zIndex: 5,
-            boxShadow: '0 1px 4px rgba(15,23,42,0.04)'
+            boxShadow: headerShadow
           }}
         >
           {/* Mobile menu button */}
@@ -522,7 +588,7 @@ export const MainLayout = (props: MainLayoutProps) => {
             <IconButton
               onClick={() => setMobileOpen(true)}
               size="small"
-              sx={{ color: '#475569', mr: 0.5 }}
+              sx={{ color: menuColor, mr: 0.5 }}
               aria-label="Open navigation"
             >
               <MenuIcon />
@@ -535,7 +601,7 @@ export const MainLayout = (props: MainLayoutProps) => {
               component="h1"
               sx={{
                 fontWeight: 700,
-                color: '#0F172A',
+                color: titleColor,
                 fontSize: { xs: '1rem', md: '1.1875rem' },
                 letterSpacing: '-0.025em',
                 lineHeight: 1.3,
@@ -554,11 +620,11 @@ export const MainLayout = (props: MainLayoutProps) => {
               py: 0.5,
               borderRadius: '9999px',
               background: isNpu
-                ? 'linear-gradient(135deg, rgba(249,115,22,0.08) 0%, rgba(251,146,60,0.06) 100%)'
-                : 'linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(99,102,241,0.06) 100%)',
+                ? `linear-gradient(135deg, rgba(249,115,22,${isDark ? 0.18 : 0.08}) 0%, rgba(251,146,60,${isDark ? 0.12 : 0.06}) 100%)`
+                : `linear-gradient(135deg, rgba(99,102,241,${isDark ? 0.22 : 0.08}) 0%, rgba(129,140,248,${isDark ? 0.14 : 0.06}) 100%)`,
               border: isNpu
-                ? '1px solid rgba(249,115,22,0.25)'
-                : '1px solid rgba(99,102,241,0.18)',
+                ? `1px solid rgba(249,115,22,${isDark ? 0.4 : 0.25})`
+                : `1px solid rgba(129,140,248,${isDark ? 0.4 : 0.18})`,
               flexShrink: 0
             }}
           >
@@ -566,7 +632,7 @@ export const MainLayout = (props: MainLayoutProps) => {
               sx={{
                 fontSize: '0.6875rem',
                 fontWeight: 600,
-                color: isNpu ? '#F97316' : '#4F46E5',
+                color: isNpu ? (isDark ? '#FDBA74' : '#F97316') : (isDark ? '#A5B4FC' : '#4F46E5'),
                 letterSpacing: '0.01em',
                 whiteSpace: 'nowrap'
               }}

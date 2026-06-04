@@ -14,6 +14,7 @@ import { MpExamResult } from '../entities/mp-exam-result.entity';
 import { NpuExam } from '../entities/npu-exam.entity';
 import { NpuExamResult } from '../entities/npu-exam-result.entity';
 import { DeviceRegistryService } from '../device-registry/device-registry.service';
+import { DeviceTelemetryService } from './device-telemetry.service';
 import { StatusEnum } from '../enums/status.enum';
 import type { DeviceEntry } from '../device-registry/device-registry.types';
 
@@ -101,6 +102,14 @@ async function buildModule(
       { provide: getRepositoryToken(NpuExamResult), useValue: npuResultRepo },
       { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: null },
       { provide: DeviceRegistryService, useValue: deviceRegistry },
+      {
+        provide: DeviceTelemetryService,
+        useValue: {
+          getGpuTelemetry: jest.fn().mockResolvedValue(null),
+          getNpuTelemetry: jest.fn().mockResolvedValue(null),
+          getVllmTelemetry: jest.fn().mockResolvedValue(null),
+        },
+      },
     ],
   }).compile();
 
@@ -111,14 +120,18 @@ async function buildModule(
 
 describe('Realtime slot state machine', () => {
   describe('stale TTL', () => {
-    it('marks RNGD slot as stale when started_at >2 min ago and no result', async () => {
-      const staleStartedAt = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    it('marks RNGD slot as RUNNING when started_at >2 min ago and no result yet (pre-first-heartbeat grace)', async () => {
+      // Contract change 2026-05-18: while waiting for the first heartbeat,
+      // the slot stays "running" for up to NEVER_HEARTBEAT_THRESHOLD_MS
+      // (30 min). Full-MLPerf model load takes several minutes; flipping to
+      // "stale" at 2 min mislabels healthy warmup as broken on the dashboard.
+      const recentStartedAt = new Date(Date.now() - 3 * 60 * 1000).toISOString();
       const npuExam: Partial<NpuExam> = {
         id: 1,
         name: 'rngd-bench',
         npu_type: 'RNGD',
         status: StatusEnum.RUNNING,
-        started_at: staleStartedAt,
+        started_at: recentStartedAt,
       };
 
       const svc = await buildModule([RNGD_DEVICE], [npuExam], []);
@@ -126,8 +139,50 @@ describe('Realtime slot state machine', () => {
       const rngd = snap.slots.find((s) => s.model === 'RNGD');
 
       expect(rngd).toBeDefined();
-      expect(rngd!.status).toBe('stale');
+      expect(rngd!.status).toBe('running');
       expect(rngd!.last_seen).toBeNull();
+    });
+
+    it('marks RNGD slot as stale when started_at >30 min ago and STILL no result (true silent worker)', async () => {
+      const staleStartedAt = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+      const npuExam: Partial<NpuExam> = {
+        id: 99,
+        name: 'rngd-silent',
+        npu_type: 'RNGD',
+        status: StatusEnum.RUNNING,
+        started_at: staleStartedAt,
+      };
+      const svc = await buildModule([RNGD_DEVICE], [npuExam], []);
+      const snap = await svc.buildSnapshot();
+      const rngd = snap.slots.find((s) => s.model === 'RNGD');
+      expect(rngd!.status).toBe('stale');
+    });
+
+    it('picks the most-recently-started RNGD exam, not the oldest, when multiple "Running" rows exist (orphaned by power outage)', async () => {
+      // Regression for 2026-05-18 audit: power outage left exams #155, #156
+      // pinned as Running for days. The realtime matcher used .find() which
+      // returned the first match (oldest id), so the dashboard hid the
+      // currently-active sweep behind a multi-day-old row.
+      const ancient: Partial<NpuExam> = {
+        id: 155,
+        name: 'rngd-orphan-from-outage',
+        npu_type: 'RNGD',
+        status: StatusEnum.RUNNING,
+        started_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      const fresh: Partial<NpuExam> = {
+        id: 159,
+        name: 'rngd-current-sweep',
+        npu_type: 'RNGD',
+        status: StatusEnum.RUNNING,
+        started_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      };
+      // Intentionally put the ancient one first to defeat any .find()-style
+      // matcher that returns the first match.
+      const svc = await buildModule([RNGD_DEVICE], [ancient, fresh], []);
+      const snap = await svc.buildSnapshot();
+      const rngd = snap.slots.find((s) => s.model === 'RNGD');
+      expect(rngd!.current_exam?.id).toBe(159);
     });
 
     it('marks RNGD slot as running when last metric is <2 min old', async () => {

@@ -16,6 +16,10 @@ import { StatusEnum } from '../enums/status.enum';
 import type { SweepStatusResponse } from '../gpu-sweep/dto/gpu-sweep.dto';
 import type { DeviceEntry } from '../device-registry/device-registry.types';
 import { DeviceRegistryService } from '../device-registry/device-registry.service';
+import {
+  DeviceTelemetryService,
+  type SlotTelemetry,
+} from './device-telemetry.service';
 
 export const GPU_SWEEP_SERVICE_TOKEN = 'GPU_SWEEP_SERVICE';
 
@@ -77,10 +81,78 @@ export interface RealtimeSlot {
    *                    upstream emitter is down, or slot is idle/pending_join.
    */
   metrics_status: MetricsStatus;
+  /**
+   * Live device telemetry sourced from Prometheus (DCGM / vLLM). Optional —
+   * absent only if telemetry collection itself threw an uncaught error.
+   */
+  telemetry?: SlotTelemetry;
 }
 
 /** Jobs with no result heartbeat older than this are considered stale. */
 const STALE_THRESHOLD_MS = 2 * 60 * 1000;
+
+/**
+ * Window during which a RUNNING exam that has not yet emitted its first
+ * heartbeat is still treated as 'running' (not 'stale'). Long-warmup
+ * workloads (full MLPerf model load, vLLM compile, NPU graph build) can take
+ * several minutes before producing the first result row. Marking them
+ * 'stale' just because last_seen is null misrepresents healthy work as
+ * broken. Once this window elapses without any heartbeat, the slot does
+ * flip to 'stale' so a genuinely silent worker is still surfaced.
+ */
+const NEVER_HEARTBEAT_THRESHOLD_MS = 30 * 60 * 1000;
+
+/**
+ * Pick the most recently started item from a list. Used by both GPU and
+ * NPU slot matchers so that outage-orphaned RUNNING rows (multi-day-old
+ * exams whose pods never reconciled) don't pin a slot in front of a
+ * currently-active exam. Ties broken by id desc.
+ */
+export function pickMostRecentActive<T extends { id?: number; started_at?: string | Date | null }>(
+  list: T[],
+): T | undefined {
+  return list
+    .slice()
+    .sort((a, b) => {
+      const at = a.started_at ? new Date(a.started_at).getTime() : 0;
+      const bt = b.started_at ? new Date(b.started_at).getTime() : 0;
+      if (bt !== at) return bt - at;
+      return (b.id ?? 0) - (a.id ?? 0);
+    })[0];
+}
+
+/**
+ * Decide the SlotState for an active exam based on heartbeat timing and exam
+ * status. Centralised so GPU and NPU paths share one rule and can't drift.
+ *
+ * @param examStatus DB status string for the exam
+ * @param startedAt RFC3339 timestamp of exam.started_at
+ * @param lastSeen RFC3339 timestamp of the latest result-row, or null
+ * @param now optional now override for tests
+ */
+// Exported under a `__test__` name (and re-exported below) so the spec can
+// import the helper without exposing it as part of the public module API.
+export function computeSlotStatus(
+  examStatus: StatusEnum | string,
+  startedAt: string | Date | null | undefined,
+  lastSeen: string | Date | null,
+  now: number = Date.now(),
+): SlotState {
+  if (examStatus !== StatusEnum.RUNNING) {
+    if (examStatus === StatusEnum.PREPARING) return 'preparing';
+    if (examStatus === StatusEnum.ERROR) return 'error';
+    return 'idle';
+  }
+  if (lastSeen) {
+    const age = now - new Date(lastSeen).getTime();
+    return age >= STALE_THRESHOLD_MS ? 'stale' : 'running';
+  }
+  // No heartbeat received yet — common during model load / NPU graph build.
+  // Only flip to stale once the never-heartbeat window expires.
+  if (!startedAt) return 'running';
+  const startAge = now - new Date(startedAt).getTime();
+  return startAge >= NEVER_HEARTBEAT_THRESHOLD_MS ? 'stale' : 'running';
+}
 
 export interface RealtimeSweepProgress {
   completed: number;
@@ -124,6 +196,7 @@ export class RealtimeService implements OnModuleDestroy {
     @Optional()
     @Inject(DeviceRegistryService)
     private readonly deviceRegistry: DeviceRegistryService | null,
+    private readonly deviceTelemetry: DeviceTelemetryService,
   ) {}
 
   onModuleDestroy() {}
@@ -148,6 +221,7 @@ export class RealtimeService implements OnModuleDestroy {
 
     // Fetch latest mp-results for running mp exams (for tt100t/tps)
     const runningMpIds = mpActives
+
       .filter((e) => e.status === StatusEnum.RUNNING)
       .map((e) => e.id);
 
@@ -169,6 +243,7 @@ export class RealtimeService implements OnModuleDestroy {
 
     // Fetch latest npu-results for running npu exams
     const runningNpuIds = npuActives
+
       .filter((e) => e.status === StatusEnum.RUNNING)
       .map((e) => e.id);
 
@@ -212,10 +287,19 @@ export class RealtimeService implements OnModuleDestroy {
         }
 
         if (device.type === 'npu') {
-          return this.buildNpuSlot(device, npuActives, npuResultByExamId);
+          return this.buildNpuSlotWithTelemetry(
+            device,
+            npuActives,
+            npuResultByExamId,
+          );
         }
 
-        return this.buildGpuSlot(device, mpActives, mmActives, resultByExamId);
+        return this.buildGpuSlotWithTelemetry(
+          device,
+          mpActives,
+          mmActives,
+          resultByExamId,
+        );
       }),
     );
 
@@ -266,7 +350,14 @@ export class RealtimeService implements OnModuleDestroy {
     if (this.deviceRegistry) {
       try {
         const devices = await this.deviceRegistry.getDevices();
-        return devices.filter((d) => d.type === 'gpu' || d.type === 'npu');
+        const filtered = devices.filter((d) => d.type === 'gpu' || d.type === 'npu');
+        // Only use registry result when it has entries; an empty list means the
+        // cluster.yaml was unreadable or k8s API is unavailable — fall through
+        // to the hardcoded baseline so the dashboard is never blank.
+        if (filtered.length > 0) return filtered;
+        this.logger.warn(
+          'DeviceRegistryService returned 0 gpu/npu devices, using hardcoded fallback',
+        );
       } catch (err) {
         this.logger.warn(
           'DeviceRegistryService.getDevices() failed, falling back: ' +
@@ -275,7 +366,9 @@ export class RealtimeService implements OnModuleDestroy {
       }
     }
 
-    // Fallback: hardcoded 4 NVIDIA GPU slots (pre-NPU behaviour)
+    // Fallback: hardcoded 4 NVIDIA GPU slots + 2 NPU slots (RNGD on node4 and
+    // Atom+ on node5). v38 adds the NPU entries so the snapshot always exposes
+    // NPU telemetry even when cluster.yaml is unmounted in the pod image.
     return [
       {
         node: 'node2',
@@ -325,7 +418,96 @@ export class RealtimeService implements OnModuleDestroy {
         allocatable_count: 1,
         source: 'cluster_yaml',
       },
+      {
+        node: 'node4',
+        type: 'npu',
+        vendor: 'furiosa',
+        model: 'RNGD',
+        slot_id: 0,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'furiosa.ai/npu',
+        allocatable_count: 1,
+        source: 'cluster_yaml',
+      },
+      {
+        node: 'node5',
+        type: 'npu',
+        vendor: 'rebellions',
+        model: 'Atom+',
+        slot_id: 0,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'rebellions.ai/atomplus',
+        allocatable_count: 2,
+        source: 'cluster_yaml',
+      },
     ];
+  }
+
+  /** GPU slot builder with async Prometheus telemetry overlay. */
+  private async buildGpuSlotWithTelemetry(
+    device: DeviceEntry,
+    mpActives: MpExam[],
+    mmActives: MmExam[],
+    resultByExamId: Map<number, MpExamResult>,
+  ): Promise<RealtimeSlot> {
+    const slot = this.buildGpuSlot(device, mpActives, mmActives, resultByExamId);
+    if (this.deviceTelemetry) {
+      const [telResult] = await Promise.allSettled([
+        this.deviceTelemetry.getGpuTelemetry(device.node, device.slot_id),
+      ]);
+      slot.telemetry =
+        telResult.status === 'fulfilled'
+          ? telResult.value
+          : { source: 'unavailable' as const };
+    }
+    return slot;
+  }
+
+  /** NPU slot builder with async Prometheus telemetry overlay.
+   *  Rebellions Atom+ nodes also get a vLLM overlay when the counter is live. */
+  private async buildNpuSlotWithTelemetry(
+    device: DeviceEntry,
+    npuActives: NpuExam[],
+    npuResultByExamId: Map<number, NpuExamResult>,
+  ): Promise<RealtimeSlot> {
+    const slot = this.buildNpuSlot(device, npuActives, npuResultByExamId);
+    if (this.deviceTelemetry) {
+      const vendor = device.vendor as 'furiosa' | 'rebellions';
+      const [npuTelResult] = await Promise.allSettled([
+        this.deviceTelemetry.getNpuTelemetry(vendor, device.node),
+      ]);
+      const npuTel: SlotTelemetry =
+        npuTelResult.status === 'fulfilled'
+          ? npuTelResult.value
+          : { source: 'unavailable' as const, exporter_status: 'timeout' };
+
+      // Atom+ (node5, rebellions) also exposes vLLM tokens-per-second.
+      if (vendor === 'rebellions') {
+        const [vllmResult] = await Promise.allSettled([
+          this.deviceTelemetry.getVllmTelemetry(
+            'rebellions/Llama-3.1-8B-Instruct',
+          ),
+        ]);
+        // Null-guard vllmResult.value before reading tokens_per_sec — the
+        // telemetry method returns null when vllm-atomplus is parked,
+        // unreachable, or doesn't report the metric yet. Without this guard
+        // the dashboard crashes the moment Atom+ is unparked.
+        if (
+          vllmResult.status === 'fulfilled' &&
+          vllmResult.value &&
+          vllmResult.value.tokens_per_sec != null
+        ) {
+          slot.telemetry = { ...npuTel, ...vllmResult.value };
+        } else {
+          slot.telemetry = npuTel;
+        }
+      } else {
+        slot.telemetry = npuTel;
+      }
+    }
+    return slot;
   }
 
   private buildGpuSlot(
@@ -341,11 +523,39 @@ export class RealtimeService implements OnModuleDestroy {
     // both sides so we don't miss a Running exam (the L40 idle-when-running bug).
     const norm = (s: string | null | undefined): string =>
       (s ?? '').replace(/^NVIDIA-/i, '').toLowerCase();
+    // GPU family normalization collapses SKU variants — e.g. 'l40' and
+    // 'l40-44gib' both → 'l40'. Used as the loose fallback when an exam's
+    // k8s_node_name is set but the SKU string differs from the slot's
+    // (e.g. user requested 'NVIDIA-A40' and k8s scheduled it onto node3
+    // which only has 'A40-44GiB'). Without family matching the exam shows
+    // on the wrong node's slot and the dashboard misleads the demo audience.
+    const family = (s: string | null | undefined): string =>
+      norm(s).replace(/-\d+gi?b?$/i, '');
     const skuN = norm(sku);
-    const mpExam = mpActives.find((e) => norm(e.gpu_type) === skuN);
-    const mmExam = !mpExam
-      ? mmActives.find((e) => norm(e.gpu_type) === skuN)
-      : undefined;
+    const skuFam = family(sku);
+
+    // Prefer matches that agree on k8s_node_name first (most precise), then
+    // strict SKU, then family-on-same-node. Slots whose node disagrees with
+    // a populated k8s_node_name are skipped entirely so #281 (gpu_type=A40,
+    // ran on node3) doesn't get pinned to node2's A40 slot.
+    const onWrongNode = (e: { k8s_node_name?: string | null }): boolean =>
+      !!e.k8s_node_name && e.k8s_node_name !== device.node;
+    // Same most-recent-active rule as the NPU path: stale RUNNING rows
+    // (outage-orphaned) must not pin a slot to a days-old exam over a
+    // fresh one. Filter, then pick most-recent via shared helper.
+    const findFor = <T extends { id?: number; gpu_type: string; k8s_node_name?: string | null; started_at?: string | Date | null }>(
+      list: T[],
+    ): T | undefined =>
+      pickMostRecentActive(
+        list.filter(
+          (e) =>
+            !onWrongNode(e) &&
+            (norm(e.gpu_type) === skuN ||
+              (e.k8s_node_name === device.node && family(e.gpu_type) === skuFam)),
+        ),
+      );
+    const mpExam = findFor(mpActives) as MpExam | undefined;
+    const mmExam = !mpExam ? (findFor(mmActives) as MmExam | undefined) : undefined;
     const activeExam = mpExam ?? mmExam;
 
     if (!activeExam) {
@@ -398,23 +608,37 @@ export class RealtimeService implements OnModuleDestroy {
       metrics_status = 'unavailable';
     }
 
-    // TTL check: a RUNNING exam with no result heartbeat in the last
-    // STALE_THRESHOLD_MS is shown as 'stale', not 'running'.
-    let status: SlotState;
-    if (activeExam.status === StatusEnum.RUNNING) {
-      const heartbeatAge = last_seen
-        ? Date.now() - new Date(last_seen).getTime()
-        : activeExam.started_at
-          ? Date.now() - new Date(activeExam.started_at).getTime()
-          : Infinity;
-      status = heartbeatAge >= STALE_THRESHOLD_MS ? 'stale' : 'running';
-    } else if (activeExam.status === StatusEnum.PREPARING) {
-      status = 'preparing';
-    } else if (activeExam.status === StatusEnum.ERROR) {
-      status = 'error';
-    } else {
-      status = 'idle';
+    // B4 defense-in-depth: never surface a Completed / Stopped / Error exam as
+    // the slot's current_exam.  Even though buildSnapshot() pre-filters to
+    // ACTIVE_STATUSES, this guard catches zombies where the DB row was flipped
+    // between queries — without it, 47h-old "completed" runs got pinned to
+    // their slot as `current_exam`.
+    const gpuExamStatus = activeExam.status as StatusEnum;
+    if (
+      gpuExamStatus === StatusEnum.COMPLETED ||
+      gpuExamStatus === StatusEnum.STOPPED ||
+      gpuExamStatus === StatusEnum.ERROR
+    ) {
+      return {
+        device_type: 'gpu',
+        vendor: 'nvidia',
+        model: device.model,
+        node: device.node,
+        slot_id: device.slot_id,
+        status: 'idle',
+        last_seen: null,
+        current_exam: null,
+        last_known_metric: { tps: null, tt100t_seconds: null },
+        last_metric_timestamp: null,
+        metrics_status: 'unavailable',
+      };
     }
+
+    const status = computeSlotStatus(
+      activeExam.status,
+      activeExam.started_at,
+      last_seen,
+    );
 
     const elapsedSeconds = activeExam.started_at
       ? Math.max(
@@ -472,7 +696,10 @@ export class RealtimeService implements OnModuleDestroy {
       );
     };
 
-    const activeExam = npuActives.find((e) => vendorMatch(e.npu_type));
+    // Pick most-recent active matching exam (see pickMostRecentActive doc).
+    const activeExam = pickMostRecentActive(
+      npuActives.filter((e) => vendorMatch(e.npu_type)),
+    );
 
     if (!activeExam) {
       return {
@@ -513,22 +740,33 @@ export class RealtimeService implements OnModuleDestroy {
         : 'pending'
       : 'pending';
 
-    // TTL check: same rule as GPU — RUNNING with no heartbeat for >=2 min → stale.
-    let status: SlotState;
-    if (activeExam.status === StatusEnum.RUNNING) {
-      const heartbeatAge = last_seen
-        ? Date.now() - new Date(last_seen).getTime()
-        : activeExam.started_at
-          ? Date.now() - new Date(activeExam.started_at).getTime()
-          : Infinity;
-      status = heartbeatAge >= STALE_THRESHOLD_MS ? 'stale' : 'running';
-    } else if (activeExam.status === StatusEnum.PREPARING) {
-      status = 'preparing';
-    } else if (activeExam.status === StatusEnum.ERROR) {
-      status = 'error';
-    } else {
-      status = 'idle';
+    // B4 defense-in-depth — see buildGpuSlot() above.
+    const npuExamStatus = activeExam.status as StatusEnum;
+    if (
+      npuExamStatus === StatusEnum.COMPLETED ||
+      npuExamStatus === StatusEnum.STOPPED ||
+      npuExamStatus === StatusEnum.ERROR
+    ) {
+      return {
+        device_type: 'npu',
+        vendor: device.vendor as 'furiosa' | 'rebellions',
+        model: device.model,
+        node: device.node,
+        slot_id: device.slot_id,
+        status: 'idle',
+        last_seen: null,
+        current_exam: null,
+        last_known_metric: { tps: null, tt100t_seconds: null },
+        last_metric_timestamp: null,
+        metrics_status: 'unavailable',
+      };
     }
+
+    const status = computeSlotStatus(
+      activeExam.status,
+      activeExam.started_at,
+      last_seen,
+    );
 
     const elapsedSeconds = activeExam.started_at
       ? Math.max(

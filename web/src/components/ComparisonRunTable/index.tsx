@@ -16,9 +16,11 @@ import {
   TableSortLabel,
   Tooltip,
   Typography,
-  Paper
+  Paper,
+  useTheme
 } from '@mui/material';
 import { Download as DownloadIcon, WarningAmber as DriftIcon } from '@mui/icons-material';
+import { vendorColor, statusColor } from '@/components/home/deviceAggregates';
 
 import type { ComparisonRunRow, ComparisonListParams } from '@/api/domains/comparison';
 import { ComparisonApi } from '@/api/domains/comparison';
@@ -46,12 +48,6 @@ function inferComputePrecision(run: ComparisonRunRow): string {
 
 const TT100T_GOAL = 1.1;
 
-const VENDOR_COLOR: Record<string, string> = {
-  nvidia: '#76B900',
-  furiosa: '#7C3AED',
-  rebellions: '#CA8A04',
-};
-
 type SortDir = 'asc' | 'desc';
 type SortKey = 'tt100t' | 'elapsed' | 'status' | 'hardware' | 'model';
 
@@ -77,6 +73,7 @@ function elapsedSec(row: ComparisonRunRow): number | null {
 type StatusBadgeProps = { status: string; failureReason?: string | null };
 
 const StatusBadge = ({ status, failureReason }: StatusBadgeProps) => {
+  const mode = useTheme().palette.mode;
   const s = (status ?? '').toLowerCase();
   const isPass = s === 'completed' || s === 'passed' || s === 'success';
   const isFail = s === 'failed' || s === 'error';
@@ -93,7 +90,7 @@ const StatusBadge = ({ status, failureReason }: StatusBadgeProps) => {
           : isFail
           ? 'rgba(220,38,38,0.15)'
           : 'rgba(148,163,184,0.15)',
-        color: isPass ? '#15803D' : isFail ? '#B91C1C' : '#475569',
+        color: statusColor(isPass ? 'success' : isFail ? 'error' : 'neutral', mode),
       }}
     />
   );
@@ -152,7 +149,9 @@ const DriftBadge = ({ fields }: DriftBadgeProps) => (
 
 type GoalLineRowProps = { colSpan: number };
 
-const GoalLineRow = ({ colSpan }: GoalLineRowProps) => (
+const GoalLineRow = ({ colSpan }: GoalLineRowProps) => {
+  const mode = useTheme().palette.mode;
+  return (
   <TableRow>
     <TableCell
       colSpan={colSpan}
@@ -181,14 +180,15 @@ const GoalLineRow = ({ colSpan }: GoalLineRowProps) => (
         />
         <Typography
           variant="caption"
-          sx={{ color: '#0369A1', fontWeight: 700, letterSpacing: '0.02em' }}
+          sx={{ color: statusColor('info', mode), fontWeight: 700, letterSpacing: '0.02em' }}
         >
           TT100T goal line — {TT100T_GOAL} s
         </Typography>
       </Box>
     </TableCell>
   </TableRow>
-);
+  );
+};
 
 // ----------------------------------------------------------------------
 
@@ -231,6 +231,7 @@ export const ComparisonRunTable = ({
 }: ComparisonRunTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('tt100t');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const mode = useTheme().palette.mode;
 
   const visibleRuns = canonicalOnly
     ? runs.filter(r => r.is_canonical !== false)
@@ -412,7 +413,7 @@ export const ComparisonRunTable = ({
             {sorted.map((run, idx) => {
               const isSelected = selectedId === run.id;
               const vendor = run.hardware?.vendor ?? '';
-              const vendorColor = VENDOR_COLOR[vendor] ?? '#64748B';
+              const vColor = vendorColor(vendor, mode);
               const elapsed = elapsedSec(run);
               const hasDrift = !!run.drift_flag;
               const isSubset = run.is_canonical === false;
@@ -432,8 +433,8 @@ export const ComparisonRunTable = ({
                         size="small"
                         label={run.hardware.model}
                         sx={{
-                          bgcolor: `${vendorColor}1F`,
-                          color: vendorColor,
+                          bgcolor: `${vColor}1F`,
+                          color: vColor,
                           fontWeight: 700,
                           fontSize: '0.6875rem',
                         }}
@@ -448,7 +449,7 @@ export const ComparisonRunTable = ({
                               fontWeight: 700,
                               fontSize: '0.6875rem',
                               bgcolor: 'rgba(148,163,184,0.15)',
-                              color: '#475569',
+                              color: statusColor('neutral', mode),
                               cursor: 'default',
                             }}
                           />
@@ -460,7 +461,7 @@ export const ComparisonRunTable = ({
                     <TableCell>
                       <Typography
                         variant="caption"
-                        sx={{ fontWeight: 600, color: vendorColor, textTransform: 'capitalize' }}
+                        sx={{ fontWeight: 600, color: vColor, textTransform: 'capitalize' }}
                       >
                         {vendor}
                       </Typography>
@@ -487,7 +488,7 @@ export const ComparisonRunTable = ({
                         variant="caption"
                         fontFamily="monospace"
                         fontWeight={700}
-                        sx={{ color: '#0F172A' }}
+                        sx={{ color: 'text.primary' }}
                       >
                         {fmtSec(run.metrics.tt100t_seconds)}
                       </Typography>
@@ -495,7 +496,7 @@ export const ComparisonRunTable = ({
                     </Stack>
                   </TableCell>
                   <TableCell>
-                    <Typography variant="caption" fontFamily="monospace" sx={{ color: '#475569' }}>
+                    <Typography variant="caption" fontFamily="monospace" sx={{ color: 'text.secondary' }}>
                       {fmtSec(elapsed)}
                     </Typography>
                   </TableCell>
@@ -503,7 +504,7 @@ export const ComparisonRunTable = ({
                     <StatusBadge status={run.status} failureReason={run.failure_reason} />
                   </TableCell>
                   <TableCell>
-                    <Typography variant="caption" fontFamily="monospace" sx={{ color: '#475569' }}>
+                    <Typography variant="caption" fontFamily="monospace" sx={{ color: 'text.secondary' }}>
                       {inferComputePrecision(run)}
                     </Typography>
                   </TableCell>
