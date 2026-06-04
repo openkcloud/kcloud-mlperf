@@ -185,8 +185,15 @@ export class DeviceTelemetryService {
   async getNpuTelemetry(
     vendor: 'furiosa' | 'rebellions',
     node: string,
+    cardName?: string,
   ): Promise<SlotTelemetry> {
     const hostFilter = `hostname="${node}"`;
+    // Rebellions exposes one metric series per card (name="rbln0"|"rbln1"); when
+    // a specific card is requested, narrow to it so each Atom+ slot reports its
+    // own power/temp/util instead of the node aggregate. Furiosa (single RNGD
+    // per node) ignores this.
+    const rbFilter =
+      cardName != null ? `${hostFilter}, name="${cardName}"` : hostFilter;
 
     if (vendor === 'furiosa') {
       const [util, alive, power, tempPeak, dramUsed, dramTotal] =
@@ -266,21 +273,15 @@ export class DeviceTelemetryService {
     // vendor === 'rebellions'
     const [util, power, dramUsed, dramTotal, temp, health] = await Promise.all([
       this.prom.instantQuery(
-        `avg(RBLN_DEVICE_STATUS:UTILIZATION{${hostFilter}})`,
+        `avg(RBLN_DEVICE_STATUS:UTILIZATION{${rbFilter}})`,
       ),
+      this.prom.instantQuery(`sum(RBLN_DEVICE_STATUS:CARD_POWER{${rbFilter}})`),
+      this.prom.instantQuery(`sum(RBLN_DEVICE_STATUS:DRAM_USED{${rbFilter}})`),
+      this.prom.instantQuery(`sum(RBLN_DEVICE_STATUS:DRAM_TOTAL{${rbFilter}})`),
       this.prom.instantQuery(
-        `sum(RBLN_DEVICE_STATUS:CARD_POWER{${hostFilter}})`,
+        `avg(RBLN_DEVICE_STATUS:TEMPERATURE{${rbFilter}})`,
       ),
-      this.prom.instantQuery(
-        `sum(RBLN_DEVICE_STATUS:DRAM_USED{${hostFilter}})`,
-      ),
-      this.prom.instantQuery(
-        `sum(RBLN_DEVICE_STATUS:DRAM_TOTAL{${hostFilter}})`,
-      ),
-      this.prom.instantQuery(
-        `avg(RBLN_DEVICE_STATUS:TEMPERATURE{${hostFilter}})`,
-      ),
-      this.prom.instantQuery(`max(RBLN_DEVICE_STATUS:HEALTH{${hostFilter}})`),
+      this.prom.instantQuery(`max(RBLN_DEVICE_STATUS:HEALTH{${rbFilter}})`),
     ]);
 
     const utilSample = util[0] ?? null;

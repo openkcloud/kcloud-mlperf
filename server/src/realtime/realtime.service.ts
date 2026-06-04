@@ -475,8 +475,13 @@ export class RealtimeService implements OnModuleDestroy {
     const slot = this.buildNpuSlot(device, npuActives, npuResultByExamId);
     if (this.deviceTelemetry) {
       const vendor = device.vendor as 'furiosa' | 'rebellions';
+      // Rebellions packs two Atom+ cards per node; the exporter labels each with
+      // name="rbln<slot_id>", so pass the per-card name to get this slot's own
+      // telemetry rather than the node aggregate. Furiosa (single RNGD) passes none.
+      const cardName =
+        vendor === 'rebellions' ? `rbln${device.slot_id}` : undefined;
       const [npuTelResult] = await Promise.allSettled([
-        this.deviceTelemetry.getNpuTelemetry(vendor, device.node),
+        this.deviceTelemetry.getNpuTelemetry(vendor, device.node, cardName),
       ]);
       const npuTel: SlotTelemetry =
         npuTelResult.status === 'fulfilled'
