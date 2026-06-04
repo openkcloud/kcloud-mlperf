@@ -159,7 +159,7 @@ export const JobStatusFooter = ({ benchmark, examId, examStatus, artifacts }: Pr
         component="h3"
         fontWeight={700}
         fontSize="1.25rem"
-        sx={{ color: '#1E293B', letterSpacing: '-0.02em', mb: 2 }}
+        sx={{ color: 'text.primary', letterSpacing: '-0.02em', mb: 2 }}
       >
         Job status &amp; logs
       </Typography>

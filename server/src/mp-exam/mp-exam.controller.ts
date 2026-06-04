@@ -56,7 +56,7 @@ export class MpExamController {
   @Patch('update/:id')
   update(
     @Param('id', ParseIntPipe) id: number,
-    updateMpExamDto: UpdateMpExamDto,
+    @Body() updateMpExamDto: UpdateMpExamDto,
   ) {
     return this.mpExamService.update(id, updateMpExamDto);
   }

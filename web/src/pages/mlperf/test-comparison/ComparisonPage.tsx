@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 
-import { Box, Button, Chip, Divider, Typography } from '@mui/material';
+import { Box, Button, Chip, Divider, Typography, useTheme } from '@mui/material';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -22,10 +22,11 @@ dayjs.extend(timezone);
 
 // ----------------------------------------------------------------------
 
+// CARD_BASE uses palette tokens via sx callbacks; backgroundColor intentionally omitted here
+// so Paper/Box inherits background.paper from the active theme.
 const CARD_BASE = {
   borderRadius: '0.75rem',
   border: '1px solid',
-  backgroundColor: '#FFFFFF',
   boxShadow: '0 1px 3px 0 rgba(0,0,0,0.08), 0 1px 2px -1px rgba(0,0,0,0.06)',
   padding: '1.75rem 2rem',
   marginBottom: '1.5rem'
@@ -34,6 +35,7 @@ const CARD_BASE = {
 // ----------------------------------------------------------------------
 
 const ComparisonPage = () => {
+  const theme = useTheme();
   const { firstTestResult, secondTestResult } = useTestDetails();
 
   const [state, setState] = useState<{ rn1: number; rn2: number }>({ rn1: 1, rn2: 1 });
@@ -70,7 +72,7 @@ const ComparisonPage = () => {
   if (!firstTestResult || !secondTestResult) return null;
 
   return (
-    <Box padding={'2.5rem'} sx={{ backgroundColor: '#F8FAFC', minHeight: '100vh' }}>
+    <Box padding={'2.5rem'}>
 
       {/* Page header */}
       <Box sx={{ marginBottom: '2rem' }}>
@@ -79,14 +81,14 @@ const ComparisonPage = () => {
           sx={{
             fontSize: '1.5rem',
             fontWeight: 700,
-            color: '#0F172A',
+            color: 'text.primary',
             letterSpacing: '-0.025em',
             marginBottom: '0.375rem'
           }}
         >
           MLPerf Test Comparison
         </Typography>
-        <Typography sx={{ fontSize: '0.875rem', color: '#64748B' }}>
+        <Typography sx={{ fontSize: '0.875rem', color: 'text.secondary' }}>
           Side-by-side analysis of two MLPerf benchmark runs
         </Typography>
       </Box>
@@ -127,8 +129,9 @@ const ComparisonPage = () => {
         <Box
           sx={{
             ...CARD_BASE,
-            borderColor: '#C7D2FE',
-            borderLeft: '4px solid #4F46E5'
+            borderColor: theme.palette.mode === 'dark' ? 'rgba(99,102,241,0.35)' : '#C7D2FE',
+            borderLeft: '4px solid #4F46E5',
+            backgroundColor: 'background.paper'
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
@@ -149,7 +152,7 @@ const ComparisonPage = () => {
             >
               1
             </Box>
-            <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: '#1E293B' }}>
+            <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: 'text.primary' }}>
               Test A
             </Typography>
             <Chip
@@ -195,8 +198,9 @@ const ComparisonPage = () => {
         <Box
           sx={{
             ...CARD_BASE,
-            borderColor: '#BAE6FD',
-            borderLeft: '4px solid #0EA5E9'
+            borderColor: theme.palette.mode === 'dark' ? 'rgba(14,165,233,0.35)' : '#BAE6FD',
+            borderLeft: '4px solid #0EA5E9',
+            backgroundColor: 'background.paper'
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
@@ -217,7 +221,7 @@ const ComparisonPage = () => {
             >
               2
             </Box>
-            <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: '#1E293B' }}>
+            <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: 'text.primary' }}>
               Test B
             </Typography>
             <Chip
@@ -263,7 +267,7 @@ const ComparisonPage = () => {
       {/* Comparison graph section */}
       {repetitionCounts && (
         <Fragment>
-          <Divider sx={{ marginBottom: '2rem', borderColor: '#E2E8F0' }} />
+          <Divider sx={{ marginBottom: '2rem' }} />
 
           {/* Section header */}
           <Box sx={{ marginBottom: '1.5rem' }}>
@@ -281,7 +285,7 @@ const ComparisonPage = () => {
                 sx={{
                   fontSize: '1.25rem',
                   fontWeight: 700,
-                  color: '#0F172A',
+                  color: 'text.primary',
                   letterSpacing: '-0.02em',
                   textTransform: 'capitalize'
                 }}
@@ -289,7 +293,7 @@ const ComparisonPage = () => {
                 {firstTestResult.mode} Comparison Graph
               </Typography>
             </Box>
-            <Typography sx={{ fontSize: '0.8125rem', color: '#64748B', paddingLeft: '1rem' }}>
+            <Typography sx={{ fontSize: '0.8125rem', color: 'text.secondary', paddingLeft: '1rem' }}>
               {firstTestResult.name.toUpperCase()} vs {secondTestResult.name.toUpperCase()}
             </Typography>
           </Box>
@@ -304,7 +308,7 @@ const ComparisonPage = () => {
               flexWrap: 'wrap'
             }}
           >
-            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: '#475569', marginRight: '0.25rem' }}>
+            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'text.secondary', marginRight: '0.25rem' }}>
               Repetition pair:
             </Typography>
             {repetitionCounts.map(item => {
@@ -331,9 +335,10 @@ const ComparisonPage = () => {
                           }
                         }
                       : {
-                          border: '1.5px solid #E2E8F0',
-                          color: '#475569',
-                          backgroundColor: '#FFFFFF',
+                          border: '1.5px solid',
+                          borderColor: 'divider',
+                          color: 'text.secondary',
+                          backgroundColor: 'background.paper',
                           '&:hover': {
                             borderColor: '#4F46E5',
                             backgroundColor: 'rgba(79,70,229,0.04)',
@@ -356,8 +361,9 @@ const ComparisonPage = () => {
         secondTestResult.mode === MpExamModeEnum.ACCURACY && (
           <Box
             sx={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #E2E8F0',
+              backgroundColor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
               borderRadius: '0.75rem',
               boxShadow: '0 1px 3px 0 rgba(0,0,0,0.06)',
               padding: '1.75rem 2rem'
@@ -386,8 +392,9 @@ const ComparisonPage = () => {
         secondTestResult.mode === MpExamModeEnum.PERFORMANCE && (
           <Box
             sx={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #E2E8F0',
+              backgroundColor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
               borderRadius: '0.75rem',
               boxShadow: '0 1px 3px 0 rgba(0,0,0,0.06)',
               padding: '1.75rem 2rem'

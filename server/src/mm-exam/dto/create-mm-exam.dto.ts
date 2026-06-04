@@ -4,6 +4,7 @@ import {
   IsNumberString,
   IsString,
   Length,
+  Max,
   Min,
   IsNotEmpty,
   IsOptional,
@@ -87,15 +88,20 @@ export class CreateMmExamDto {
   @Min(0)
   ram_capacity: number;
 
+  // m-bk3: n_train is the few-shot example count; cap at 100 to bound the
+  // prompt construction (a huge value balloons every prompt's token budget).
   @IsInt()
   @Min(1)
+  @Max(100)
   n_train: number;
 
   // Required — B-validation #6: retry_num drives totalRepeatCount; 0 makes the
   // operator loop run zero iterations and hang waiting for a result that never
   // arrives. Must be at least 1.
+  // m-bk3: cap at 100 so a huge retry_num can't spin the run loop unboundedly.
   @IsInt()
   @Min(1)
+  @Max(100)
   retry_num: number;
 
   // Optional — generation length / eval output limit (default 128).

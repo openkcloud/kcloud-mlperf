@@ -87,6 +87,16 @@ export type DeviceAgg = {
   tt100tSamples: number | null;
   tpsStdev: number | null;
   paretoOptimal: boolean;
+  // M1: true when the headline tps/tt100t came from the no-qualifying-run fallback
+  // (NO run reached MIN_METRIC_SAMPLES, so the number is a low-N median we cannot
+  // gate for variance). The UI renders a caution glyph next to such cells. Optional
+  // so callers that synthesize a minimal DeviceAgg (e.g. the roofline) need not set
+  // it; `aggregateByDevice` always populates it. Absent is read as "not low-conf".
+  tpsLowConfidence?: boolean;
+  tt100tLowConfidence?: boolean;
+  // M2: data_number of the run whose accuracy became the headline (full-dataset =
+  // larger / 0-as-full per the MMLU convention). Null/absent when no accuracy.
+  accuracyDataNumber?: number | null;
 };
 
 const isPos = (n: number | null | undefined): n is number => n != null && n > 0;
@@ -105,6 +115,77 @@ const isPos = (n: number | null | undefined): n is number => n != null && n > 0;
 export const MIN_METRIC_SAMPLES = 3;
 /** Maximum coefficient of variation (stdev/mean) tolerated for a run's metric. */
 export const MAX_METRIC_CV = 0.5;
+
+// ----------------------------------------------------------------------
+// M2: accuracy axis gating. The MMLU-Pro accuracy headline used a bare
+// `Math.max` over every MMLU run with NO sample-size guard, so a 10-question
+// smoke run (±31pt 95% CI) could become the headline and corrupt the scatter
+// y-axis, the efficiency composite, and the Pareto frontier. Accuracy is now
+// gated by question count: tiny subset/smoke runs are excluded from the headline
+// whenever a larger (more trustworthy) run exists for the device.
+// ----------------------------------------------------------------------
+
+/**
+ * Minimum question count for a MMLU run to be a trustworthy accuracy headline.
+ * A run with `1 <= data_number < MIN_ACCURACY_QUESTIONS` is a smoke/subset run
+ * and is excluded from the headline when any larger run exists for the device.
+ */
+export const MIN_ACCURACY_QUESTIONS = 50;
+
+/**
+ * MMLU convention: `data_number = 0` means the FULL canonical dataset (the most
+ * trustworthy run), while a positive value is a fixed subset size. To rank runs
+ * by trustworthiness, map the question count to a comparable "effective size"
+ * where 0 (full) sorts as the largest. A null/absent count is treated as 0
+ * (unknown size) so it never out-ranks a known full-dataset run.
+ */
+export function accuracyEffectiveSize(dataNumber: number | null | undefined): number {
+  if (dataNumber === 0) return Number.POSITIVE_INFINITY; // full canonical dataset
+  if (dataNumber == null || !Number.isFinite(dataNumber) || dataNumber < 0) return 0;
+  return dataNumber;
+}
+
+// A single MMLU accuracy observation: a normalized 0-100 reading + the question
+// count (data_number) of the run it came from.
+export type AccObs = { acc: number; dataNumber: number | null };
+
+/**
+ * M2 (+ m-di2 interaction): pick the device's headline MMLU accuracy from its
+ * pool of MMLU runs, gating by question count instead of taking a bare `max`.
+ *
+ * Rules, in order:
+ *  1. A 0% reading is treated as likely-UNSCORED (m-di2: RNGD's only full-dataset
+ *     run id9 reads 0% while its subsets read 21-70%). 0% runs are dropped UNLESS
+ *     every run for the device is 0 (then 0 is the honest headline).
+ *  2. Tiny smoke/subset runs (`1 <= data_number < MIN_ACCURACY_QUESTIONS`) are
+ *     excluded from the headline whenever a larger / full-dataset run survives.
+ *  3. Among the survivors pick the MOST TRUSTWORTHY run = the largest effective
+ *     size (full dataset = 0 sorts largest), tie-broken on the higher accuracy.
+ *
+ * Returns null for an empty pool.
+ */
+export function selectHeadlineAccuracy(obs: AccObs[]): AccObs | null {
+  if (obs.length === 0) return null;
+
+  // (1) drop 0% (likely-unscored) unless EVERY reading is 0.
+  const nonZero = obs.filter(o => o.acc > 0);
+  const pool = nonZero.length > 0 ? nonZero : obs;
+
+  // (2) prefer the non-tiny runs; only fall back to tiny smoke runs if that's all
+  //     the device has.
+  const sizeOf = (o: AccObs) => accuracyEffectiveSize(o.dataNumber);
+  const nonTiny = pool.filter(o => sizeOf(o) >= MIN_ACCURACY_QUESTIONS);
+  const candidates = nonTiny.length > 0 ? nonTiny : pool;
+
+  // (3) most trustworthy = largest effective size; tie-break on higher accuracy.
+  return candidates.reduce((best, o) => {
+    const sB = sizeOf(best);
+    const sO = sizeOf(o);
+    if (sO > sB) return o;
+    if (sO === sB && o.acc > best.acc) return o;
+    return best;
+  });
+}
 
 /**
  * Decide whether a run's throughput-style metric (value + optional stdev/sample
@@ -206,6 +287,11 @@ export function filterToCurrentCluster(
 type TpsObs = { tps: number; stdev: number | null; samples: number | null; id: number | null; model: string | null };
 type TtObs = { tt: number; stdev: number | null; samples: number | null };
 
+/** Pick the observation whose value is closest to a target (robust representative). */
+function closestTo<T>(obs: T[], value: (o: T) => number, target: number): T {
+  return obs.reduce((a, b) => (Math.abs(value(b) - target) < Math.abs(value(a) - target) ? b : a));
+}
+
 /**
  * Collapse the run list into one row per (vendor / canonical hardware model).
  *
@@ -225,10 +311,12 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
   // Per-device pools of qualifying observations (kept separate from `agg`).
   const tpsPools = new Map<string, TpsObs[]>();
   const ttPools = new Map<string, TtObs[]>();
-  // Raw fallbacks (best value seen at all), used only when nothing qualifies.
-  const tpsFallback = new Map<string, TpsObs>();
-  const ttFallback = new Map<string, TtObs>();
-  const accPools = new Map<string, number[]>();
+  // M1: raw fallback POOLS (every positive value seen), used only when nothing
+  // qualifies the sample/CV gate. We take the MEDIAN of the pool (not the raw
+  // max/min) so a lone single-sample outlier can never become the headline.
+  const tpsFallback = new Map<string, TpsObs[]>();
+  const ttFallback = new Map<string, TtObs[]>();
+  const accPools = new Map<string, AccObs[]>();
 
   const ensureAgg = (vendor: string, hwModel: string): DeviceAgg => {
     const key = `${vendor}/${hwModel}`;
@@ -240,6 +328,8 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
         bestRunId: null, efficiency: null, costPerMTok: null,
         tt100tStdev: null, tt100tSamples: null, tpsStdev: null,
         paretoOptimal: false,
+        tpsLowConfidence: false, tt100tLowConfidence: false,
+        accuracyDataNumber: null,
       };
       byKey.set(key, agg);
     }
@@ -261,9 +351,10 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
 
     if (isPos(tps)) {
       const obs: TpsObs = { tps, stdev: tpsStdev, samples: tpsSamples, id: r.id ?? null, model: r.model ?? null };
-      // Track the best raw value as a last-resort fallback.
-      const fb = tpsFallback.get(key);
-      if (!fb || tps > fb.tps) tpsFallback.set(key, obs);
+      // M1: collect every raw observation as a last-resort fallback POOL (median).
+      const fb = tpsFallback.get(key) ?? [];
+      fb.push(obs);
+      tpsFallback.set(key, fb);
       if (isMetricQualified(tps, tpsStdev, tpsSamples)) {
         const pool = tpsPools.get(key) ?? [];
         pool.push(obs);
@@ -272,8 +363,9 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
     }
     if (isPos(tt)) {
       const obs: TtObs = { tt, stdev: ttStdev, samples: ttSamples };
-      const fb = ttFallback.get(key);
-      if (!fb || tt < fb.tt) ttFallback.set(key, obs);
+      const fb = ttFallback.get(key) ?? [];
+      fb.push(obs);
+      ttFallback.set(key, fb);
       // H2: the same sample/CV discipline applies to tt100t (it shares the path).
       if (isMetricQualified(tt, ttStdev, ttSamples)) {
         const pool = ttPools.get(key) ?? [];
@@ -286,7 +378,8 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
       const acc = normalizeAccuracyPct(r.metrics?.accuracy_pct);
       if (acc != null) {
         const pool = accPools.get(key) ?? [];
-        pool.push(acc);
+        // M2: carry the question count so the headline can prefer the full dataset.
+        pool.push({ acc, dataNumber: r.data_number ?? null });
         accPools.set(key, pool);
       }
     }
@@ -298,42 +391,57 @@ export function aggregateByDevice(runs: ComparisonRunRow[]): DeviceAgg[] {
     const tpsQ = tpsPools.get(key) ?? [];
     if (tpsQ.length > 0) {
       const med = median(tpsQ.map(o => o.tps));
-      const rep = tpsQ.reduce((a, b) => (Math.abs(b.tps - med) < Math.abs(a.tps - med) ? b : a));
+      const rep = closestTo(tpsQ, o => o.tps, med);
       agg.tps = med;
       agg.tpsStdev = rep.stdev;
       agg.model = rep.model ?? agg.model;
       agg.bestRunId = rep.id ?? agg.bestRunId;
     } else {
-      const fb = tpsFallback.get(key);
-      if (fb) {
-        agg.tps = fb.tps;
-        agg.tpsStdev = fb.stdev;
-        agg.model = fb.model ?? agg.model;
-        agg.bestRunId = fb.id ?? agg.bestRunId;
+      // M1: no run reached MIN_METRIC_SAMPLES — use the MEDIAN of all raw positive
+      // values (never the raw max) and flag the headline low-confidence so the UI
+      // can caveat it. A single n=1 outlier can no longer set the number.
+      const fb = tpsFallback.get(key) ?? [];
+      if (fb.length > 0) {
+        const med = median(fb.map(o => o.tps));
+        const rep = closestTo(fb, o => o.tps, med);
+        agg.tps = med;
+        agg.tpsStdev = rep.stdev;
+        agg.model = rep.model ?? agg.model;
+        agg.bestRunId = rep.id ?? agg.bestRunId;
+        agg.tpsLowConfidence = true;
       }
     }
 
-    // TT100T: median of qualifying runs (robust); fall back to best (lowest) raw.
+    // TT100T: median of qualifying runs (robust); fall back to the MEDIAN of the
+    // raw pool (NOT the lowest raw value) when nothing qualifies.
     const ttQ = ttPools.get(key) ?? [];
     if (ttQ.length > 0) {
       const med = median(ttQ.map(o => o.tt));
-      const rep = ttQ.reduce((a, b) => (Math.abs(b.tt - med) < Math.abs(a.tt - med) ? b : a));
+      const rep = closestTo(ttQ, o => o.tt, med);
       agg.tt100t = med;
       agg.tt100tStdev = rep.stdev;
       agg.tt100tSamples = rep.samples;
     } else {
-      const fb = ttFallback.get(key);
-      if (fb) {
-        agg.tt100t = fb.tt;
-        agg.tt100tStdev = fb.stdev;
-        agg.tt100tSamples = fb.samples;
+      const fb = ttFallback.get(key) ?? [];
+      if (fb.length > 0) {
+        const med = median(fb.map(o => o.tt));
+        const rep = closestTo(fb, o => o.tt, med);
+        agg.tt100t = med;
+        agg.tt100tStdev = rep.stdev;
+        agg.tt100tSamples = rep.samples;
+        agg.tt100tLowConfidence = true;
       }
     }
 
-    // Accuracy (MMLU only, normalized): best (max) across MMLU rows. Devices with
-    // no MMLU run stay null and are simply absent from the accuracy frontier.
+    // Accuracy (MMLU only, normalized): M2 — gate by question count and drop
+    // likely-unscored 0% runs instead of a bare max. Devices with no MMLU run
+    // stay null and are simply absent from the accuracy frontier.
     const accQ = accPools.get(key) ?? [];
-    if (accQ.length > 0) agg.accuracy = Math.max(...accQ);
+    const headline = selectHeadlineAccuracy(accQ);
+    if (headline) {
+      agg.accuracy = headline.acc;
+      agg.accuracyDataNumber = headline.dataNumber;
+    }
   }
 
   // R12: derive modeled $/1M-tokens once per device from its best throughput.

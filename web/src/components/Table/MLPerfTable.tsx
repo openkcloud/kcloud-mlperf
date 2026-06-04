@@ -24,7 +24,8 @@ import {
   type PaperProps,
   Select,
   TableContainer,
-  Typography
+  Typography,
+  useTheme
 } from '@mui/material';
 import * as XLSX from 'xlsx';
 
@@ -60,6 +61,7 @@ type TableProps<TData> = Omit<
 // ----------------------------------------------------------------------
 
 export function MLPerfTable<TData>(props: TableProps<TData>) {
+  const theme = useTheme();
   const {
     total,
     isLoading,
@@ -101,7 +103,8 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
     <Paper
       elevation={0}
       sx={{
-        border: '1px solid #E2E8F0',
+        border: '1px solid',
+        borderColor: 'divider',
         borderRadius: '0.75rem',
         overflow: 'hidden'
       }}
@@ -129,7 +132,7 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
         <Typography
           sx={{
             fontWeight: 700,
-            color: '#1E293B',
+            color: 'text.primary',
             fontSize: '1rem',
             flex: 1
           }}
@@ -141,7 +144,7 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
             px: 1.5,
             py: 0.375,
             borderRadius: '9999px',
-            bgcolor: '#EEF2FF',
+            bgcolor: theme.palette.mode === 'dark' ? 'rgba(79,70,229,0.2)' : '#EEF2FF',
             color: '#4F46E5',
             fontSize: '0.8125rem',
             fontWeight: 600
@@ -161,7 +164,8 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
           gap: 1.5,
           px: 2.5,
           pb: 2,
-          borderBottom: '1px solid #E2E8F0'
+          borderBottom: '1px solid',
+          borderColor: 'divider'
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -180,7 +184,7 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
           >
             <ChevronLeft fontSize="small" />
           </Button>
-          <Typography sx={{ fontSize: '0.8125rem', color: '#475569', fontWeight: 500, px: 0.5 }}>
+          <Typography sx={{ fontSize: '0.8125rem', color: 'text.secondary', fontWeight: 500, px: 0.5 }}>
             {table.getState().pagination.pageIndex + 1} / {table.getPageCount().toLocaleString()}
           </Typography>
           <Button
@@ -258,13 +262,16 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
                         position: 'sticky',
                         top: 0,
                         zIndex: 1,
-                        background: 'linear-gradient(135deg, #EEF2FF 0%, #F0F9FF 100%)',
-                        color: '#3730A3',
+                        background: theme.palette.mode === 'dark'
+                          ? 'linear-gradient(135deg, rgba(79,70,229,0.2) 0%, rgba(14,165,233,0.15) 100%)'
+                          : 'linear-gradient(135deg, #EEF2FF 0%, #F0F9FF 100%)',
+                        color: theme.palette.mode === 'dark' ? '#818CF8' : '#3730A3',
                         fontSize: '0.75rem',
                         fontWeight: 700,
                         letterSpacing: '0.04em',
                         textTransform: 'uppercase',
-                        borderBottom: '2px solid #C7D2FE',
+                        borderBottom: '2px solid',
+                        borderBottomColor: theme.palette.mode === 'dark' ? 'rgba(99,102,241,0.3)' : '#C7D2FE',
                         py: 1,
                         px: 1
                       }}
@@ -299,8 +306,14 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
                   key={row.id}
                   hover
                   sx={{
-                    backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#FAFBFE',
-                    '&:hover': { backgroundColor: '#EEF2FF !important' }
+                    backgroundColor: idx % 2 === 0
+                      ? theme.palette.background.paper
+                      : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : '#FAFBFE',
+                    '&:hover': {
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(79,70,229,0.12) !important'
+                        : '#EEF2FF !important'
+                    }
                   }}
                 >
                   {row.getVisibleCells().map(cell => (
@@ -311,7 +324,8 @@ export function MLPerfTable<TData>(props: TableProps<TData>) {
                         fontSize: '0.8125rem',
                         py: 0.75,
                         px: 1,
-                        borderBottom: '1px solid #F1F5F9'
+                        borderBottom: '1px solid',
+                        borderColor: 'divider'
                       }}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

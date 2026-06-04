@@ -10,7 +10,7 @@ type Props = {
 export const DeviceDashboardHeader = ({ title, description, chipLabel, chipColor = '#4F46E5' }: Props) => (
   <Box sx={{ mb: 3 }}>
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.75 }}>
-      <Typography variant="h5" fontWeight={700}>
+      <Typography variant="h5" component="h1" fontWeight={700}>
         {title}
       </Typography>
       {chipLabel && (

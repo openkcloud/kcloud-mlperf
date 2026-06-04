@@ -1,6 +1,6 @@
 import { memo } from 'react';
 
-import { Box, Chip, Grid, Typography } from '@mui/material';
+import { Box, Chip, Grid, Typography, useTheme } from '@mui/material';
 
 import { TestInfoItem as InfoItem } from '@/components/TestInfoItem/TestInfoItem';
 
@@ -25,6 +25,7 @@ type TestResultInfoProps = {
 };
 
 export const TestResultInfo = memo<TestResultInfoProps>(props => {
+  const theme = useTheme();
   const {
     order,
     name,
@@ -48,7 +49,7 @@ export const TestResultInfo = memo<TestResultInfoProps>(props => {
       sx={{
         marginBottom: '4rem',
         border: '1px solid',
-        borderColor: 'grey.200',
+        borderColor: 'divider',
         borderRadius: '1rem',
         overflow: 'hidden',
         boxShadow: '0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.04)'
@@ -62,8 +63,10 @@ export const TestResultInfo = memo<TestResultInfoProps>(props => {
           gap: '0.75rem',
           padding: '1.25rem 1.5rem',
           borderBottom: '1px solid',
-          borderColor: 'grey.200',
-          background: 'linear-gradient(135deg, #EEF2FF 0%, #E0F2FE 100%)'
+          borderColor: 'divider',
+          background: theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, rgba(79,70,229,0.15) 0%, rgba(14,165,233,0.1) 100%)'
+            : 'linear-gradient(135deg, #EEF2FF 0%, #E0F2FE 100%)'
         }}
       >
         {order && (
@@ -79,7 +82,7 @@ export const TestResultInfo = memo<TestResultInfoProps>(props => {
             }}
           />
         )}
-        <Typography component="h2" fontSize="1.125rem" fontWeight={600} color="#1E1B4B">
+        <Typography component="h2" fontSize="1.125rem" fontWeight={600} color="text.primary">
           {name}
         </Typography>
       </Box>
@@ -90,9 +93,10 @@ export const TestResultInfo = memo<TestResultInfoProps>(props => {
           sx={{
             marginBottom: '1.5rem',
             padding: '1rem',
-            backgroundColor: '#F8FAFF',
+            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(79,70,229,0.08)' : '#F8FAFF',
             borderRadius: '0.5rem',
-            border: '1px solid #E0E7FF'
+            border: '1px solid',
+            borderColor: theme.palette.mode === 'dark' ? 'rgba(99,102,241,0.25)' : '#E0E7FF'
           }}
         >
           <Typography

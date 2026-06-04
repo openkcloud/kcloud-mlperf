@@ -96,7 +96,7 @@ const ActiveBenchmarkCard = ({ exam }: { exam: NpuExamDetails }) => {
         </Box>
       </Box>
       {/* Real progress bar — width tracks samples_done from result_npu_util */}
-      <Box sx={{ mt: 1.5, height: 6, bgcolor: 'rgba(0,0,0,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+      <Box sx={{ mt: 1.5, height: 6, bgcolor: 'action.disabledBackground', borderRadius: 3, overflow: 'hidden' }}>
         <Box sx={{
           height: '100%',
           borderRadius: 3,
@@ -266,7 +266,7 @@ const NpuEvalPage = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>NPU Evaluation</Typography>
+          <Typography variant="h5" component="h1" fontWeight={700}>NPU Evaluation</Typography>
           <Button
             variant="outlined"
             size="small"
@@ -319,11 +319,10 @@ const NpuEvalPage = () => {
               {precisionInfoFor('rngd') && (
                 <Chip
                   size="small"
+                  color="warning"
+                  variant="outlined"
                   label={precisionInfoFor('rngd')}
-                  sx={{
-                    mt: 0.75, fontSize: '0.6875rem', height: 22,
-                    bgcolor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A'
-                  }}
+                  sx={{ mt: 0.75, fontSize: '0.6875rem', height: 22 }}
                 />
               )}
             </Box>
@@ -533,15 +532,15 @@ const NpuEvalPage = () => {
                   )}
                 </TableCell>
                 <TableCell align="right">
-                  <IconButton size="small" onClick={() => navigate(NpuEvalPageLinks.testResult(exam.id))}>
+                  <IconButton size="small" aria-label={`View results for ${exam.name}`} onClick={() => navigate(NpuEvalPageLinks.testResult(exam.id))}>
                     <VisibilityIcon fontSize="small" />
                   </IconButton>
                   {exam.status === StatusEnum.RUNNING && (
-                    <IconButton size="small" color="warning" onClick={() => stopMutation.mutate(exam.id)}>
+                    <IconButton size="small" color="warning" aria-label={`Stop ${exam.name}`} onClick={() => stopMutation.mutate(exam.id)}>
                       <StopIcon fontSize="small" />
                     </IconButton>
                   )}
-                  <IconButton size="small" color="error" onClick={() => handleDeleteClick(exam)}>
+                  <IconButton size="small" color="error" aria-label={`Delete ${exam.name}`} onClick={() => handleDeleteClick(exam)}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </TableCell>

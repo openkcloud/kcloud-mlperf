@@ -17,6 +17,7 @@ import ChevronRightSVG from '@/assets/icons/chevron-right.svg?react';
 import CloudSVG from '@/assets/icons/cloud.svg?react';
 import HexagonSVG from '@/assets/icons/hexagon.svg?react';
 import { AppLoader } from '@/components/AppLoader';
+import { RenderErrorBoundary } from '@/components/ErrorBoundary';
 
 import { DashboardPageLinks, HomePageLinks, MethodologyPageLinks, MmluPageLinks, MpExamPageLinks, NpuEvalPageLinks, NpuEvalRngdPageLinks, NpuEvalAtomPlusPageLinks } from '@/contexts/RouterContext/router.links.ts';
 
@@ -666,7 +667,9 @@ export const MainLayout = (props: MainLayoutProps) => {
             p: { xs: 2, sm: 2.5, md: 3 }
           }}
         >
-          <Suspense fallback={<AppLoader />}>{children}</Suspense>
+          <Suspense fallback={<AppLoader />}>
+            <RenderErrorBoundary>{children}</RenderErrorBoundary>
+          </Suspense>
         </Box>
       </Box>
     </StyledWrapper>

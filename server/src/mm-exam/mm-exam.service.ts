@@ -604,9 +604,11 @@ export class MmExamService implements OnModuleInit {
     return item;
   }
 
-  // Update MP Exam info
+  // Update MMLU Exam info
   async update(id: number, updateMmExamDto: UpdateMmExamDto) {
-    const { seed: _s, ...updateData } = updateMmExamDto;
+    // Default a missing/null body to {} so an empty PATCH no-ops instead of
+    // throwing a TypeError-masked-500 on destructure (M3 hardening).
+    const { seed: _s, ...updateData } = updateMmExamDto ?? {};
     await this.mmExamRepo.update(id, updateData);
 
     return this.findOne(id);

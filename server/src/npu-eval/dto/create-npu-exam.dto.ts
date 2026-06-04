@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Max,
   Min,
 } from 'class-validator';
 import { StatusEnum } from '../../enums/status.enum';
@@ -56,8 +57,10 @@ export class CreateNpuExamDto {
   npu_type: string;
 
   // B-validation #23: at least one NPU device must be requested.
+  // m-bk3: cap at 8 (max devices per node) to bound the job spec.
   @IsInt()
   @Min(1)
+  @Max(8)
   npu_num: number;
 
   // B-validation #23: at least one CPU core must be requested.
@@ -72,8 +75,10 @@ export class CreateNpuExamDto {
 
   // B-validation #6 + #23: retry_num drives totalRepeatCount; 0 makes the
   // operator loop run zero iterations and hang. Must be at least 1.
+  // m-bk3: cap at 100 so a huge retry_num can't spin the run loop unboundedly.
   @IsInt()
   @Min(1)
+  @Max(100)
   retry_num: number;
 
   // B-validation #23: max_output_tokens=0 is the valid "unlimited" sentinel for

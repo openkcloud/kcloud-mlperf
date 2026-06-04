@@ -11,7 +11,8 @@ import {
   Chip,
   FormControlLabel,
   Switch,
-  Typography
+  Typography,
+  useTheme
 } from '@mui/material';
 
 import {
@@ -54,6 +55,7 @@ dayjs.extend(timezone);
 // ----------------------------------------------------------------------
 
 const MLPerfPage = () => {
+  const theme = useTheme();
   const [modalData, setModalData] = useState<MpExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
@@ -137,8 +139,11 @@ const MLPerfPage = () => {
       {/* Quick Stats Banner */}
       <Box
         sx={{
-          background: 'linear-gradient(135deg, #EEF2FF 0%, #F0F9FF 50%, #ECFDF5 100%)',
-          border: '1px solid #E0E7FF',
+          background: theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, rgba(79,70,229,0.15) 0%, rgba(14,165,233,0.1) 50%, rgba(16,185,129,0.1) 100%)'
+            : 'linear-gradient(135deg, #EEF2FF 0%, #F0F9FF 50%, #ECFDF5 100%)',
+          border: '1px solid',
+          borderColor: theme.palette.mode === 'dark' ? 'rgba(99,102,241,0.25)' : '#E0E7FF',
           borderRadius: '0.75rem',
           px: 2.5,
           py: 1.5,
@@ -229,7 +234,11 @@ const MLPerfPage = () => {
           borderRadius: '0.75rem !important',
           '&::before': { display: 'none' },
           overflow: 'hidden',
-          background: formExpanded ? '#FFFFFF' : 'linear-gradient(135deg, #FAFBFF 0%, #F0F4FF 100%)',
+          background: formExpanded
+            ? theme.palette.background.paper
+            : theme.palette.mode === 'dark'
+              ? 'linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(99,102,241,0.05) 100%)'
+              : 'linear-gradient(135deg, #FAFBFF 0%, #F0F4FF 100%)',
           transition: 'all 0.3s ease',
           '&:hover': {
             borderColor: '#818CF8',
@@ -265,10 +274,10 @@ const MLPerfPage = () => {
             <AddIcon sx={{ color: '#FFF', fontSize: '1.375rem' }} />
           </Box>
           <Box sx={{ flex: 1 }}>
-            <Typography component="h2" sx={{ fontWeight: 700, color: '#1E293B', fontSize: '1rem', lineHeight: 1.3 }}>
+            <Typography component="h1" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '1rem', lineHeight: 1.3 }}>
               Create New Test
             </Typography>
-            <Typography sx={{ fontSize: '0.8125rem', color: '#64748B', lineHeight: 1.3 }}>
+            <Typography sx={{ fontSize: '0.8125rem', color: 'text.secondary', lineHeight: 1.3 }}>
               Configure and schedule a new MLPerf benchmark
             </Typography>
           </Box>
@@ -287,7 +296,7 @@ const MLPerfPage = () => {
             />
           )}
         </AccordionSummary>
-        <AccordionDetails sx={{ p: 3, pt: 2, bgcolor: '#FFFFFF' }}>
+        <AccordionDetails sx={{ p: 3, pt: 2, bgcolor: 'background.paper' }}>
           <MpExamForm ref={formRef} onSubmit={onSubmit} />
         </AccordionDetails>
       </Accordion>

@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Max,
   Min,
 } from 'class-validator';
 import { StatusEnum } from '../../enums/status.enum';
@@ -73,13 +74,17 @@ export class CreateMpExamDto {
   target_qps: number;
 
   // Required — num_workers=0 is operationally invalid; must be at least 1.
+  // m-bk3: cap at 64 to bound the job spec (DoS guard with no auth/rate-limit).
   @IsInt()
   @Min(1)
+  @Max(64)
   num_workers: number;
 
   // Required — tensor_parallel_size=0 is invalid (vLLM requires >=1).
+  // m-bk3: cap at 8 (max devices per node) to bound the job spec.
   @IsInt()
   @Min(1)
+  @Max(8)
   tensor_parallel_size: number;
 
   // Optional - defaults to GPU
@@ -111,8 +116,10 @@ export class CreateMpExamDto {
   // Required — B-validation #6: retry_num drives totalRepeatCount; 0 makes the
   // operator loop run zero iterations and hang waiting for a result that never
   // arrives. Must be at least 1.
+  // m-bk3: cap at 100 so a huge retry_num can't spin the run loop unboundedly.
   @IsInt()
   @Min(1)
+  @Max(100)
   retry_num: number;
 
   // Optional — generation length (default 128). Wired through to operator job env.

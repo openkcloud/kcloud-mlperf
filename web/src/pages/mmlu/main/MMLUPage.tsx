@@ -11,7 +11,8 @@ import {
   Chip,
   FormControlLabel,
   Switch,
-  Typography
+  Typography,
+  useTheme
 } from '@mui/material';
 
 import {
@@ -51,6 +52,7 @@ dayjs.extend(timezone);
 // ----------------------------------------------------------------------
 
 const MMLUPage = () => {
+  const theme = useTheme();
   const [modalData, setModalData] = useState<MmExamCreateBody | null>(null);
   const [formExpanded, setFormExpanded] = useState(false);
   const [hideSweep, setHideSweep] = useState(initHideSweep);
@@ -121,8 +123,11 @@ const MMLUPage = () => {
       {/* Quick Stats Banner */}
       <Box
         sx={{
-          background: 'linear-gradient(135deg, #F0F9FF 0%, #EDE9FE 50%, #FDF4FF 100%)',
-          border: '1px solid #BAE6FD',
+          background: theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, rgba(14,165,233,0.15) 0%, rgba(99,102,241,0.12) 50%, rgba(168,85,247,0.1) 100%)'
+            : 'linear-gradient(135deg, #F0F9FF 0%, #EDE9FE 50%, #FDF4FF 100%)',
+          border: '1px solid',
+          borderColor: theme.palette.mode === 'dark' ? 'rgba(14,165,233,0.25)' : '#BAE6FD',
           borderRadius: '0.75rem',
           px: 2.5,
           py: 1.5,
@@ -198,7 +203,11 @@ const MMLUPage = () => {
           borderRadius: '0.75rem !important',
           '&::before': { display: 'none' },
           overflow: 'hidden',
-          background: formExpanded ? '#FFFFFF' : 'linear-gradient(135deg, #F8FCFF 0%, #F0F9FF 100%)',
+          background: formExpanded
+            ? theme.palette.background.paper
+            : theme.palette.mode === 'dark'
+              ? 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(99,102,241,0.05) 100%)'
+              : 'linear-gradient(135deg, #F8FCFF 0%, #F0F9FF 100%)',
           transition: 'all 0.3s ease',
           '&:hover': {
             borderColor: '#38BDF8',
@@ -234,10 +243,10 @@ const MMLUPage = () => {
             <AddIcon sx={{ color: '#FFF', fontSize: '1.375rem' }} />
           </Box>
           <Box sx={{ flex: 1 }}>
-            <Typography component="h2" sx={{ fontWeight: 700, color: '#1E293B', fontSize: '1rem', lineHeight: 1.3 }}>
+            <Typography component="h1" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '1rem', lineHeight: 1.3 }}>
               Create New Test
             </Typography>
-            <Typography sx={{ fontSize: '0.8125rem', color: '#64748B', lineHeight: 1.3 }}>
+            <Typography sx={{ fontSize: '0.8125rem', color: 'text.secondary', lineHeight: 1.3 }}>
               Configure and schedule a new MMLU-Pro benchmark
             </Typography>
           </Box>
@@ -256,7 +265,7 @@ const MMLUPage = () => {
             />
           )}
         </AccordionSummary>
-        <AccordionDetails sx={{ p: 3, pt: 2, bgcolor: '#FFFFFF' }}>
+        <AccordionDetails sx={{ p: 3, pt: 2, bgcolor: 'background.paper' }}>
           <MmluExamForm ref={formRef} onSubmit={onSubmit} />
         </AccordionDetails>
       </Accordion>

@@ -325,6 +325,11 @@ describe('C4 — scenario_mismatch incompatibility reason', () => {
     expect(
       result.fairness_assessment.incompatibility_reasons,
     ).toContain('scenario_mismatch');
+    // m-di1: the raw gpu_type 'NVIDIA-A30' must canonicalize to 'A30' (matching
+    // the frontend normalizeHwModel) so raw API consumers don't see the
+    // un-normalized 'NVIDIA-A30' label.
+    expect(result.a.hardware.canonical).toBe('A30');
+    expect(result.b.hardware.canonical).toBe('A30');
   });
 });
 

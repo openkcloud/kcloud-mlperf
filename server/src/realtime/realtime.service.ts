@@ -460,7 +460,10 @@ export class RealtimeService implements OnModuleDestroy {
       slot.telemetry =
         telResult.status === 'fulfilled'
           ? telResult.value
-          : { source: 'unavailable' as const };
+          : // m-rt2: include exporter_status:'timeout' for parity with the NPU
+            // reject branch so the UI renders the "Exporter unavailable (timeout)"
+            // caption on a GPU Prometheus timeout instead of blank '—' tiles.
+            { source: 'unavailable' as const, exporter_status: 'timeout' };
     }
     return slot;
   }

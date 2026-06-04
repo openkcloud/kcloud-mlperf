@@ -800,7 +800,9 @@ export class MpExamService implements OnModuleInit {
 
   // Update MP Exam info
   async update(id: number, updateMpExamDto: UpdateMpExamDto) {
-    const { seed: _s, ...updateData } = updateMpExamDto;
+    // Default a missing/null body to {} so an empty PATCH no-ops instead of
+    // throwing a TypeError-masked-500 on destructure (M3 hardening).
+    const { seed: _s, ...updateData } = updateMpExamDto ?? {};
     await this.mpExamRepo.update(id, updateData);
 
     return this.findOne(id);

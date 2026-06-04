@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Param,
@@ -14,6 +15,9 @@ import { CreateNpuExamDto } from './dto/create-npu-exam.dto';
 import { UpdateNpuExamDto } from './dto/update-npu-exam.dto';
 import { CreateNpuExamResultDto } from './dto/create-npu-exam-result.dto';
 import { PaginationQueryDto } from '../common-dto/pagination-query.dto';
+
+const ALLOWED_GPU_BENCHMARKS = ['mlperf', 'mmlu'] as const;
+type AllowedGpuBenchmark = (typeof ALLOWED_GPU_BENCHMARKS)[number];
 
 @Controller('npu-eval')
 export class NpuEvalController {
@@ -85,12 +89,22 @@ export class NpuEvalController {
   getComparison(
     @Param('npuExamId', ParseIntPipe) npuExamId: number,
     @Param('gpuExamId', ParseIntPipe) gpuExamId: number,
-    @Query('gpuBenchmark') gpuBenchmark: 'mlperf' | 'mmlu' = 'mlperf',
+    @Query('gpuBenchmark') gpuBenchmark: string = 'mlperf',
   ) {
+    // m-api1: validate the enum at runtime (the TS union is compile-time only).
+    // Mirror the Loki/Comparison controllers and 400 on anything off-allowlist
+    // instead of echoing a garbage gpu object.
+    if (
+      !ALLOWED_GPU_BENCHMARKS.includes(gpuBenchmark as AllowedGpuBenchmark)
+    ) {
+      throw new BadRequestException(
+        `Invalid gpuBenchmark '${gpuBenchmark}'. Allowed: ${ALLOWED_GPU_BENCHMARKS.join(', ')}`,
+      );
+    }
     return this.npuEvalService.getComparisonData(
       npuExamId,
       gpuExamId,
-      gpuBenchmark,
+      gpuBenchmark as AllowedGpuBenchmark,
     );
   }
 }

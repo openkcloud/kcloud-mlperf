@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, Chip, Paper, Typography } from '@mui/material';
+import { Box, Chip, Paper, Typography, useTheme } from '@mui/material';
 
 type Props = {
   title: string;
@@ -12,10 +12,14 @@ type Props = {
 };
 
 export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idleLabel }: Props) => {
+  const theme = useTheme();
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   const state = idle ? 'idle' : loadError ? 'error' : loaded ? 'ready' : 'loading';
+
+  // Link color: follow theme primary or a readable blue
+  const linkColor = theme.palette.primary.main;
 
   return (
     <Paper sx={{ p: 2, mt: 3 }}>
@@ -32,12 +36,12 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
             <Chip label="Idle" size="small" sx={{ bgcolor: '#475569', color: '#fff', fontWeight: 600, fontSize: '0.6875rem' }} />
           )}
           {state === 'error' && (
-            <Chip label="Error" size="small" sx={{ bgcolor: '#DC2626', color: '#fff', fontWeight: 600, fontSize: '0.6875rem' }} />
+            <Chip label="Unavailable" size="small" sx={{ bgcolor: '#DC2626', color: '#fff', fontWeight: 600, fontSize: '0.6875rem' }} />
           )}
         </Box>
         {!idle && (
           <Typography variant="caption">
-            <a href={src} target="_blank" rel="noopener noreferrer" style={{ color: '#3aa3ff', textDecoration: 'none' }}>
+            <a href={src} target="_blank" rel="noopener noreferrer" style={{ color: linkColor, textDecoration: 'none' }}>
               open in new tab ↗
             </a>
           </Typography>
@@ -53,15 +57,15 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: '#0e1117',
+            bgcolor: 'background.default',
             borderRadius: 1,
             gap: 2,
             p: 3,
           }}
         >
-          <Typography sx={{ color: '#64748B', fontSize: '2rem' }}>⏸</Typography>
-          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', maxWidth: 480 }}>
-            {idleLabel ?? 'No benchmark currently running on this device class'}
+          <Typography sx={{ color: 'text.secondary', fontSize: '2rem' }}>⏸</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', maxWidth: 480 }}>
+            {idleLabel ?? 'No active run — no benchmark currently running on this device class'}
           </Typography>
         </Box>
       )}
@@ -70,7 +74,7 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
         <Box
           sx={{
             height,
-            bgcolor: '#0e1117',
+            bgcolor: 'background.default',
             borderRadius: 1,
             display: 'flex',
             flexDirection: 'column',
@@ -80,10 +84,13 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
             p: 3,
           }}
         >
-          <Typography variant="body1" sx={{ color: '#F87171', textAlign: 'center', maxWidth: 480, fontWeight: 500 }}>
-            Failed to load dashboard from {src}
+          <Typography variant="body1" sx={{ color: 'error.main', textAlign: 'center', maxWidth: 480, fontWeight: 500 }}>
+            Dashboard unavailable
           </Typography>
-          <Typography variant="caption" sx={{ color: '#94A3B8' }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', maxWidth: 480 }}>
+            Could not load dashboard from {src}
+          </Typography>
+          <Typography variant="caption" sx={{ color: 'text.disabled' }}>
             Check that the dashboard URL is reachable and CORS allows this origin.
           </Typography>
         </Box>
@@ -97,7 +104,7 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
                 position: 'absolute',
                 inset: 0,
                 height,
-                bgcolor: '#0e1117',
+                bgcolor: 'background.default',
                 borderRadius: 1,
                 display: 'flex',
                 alignItems: 'center',
@@ -105,7 +112,7 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
                 zIndex: 1,
               }}
             >
-              <Typography sx={{ color: '#94A3B8' }}>Loading dashboard…</Typography>
+              <Typography sx={{ color: 'text.secondary' }}>Loading dashboard…</Typography>
             </Box>
           )}
           <Box
@@ -119,6 +126,7 @@ export const LiveBenchDashboard = ({ title, src, height = 900, idle = false, idl
               height,
               border: 0,
               borderRadius: 1,
+              // Keep the iframe background dark: Grafana dashboards are always dark-themed
               bgcolor: '#0e1117',
               display: state === 'error' ? 'none' : 'block',
               opacity: state === 'ready' ? 1 : 0,

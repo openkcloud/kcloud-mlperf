@@ -29,7 +29,13 @@ export type HardwareType = 'gpu' | 'npu';
 export type HardwareVendor = 'nvidia' | 'furiosa' | 'rebellions' | 'unknown';
 
 /** Canonical hardware label shown in the UI. */
-export type CanonicalHardwareLabel = 'L40' | 'A40' | 'RNGD' | 'Atom+' | string;
+export type CanonicalHardwareLabel =
+  | 'L40'
+  | 'A40'
+  | 'A30'
+  | 'RNGD'
+  | 'Atom+'
+  | string;
 
 export interface NormalizedHardware {
   type: HardwareType;
@@ -1096,6 +1102,10 @@ export class ComparisonService {
     const upper = raw.toUpperCase().trim();
     if (upper.includes('L40')) return 'L40';
     if (upper.includes('A40')) return 'A40';
+    // m-di1: normalize the current-cluster A30 GPU (raw 'NVIDIA-A30') to 'A30'
+    // so raw API consumers (CSV/JSON export, comparison table) match the
+    // frontend's normalizeHwModel; checked after A40 so 'A40' isn't shadowed.
+    if (upper.includes('A30')) return 'A30';
     if (upper.includes('RNGD')) return 'RNGD';
     if (upper.includes('ATOM+') || upper === 'ATOM+') return 'Atom+';
     if (upper.includes('ATOM')) return 'Atom+';

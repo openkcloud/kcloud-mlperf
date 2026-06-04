@@ -25,6 +25,9 @@ import {
   latencyContext,
   MIN_METRIC_SAMPLES,
   MAX_METRIC_CV,
+  MIN_ACCURACY_QUESTIONS,
+  accuracyEffectiveSize,
+  selectHeadlineAccuracy,
   type DeviceAgg,
 } from '../deviceAggregates';
 import { deviceUsdPerHr } from '@/constants/device-cost.constants';
@@ -154,7 +157,9 @@ describe('markParetoBy / markPareto (R11 generic frontier)', () => {
     key: over.key ?? 'k', vendor: 'nvidia', hwModel: 'X', label: 'x',
     tps: null, tt100t: null, accuracy: null, model: null, bestRunId: null,
     efficiency: null, costPerMTok: null, tt100tStdev: null, tt100tSamples: null,
-    tpsStdev: null, paretoOptimal: false, ...over,
+    tpsStdev: null, paretoOptimal: false,
+    tpsLowConfidence: false, tt100tLowConfidence: false, accuracyDataNumber: null,
+    ...over,
   });
 
   it('accuracy axis (higher better): dominated device is not optimal', () => {
@@ -330,6 +335,7 @@ describe('filterToCurrentCluster (#8)', () => {
     tps: 1, tt100t: 1, accuracy: null, model: null, bestRunId: null,
     efficiency: null, costPerMTok: null, tt100tStdev: null, tt100tSamples: null,
     tpsStdev: null, paretoOptimal: false,
+    tpsLowConfidence: false, tt100tLowConfidence: false, accuracyDataNumber: null,
   });
 
   it('drops off-cluster hardware (L40/A40) and keeps current ones', () => {
@@ -431,6 +437,71 @@ describe('median', () => {
   });
 });
 
+describe('accuracyEffectiveSize / selectHeadlineAccuracy (M2)', () => {
+  it('maps the question count to a trust-ranked effective size (0 = full = largest)', () => {
+    expect(MIN_ACCURACY_QUESTIONS).toBe(50);
+    expect(accuracyEffectiveSize(0)).toBe(Number.POSITIVE_INFINITY); // full dataset
+    expect(accuracyEffectiveSize(100)).toBe(100);
+    expect(accuracyEffectiveSize(10)).toBe(10);
+    expect(accuracyEffectiveSize(null)).toBe(0); // unknown count -> least trusted
+    expect(accuracyEffectiveSize(undefined)).toBe(0);
+    expect(accuracyEffectiveSize(-5)).toBe(0);
+  });
+
+  it('returns null for an empty pool', () => {
+    expect(selectHeadlineAccuracy([])).toBeNull();
+  });
+
+  it('prefers the larger data_number among non-zero runs', () => {
+    const pick = selectHeadlineAccuracy([
+      { acc: 70, dataNumber: 10 },
+      { acc: 21, dataNumber: 100 },
+    ])!;
+    expect(pick.acc).toBe(21);
+    expect(pick.dataNumber).toBe(100);
+  });
+
+  it('treats data_number 0 (full) as the most trustworthy', () => {
+    const pick = selectHeadlineAccuracy([
+      { acc: 65, dataNumber: 100 },
+      { acc: 50, dataNumber: 0 },
+    ])!;
+    expect(pick.acc).toBe(50);
+    expect(pick.dataNumber).toBe(0);
+  });
+
+  it('drops a 0% run unless every run is 0', () => {
+    const withNonZero = selectHeadlineAccuracy([
+      { acc: 0, dataNumber: 0 }, // full but unscored
+      { acc: 21, dataNumber: 100 },
+    ])!;
+    expect(withNonZero.acc).toBe(21);
+
+    const allZero = selectHeadlineAccuracy([
+      { acc: 0, dataNumber: 0 },
+      { acc: 0, dataNumber: 100 },
+    ])!;
+    expect(allZero.acc).toBe(0);
+  });
+
+  it('excludes sub-threshold smoke runs from the headline when a larger run exists', () => {
+    const pick = selectHeadlineAccuracy([
+      { acc: 90, dataNumber: 10 }, // tiny, would win an un-gated max
+      { acc: 55, dataNumber: 60 }, // >= MIN_ACCURACY_QUESTIONS
+    ])!;
+    expect(pick.acc).toBe(55);
+    expect(pick.dataNumber).toBe(60);
+  });
+
+  it('ties on equal effective size break toward the higher accuracy', () => {
+    const pick = selectHeadlineAccuracy([
+      { acc: 45, dataNumber: 0 },
+      { acc: 70, dataNumber: 0 },
+    ])!;
+    expect(pick.acc).toBe(70);
+  });
+});
+
 describe('aggregateByDevice — H2 tps outlier gating', () => {
   // Build the live RNGD shape: one 2-sample CV-79% outlier (#98 @ 187.4) plus
   // a population of well-sampled ~80 tok/s runs.
@@ -454,15 +525,52 @@ describe('aggregateByDevice — H2 tps outlier gating', () => {
     expect(agg.bestRunId).not.toBeNull();
   });
 
-  it('falls back to the best raw value when NO run qualifies (graceful, still appears)', () => {
+  it('M1: falls back to the MEDIAN (not max) of raw values when NO run qualifies, flagged low-confidence', () => {
     // Both runs are low-sample/high-CV -> neither qualifies; device still placed.
     const runs = [
       rngd(187.41, { tps_samples: 2, tps_stdev: 148.72 }),
       rngd(60.0, { tps_samples: 1, tps_stdev: null }),
     ];
     const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
-    // Fallback uses the best (max) raw positive value so the row is not dropped.
-    expect(agg.tps).toBeCloseTo(187.41, 2);
+    // Median of the raw pool (60, 187.41) = 123.705 — NOT the lone 187.41 outlier.
+    expect(agg.tps).toBeCloseTo(123.705, 3);
+    expect(agg.tps).not.toBeCloseTo(187.41, 2);
+    // The headline came from the fallback (no run reached MIN_METRIC_SAMPLES).
+    expect(agg.tpsLowConfidence).toBe(true);
+  });
+
+  it('M1: the live A30 shape — single-sample runs yield a fallback-median, not the +45.7% outlier', () => {
+    // Every A30 run has tps_samples in {1,2} (all bypass the gate); the outlier
+    // (id319, 67.16) must NOT become the headline. Median of {23, 46.086, 67.16}.
+    const a30 = (tps: number, samples: number) =>
+      run({ vendor: 'nvidia', hwModel: 'A30', metrics: { tt100t_seconds: 2.5, tps, tps_samples: samples } });
+    const runs = [a30(67.16, 1), a30(46.086, 2), a30(23.0, 1)];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'A30')!;
+    expect(agg.tps).toBeCloseTo(46.086, 3); // median, the middle value
+    expect(agg.tps).not.toBeCloseTo(67.16, 2); // never the lone outlier
+    expect(agg.tpsLowConfidence).toBe(true);
+  });
+
+  it('M1: a single-sample-only device is flagged low-confidence on both tps and tt100t', () => {
+    const runs = [
+      run({ vendor: 'nvidia', hwModel: 'A30',
+        metrics: { tt100t_seconds: 1.489, tps: 67.16, tps_samples: 1, tt100t_samples: 1 } }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'A30')!;
+    expect(agg.tps).toBeCloseTo(67.16, 2); // single value -> its own median
+    expect(agg.tt100t).toBeCloseTo(1.489, 3);
+    expect(agg.tpsLowConfidence).toBe(true);
+    expect(agg.tt100tLowConfidence).toBe(true);
+  });
+
+  it('M1: the gated path (samples>=3) is NOT flagged low-confidence', () => {
+    const runs = [
+      rngd(81.73, { tps_samples: 5, tps_stdev: 2.0 }),
+      rngd(80.96, { tps_samples: 5, tps_stdev: 1.5 }),
+      rngd(80.84, { tps_samples: 5, tps_stdev: 1.8 }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    expect(agg.tpsLowConfidence).toBe(false);
   });
 
   it('uses the robust median of qualifying runs rather than the raw max', () => {
@@ -535,14 +643,90 @@ describe('aggregateByDevice — H1 MMLU-only accuracy axis', () => {
   });
 
   it('normalizes NPU MMLU already in 0-100 and GPU MMLU in 0-1 to one scale', () => {
+    // M2: both runs are full-dataset (data_number 0 = full); with equal trust the
+    // higher accuracy wins. The scale normalization (45 stays 45, 70 stays 70)
+    // is what is under test here, not the gate.
     const runs = [
       run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
-        metrics: { tt100t_seconds: 1.2, accuracy_pct: 45 } }), // already 0-100
+        data_number: 0, metrics: { tt100t_seconds: 1.2, accuracy_pct: 45 } }), // already 0-100
       run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
-        metrics: { tt100t_seconds: 1.2, accuracy_pct: 70 } }),
+        data_number: 0, metrics: { tt100t_seconds: 1.2, accuracy_pct: 70 } }),
     ];
     const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
-    expect(agg.accuracy).toBe(70); // max MMLU, unchanged (already a percent)
+    expect(agg.accuracy).toBe(70); // both full-dataset, unchanged (already a percent)
+  });
+
+  // M2: the live RNGD shape — a 10-question smoke run (id177, dn=10) reads 70%
+  // (±31pt CI) while the larger dn=100 subset reads 21%. The headline used to be
+  // the un-gated max=70; it must now be the more-trustworthy larger-dataset run.
+  it('gates accuracy by question count: a dn=10 smoke 70% loses to a larger dn=100 run', () => {
+    const runs = [
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        data_number: 10, metrics: { tt100t_seconds: 1.2, accuracy_pct: 70 } }), // id177 smoke
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        data_number: 100, metrics: { tt100t_seconds: 1.2, accuracy_pct: 21 } }), // id175 subset
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    expect(agg.accuracy).toBe(21); // the larger run, NOT the un-gated max (70)
+    expect(agg.accuracyDataNumber).toBe(100);
+  });
+
+  // M2: a full-dataset run (data_number = 0 per the MMLU convention) is the most
+  // trustworthy and outranks any positive subset size.
+  it('prefers the full dataset (data_number 0) over a positive subset', () => {
+    const runs = [
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mmlu',
+        data_number: 100, metrics: { tt100t_seconds: 1.5, accuracy_pct: 0.65 } }), // 65%, subset
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mmlu',
+        data_number: 0, metrics: { tt100t_seconds: 1.5, accuracy_pct: 0.50 } }), // 50%, FULL
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'A30')!;
+    expect(agg.accuracy).toBeCloseTo(50, 6); // full dataset wins over the subset
+    expect(agg.accuracyDataNumber).toBe(0);
+  });
+
+  // M2 + m-di2: RNGD's only full-dataset MMLU run (id9, dn=0) reads 0% — a scoring
+  // artifact, since its subsets read 21-70%. A 0% reading is treated as unscored
+  // and excluded UNLESS every run is 0; the headline is the best non-zero run.
+  it('excludes a 0% (likely-unscored) full-dataset run when non-zero runs exist (m-di2)', () => {
+    const runs = [
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        data_number: 0, metrics: { tt100t_seconds: 1.2, accuracy_pct: 0 } }), // id9 full, unscored 0%
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        data_number: 100, metrics: { tt100t_seconds: 1.2, accuracy_pct: 21 } }), // id175 subset
+      run({ vendor: 'furiosa', hwModel: 'RNGD', benchmark: 'mmlu', model: 'furiosa-ai/Llama-3.1-8B-Instruct',
+        data_number: 50, metrics: { tt100t_seconds: 1.2, accuracy_pct: 45 } }), // id-subset
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'RNGD')!;
+    // The 0% full-dataset run is dropped; among the non-zero runs the larger
+    // (dn=100, 21%) is the most trustworthy headline — NOT 0%, NOT the 45% smaller run.
+    expect(agg.accuracy).toBe(21);
+    expect(agg.accuracyDataNumber).toBe(100);
+  });
+
+  it('keeps 0% as the honest headline when EVERY run for the device is 0% (m-di2)', () => {
+    const runs = [
+      run({ vendor: 'rebellions', hwModel: 'Atom+', benchmark: 'mmlu', model: 'Llama-3.1-8B-Instruct',
+        data_number: 0, metrics: { tt100t_seconds: 1.0, accuracy_pct: 0 } }),
+      run({ vendor: 'rebellions', hwModel: 'Atom+', benchmark: 'mmlu', model: 'Llama-3.1-8B-Instruct',
+        data_number: 100, metrics: { tt100t_seconds: 1.0, accuracy_pct: 0 } }),
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'Atom+')!;
+    expect(agg.accuracy).toBe(0); // nothing non-zero to prefer — 0 is honest here
+  });
+
+  it('falls back to a tiny smoke run only when the device has no larger run', () => {
+    const runs = [
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mmlu',
+        data_number: 10, metrics: { tt100t_seconds: 1.5, accuracy_pct: 0.50 } }), // id151 dn=10
+      run({ vendor: 'nvidia', hwModel: 'A30', benchmark: 'mmlu',
+        data_number: 15, metrics: { tt100t_seconds: 1.5, accuracy_pct: 0.4667 } }), // id153 dn=15
+    ];
+    const agg = aggregateByDevice(runs).find(d => d.hwModel === 'A30')!;
+    // Both are sub-threshold (< MIN_ACCURACY_QUESTIONS=50). The larger one (dn=15)
+    // is the most trustworthy of the smoke runs, not the un-gated max (50%@dn=10).
+    expect(agg.accuracy).toBeCloseTo(46.67, 2);
+    expect(agg.accuracyDataNumber).toBe(15);
   });
 
   it('leaves accuracy null for a device with only mlperf rows (absent from accuracy frontier)', () => {

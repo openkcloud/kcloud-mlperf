@@ -453,3 +453,208 @@ describe('computeSlotStatus — heartbeat-aware slot state', () => {
     );
   });
 });
+
+/**
+ * Regression for Atom+ per-card telemetry (QA m-rt1):
+ * node5 exposes TWO Rebellions Atom+ cards (slot_id=0 → rbln0, slot_id=1 →
+ * rbln1).  buildNpuSlotWithTelemetry() must call getNpuTelemetry with the
+ * per-card name for each slot so a future refactor cannot silently re-merge
+ * the two cards back into a single node-aggregate query.
+ *
+ * The test registers two ATOM+ DeviceEntries (slot 0 + slot 1), lets
+ * buildSnapshot run, and asserts that getNpuTelemetry was called twice — once
+ * with cardName='rbln0' and once with cardName='rbln1'.
+ */
+describe('Atom+ per-card telemetry wiring (QA m-rt1 regression)', () => {
+  /** Build a module with two node5 Atom+ devices (slot 0 and slot 1). */
+  async function buildAtomModule() {
+    const atomSlot0: import('../device-registry/device-registry.types').DeviceEntry =
+      {
+        node: 'node5',
+        type: 'npu',
+        vendor: 'rebellions',
+        model: 'Atom+',
+        slot_id: 0,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'rebellions.ai/atomplus',
+        allocatable_count: 2,
+        source: 'cluster_yaml',
+      };
+    const atomSlot1: import('../device-registry/device-registry.types').DeviceEntry =
+      {
+        node: 'node5',
+        type: 'npu',
+        vendor: 'rebellions',
+        model: 'Atom+',
+        slot_id: 1,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'rebellions.ai/atomplus',
+        allocatable_count: 2,
+        source: 'cluster_yaml',
+      };
+
+    const getNpuTelemetry = jest.fn().mockResolvedValue({
+      source: 'prometheus' as const,
+      exporter_status: 'ok' as const,
+      util_pct: 50,
+      power_w: 80,
+      temp_c: 40,
+      dram_used_gb: 4,
+      dram_total_gb: 8,
+    });
+
+    const deviceRegistry: Partial<DeviceRegistryService> = {
+      getDevices: jest.fn().mockResolvedValue([atomSlot0, atomSlot1]),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RealtimeService,
+        { provide: getRepositoryToken(MpExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(MmExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(MpExamResult), useValue: mockRepo() },
+        { provide: getRepositoryToken(NpuExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(NpuExamResult), useValue: mockRepo() },
+        { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: null },
+        { provide: DeviceRegistryService, useValue: deviceRegistry },
+        {
+          provide: DeviceTelemetryService,
+          useValue: {
+            getGpuTelemetry: jest.fn().mockResolvedValue(null),
+            getNpuTelemetry,
+            getVllmTelemetry: jest.fn().mockResolvedValue(null),
+          },
+        },
+      ],
+    }).compile();
+
+    return {
+      service: module.get<RealtimeService>(RealtimeService),
+      getNpuTelemetry,
+    };
+  }
+
+  it('getNpuTelemetry is called with cardName="rbln0" for slot_id=0', async () => {
+    const { service: svc, getNpuTelemetry } = await buildAtomModule();
+    await svc.buildSnapshot();
+
+    const calls = getNpuTelemetry.mock.calls as [string, string, string?][];
+    const rbln0Call = calls.find(([_v, _n, cn]) => cn === 'rbln0');
+    expect(rbln0Call).toBeDefined();
+    expect(rbln0Call![0]).toBe('rebellions');
+    expect(rbln0Call![1]).toBe('node5');
+  });
+
+  it('getNpuTelemetry is called with cardName="rbln1" for slot_id=1', async () => {
+    const { service: svc, getNpuTelemetry } = await buildAtomModule();
+    await svc.buildSnapshot();
+
+    const calls = getNpuTelemetry.mock.calls as [string, string, string?][];
+    const rbln1Call = calls.find(([_v, _n, cn]) => cn === 'rbln1');
+    expect(rbln1Call).toBeDefined();
+    expect(rbln1Call![0]).toBe('rebellions');
+    expect(rbln1Call![1]).toBe('node5');
+  });
+
+  it('getNpuTelemetry is called exactly twice — once per Atom+ card', async () => {
+    const { service: svc, getNpuTelemetry } = await buildAtomModule();
+    await svc.buildSnapshot();
+
+    // Two Atom+ slots → two calls, each with a distinct cardName.
+    const calls = getNpuTelemetry.mock.calls as [string, string, string?][];
+    expect(calls).toHaveLength(2);
+
+    const cardNames = calls.map(([, , cn]) => cn);
+    expect(cardNames).toContain('rbln0');
+    expect(cardNames).toContain('rbln1');
+    // Must be different — no duplicate card names.
+    expect(new Set(cardNames).size).toBe(2);
+  });
+
+  it('each Atom+ slot receives its own telemetry (not the other slot\'s data)', async () => {
+    // Use distinct per-card telemetry values to verify the wiring.
+    const getNpuTelemetry = jest
+      .fn()
+      .mockImplementation(
+        (_vendor: string, _node: string, cardName?: string) => {
+          if (cardName === 'rbln0') {
+            return Promise.resolve({
+              source: 'prometheus' as const,
+              exporter_status: 'ok' as const,
+              power_w: 70,
+              temp_c: 38,
+            });
+          }
+          // rbln1
+          return Promise.resolve({
+            source: 'prometheus' as const,
+            exporter_status: 'ok' as const,
+            power_w: 95,
+            temp_c: 52,
+          });
+        },
+      );
+
+    const atomSlot0: import('../device-registry/device-registry.types').DeviceEntry =
+      {
+        node: 'node5',
+        type: 'npu',
+        vendor: 'rebellions',
+        model: 'Atom+',
+        slot_id: 0,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'rebellions.ai/atomplus',
+        allocatable_count: 2,
+        source: 'cluster_yaml',
+      };
+    const atomSlot1: import('../device-registry/device-registry.types').DeviceEntry =
+      {
+        ...atomSlot0,
+        slot_id: 1,
+      };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RealtimeService,
+        { provide: getRepositoryToken(MpExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(MmExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(MpExamResult), useValue: mockRepo() },
+        { provide: getRepositoryToken(NpuExam), useValue: mockRepo() },
+        { provide: getRepositoryToken(NpuExamResult), useValue: mockRepo() },
+        { provide: GPU_SWEEP_SERVICE_TOKEN, useValue: null },
+        {
+          provide: DeviceRegistryService,
+          useValue: {
+            getDevices: jest.fn().mockResolvedValue([atomSlot0, atomSlot1]),
+          },
+        },
+        {
+          provide: DeviceTelemetryService,
+          useValue: {
+            getGpuTelemetry: jest.fn().mockResolvedValue(null),
+            getNpuTelemetry,
+            getVllmTelemetry: jest.fn().mockResolvedValue(null),
+          },
+        },
+      ],
+    }).compile();
+
+    const svc = module.get<RealtimeService>(RealtimeService);
+    const snap = await svc.buildSnapshot();
+
+    const slot0 = snap.slots.find((s) => s.slot_id === 0 && s.vendor === 'rebellions');
+    const slot1 = snap.slots.find((s) => s.slot_id === 1 && s.vendor === 'rebellions');
+
+    expect(slot0?.telemetry?.power_w).toBe(70);
+    expect(slot0?.telemetry?.temp_c).toBe(38);
+    expect(slot1?.telemetry?.power_w).toBe(95);
+    expect(slot1?.telemetry?.temp_c).toBe(52);
+
+    // Cross-check: the two slots must NOT share the same telemetry object values.
+    expect(slot0?.telemetry?.power_w).not.toBe(slot1?.telemetry?.power_w);
+    expect(slot0?.telemetry?.temp_c).not.toBe(slot1?.telemetry?.temp_c);
+  });
+});

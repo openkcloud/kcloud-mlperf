@@ -37,6 +37,7 @@ import {
   InfoOutlined as InfoIcon,
   RocketLaunch as RocketIcon,
   Refresh as RefreshIcon,
+  WarningAmberOutlined as WarningIcon,
 } from '@mui/icons-material';
 import { formatAge } from '@/helpers/format-age.helper';
 import type { CrossDeviceVerdict } from '@/components/home/deviceAggregates';
@@ -83,6 +84,21 @@ const toRows = (runs: unknown): ComparisonRunRow[] =>
 
 const TT100T_HELP =
   'TT100T = wall-clock time to generate the first 100 output tokens. Lower is better; the cluster target is < 1.1 s.';
+
+// M1: caution glyph for a headline number derived from the low-N fallback (no run
+// reached MIN_METRIC_SAMPLES, so the value is a small-sample median we could not
+// gate for variance). Surfaces the uncertainty inline next to the cell.
+const LOW_CONFIDENCE_HELP =
+  'Low confidence: no run for this device reached the 3-sample minimum, so this is the median of a few single/low-sample runs and is not variance-gated. Treat as indicative only.';
+
+const LowConfidenceMark = () => (
+  <Tooltip title={LOW_CONFIDENCE_HELP} arrow>
+    <WarningIcon
+      aria-label="Low confidence: small-sample fallback estimate"
+      sx={{ fontSize: '0.85rem', color: 'warning.main', verticalAlign: 'middle', cursor: 'help' }}
+    />
+  </Tooltip>
+);
 
 // ----------------------------------------------------------------------
 // #8: the live cluster registry is the single source of truth for which
@@ -591,6 +607,9 @@ const Tt100tLeaderboard = ({
                                 ? Math.round((bestTt / (d.tt100t as number)) * 100)
                                 : '—')
                             : fmtSec(d.tt100t)}
+                          {!norm && d.tt100tLowConfidence && d.tt100t != null && (
+                            <Box component="span" sx={{ ml: 0.5 }}><LowConfidenceMark /></Box>
+                          )}
                         </Typography>
                         {!norm && d.tt100tSamples != null && d.tt100tSamples > 1 && d.tt100tStdev != null && d.tt100tStdev > 0 && (
                           <Typography variant="caption" component="div" sx={{ color: 'text.disabled', fontSize: '0.62rem', lineHeight: 1.1 }}>
@@ -618,6 +637,9 @@ const Tt100tLeaderboard = ({
                       {norm
                         ? (d.tps != null && maxTps > 0 ? Math.round((d.tps / maxTps) * 100) : '—')
                         : fmtTps(d.tps)}
+                      {!norm && d.tpsLowConfidence && d.tps != null && (
+                        <Box component="span" sx={{ ml: 0.5 }}><LowConfidenceMark /></Box>
+                      )}
                     </TableCell>
                   )}
                   {isVisible('efficiency') && (
