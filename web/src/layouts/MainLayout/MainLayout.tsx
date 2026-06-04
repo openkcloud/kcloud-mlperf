@@ -468,6 +468,7 @@ export const MainLayout = (props: MainLayoutProps) => {
 
   const isMMlu = pathname.startsWith('/mmlu');
   const isNpuRngd = pathname.startsWith('/npu-eval/rngd');
+  const isNpuAtom = pathname.startsWith('/npu-eval/atomplus');
   const isNpu = pathname.startsWith('/npu-eval');
   const isNpuRealtime = pathname.startsWith('/dashboard/npu-realtime');
   const isDashboard = pathname.startsWith('/dashboard');
@@ -477,9 +478,11 @@ export const MainLayout = (props: MainLayoutProps) => {
   // to the "MLPerf Benchmark" title, which was wrong for the landing page.
   const pageTitle = isNpuRngd
     ? 'RNGD NPU Evaluation'
-    : isNpu
-      ? 'NPU Evaluation'
-      : isMMlu
+    : isNpuAtom
+      ? 'Atom+ NPU Evaluation'
+      : isNpu
+        ? 'NPU Evaluation'
+        : isMMlu
         ? 'MMLU-Pro Benchmark'
         : isNpuRealtime
           ? 'NPU Realtime Dashboard'
@@ -490,9 +493,11 @@ export const MainLayout = (props: MainLayoutProps) => {
               : 'Cluster Overview';
   const pageBadge = isNpuRngd
     ? 'FuriosaAI RNGD'
-    : isNpu
-      ? 'FuriosaAI RNGD'
-      : isMMlu
+    : isNpuAtom
+      ? 'Rebellions Atom+'
+      : isNpu
+        ? 'NPU'
+        : isMMlu
         ? 'MMLU-Pro'
         : isNpuRealtime
           ? 'Live'
