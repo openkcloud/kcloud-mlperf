@@ -117,6 +117,28 @@ export class NpuEvalService implements OnModuleInit {
     return null;
   }
 
+  /**
+   * R8 Bug-2 fix: return the k8s node that hosts the NPU inference server.
+   * exam.k8s_node_name is the BACKEND pod's node (from NODE_NAME env), not the
+   * NPU device node. Override via NPU_POWER_NODE_RNGD / NPU_POWER_NODE_ATOM;
+   * defaults match the consolidation cluster layout (node4=RNGD, node5=Atom+).
+   * Falls back to the passed-in fallback (exam.k8s_node_name) when npu_type is
+   * unrecognised so behaviour is unchanged for unknown devices.
+   */
+  private powerNodeForNpuType(
+    npuType: string | null | undefined,
+    fallback: string | null | undefined,
+  ): string | null | undefined {
+    const upper = (npuType ?? '').toUpperCase().trim();
+    if (upper.startsWith('RNGD')) {
+      return process.env.NPU_POWER_NODE_RNGD ?? 'node4';
+    }
+    if (upper.startsWith('ATOM')) {
+      return process.env.NPU_POWER_NODE_ATOM ?? 'node5';
+    }
+    return fallback;
+  }
+
   async onModuleInit() {
     // v37 Fix #4: relax failure_reason to nullable so successful npu-eval runs
     // can clear the default UNKNOWN_NO_LOGS classification. Idempotent ALTER
@@ -748,9 +770,14 @@ export class NpuEvalService implements OnModuleInit {
           });
           const vendor = this.powerVendorForNpuType(finalExam?.npu_type);
           if (vendor && finalExam) {
+            // R8 Bug-2: use the NPU device node, not the backend pod's node.
+            const powerNode = this.powerNodeForNpuType(
+              finalExam.npu_type,
+              finalExam.k8s_node_name,
+            );
             const avgPowerW = await this.powerCapture.captureAvgPower(
               vendor,
-              finalExam.k8s_node_name,
+              powerNode,
               finalExam.started_at,
               finalExam.end_at,
             );

@@ -4,16 +4,18 @@ import { PrometheusClient } from './prometheus.client';
 /**
  * R8 (perf/Watt): best-effort capture of the mean device power over a run's
  * window, evaluated at the run's end. Reuses the SAME metric/label
- * expressions as device-telemetry.service.ts:
+ * expressions as device-telemetry.service.ts (bare vector selectors — no
+ * aggregation wrapper, because PrometheusClient wraps them in
+ * avg_over_time([window]) which requires a plain vector selector, not an
+ * instant-vector expression):
  *   - GPU (nvidia)   : DCGM_FI_DEV_POWER_USAGE{Hostname="<node>"}
  *   - furiosa (RNGD) : furiosa_npu_hw_power{hostname="<node>", label="rms"}
  *   - rebellions     : RBLN_DEVICE_STATUS:CARD_POWER{hostname="<node>"}
  *
- * The exam row only carries the node name (not a per-card DCGM `gpu` slot),
- * so for GPU we collapse all cards on the node with avg(); furiosa already
- * scopes to the rms-label scalar and rebellions sums per-card power. We wrap
- * the selector in avg_over_time([window]) (see PrometheusClient) so the value
- * is the mean across the run window.
+ * avg_over_time returns one series per matched time-series; the JS layer
+ * averages across them (mean across GPU cards for nvidia; single rms series
+ * for furiosa; mean per-card for rebellions — acceptable best-effort, note
+ * that total board power for rebellions would be a sum not a mean).
  *
  * Every method is non-throwing: on any failure (Prometheus down, no node,
  * empty result) it returns null so the caller can leave avg_power_w NULL
@@ -83,17 +85,19 @@ export class PowerCaptureService {
   ): string | null {
     const v = (vendor || '').toLowerCase();
     if (v === 'nvidia') {
-      // device-telemetry uses DCGM_FI_DEV_POWER_USAGE{Hostname,gpu}. The exam
-      // row has no per-card slot, so avg across all cards on the host.
-      return `avg(DCGM_FI_DEV_POWER_USAGE{Hostname="${node}"})`;
+      // Bare selector — Hostname label is capital-H (verified on-cluster:
+      // DCGM_FI_DEV_POWER_USAGE has labels Hostname="jw2"/"jw3"). JS layer
+      // averages across the per-card series returned by avg_over_time.
+      return `DCGM_FI_DEV_POWER_USAGE{Hostname="${node}"}`;
     }
     if (v === 'furiosa') {
-      // device-telemetry: max(furiosa_npu_hw_power{hostname, label="rms"}).
-      return `max(furiosa_npu_hw_power{hostname="${node}", label="rms"})`;
+      // rms label scopes to the single RMS power series for the RNGD device.
+      return `furiosa_npu_hw_power{hostname="${node}", label="rms"}`;
     }
     if (v === 'rebellions') {
-      // device-telemetry: sum(RBLN_DEVICE_STATUS:CARD_POWER{hostname}).
-      return `sum(RBLN_DEVICE_STATUS:CARD_POWER{hostname="${node}"})`;
+      // Returns one series per card; JS layer takes the mean across cards
+      // (best-effort — total board power would be a sum, not a mean).
+      return `RBLN_DEVICE_STATUS:CARD_POWER{hostname="${node}"}`;
     }
     return null;
   }

@@ -387,6 +387,11 @@ export class MpExamResultService implements OnModuleInit {
     testScenario: TestScenarioEnum;
     mode: MpExamModeEnum;
     exam?: MpExam;
+    /** R8 Bug-2: actual GPU worker node (e.g. jw2/jw3) resolved from the Exam
+     *  CR conditions. When provided, used in place of exam.k8s_node_name (which
+     *  holds the backend pod's node, not the GPU worker node). Falls back to
+     *  exam.k8s_node_name when absent. */
+    workerNode?: string;
   }) {
     try {
       // R8 (perf/Watt): capture mean device power over the run window once per
@@ -397,9 +402,12 @@ export class MpExamResultService implements OnModuleInit {
       if (params.exam) {
         const vendor = this.powerVendorForExam(params.exam);
         if (vendor) {
+          // R8 Bug-2: prefer the caller-supplied workerNode (actual GPU node
+          // from the Exam CR) over exam.k8s_node_name (backend pod's node).
+          const targetNode = params.workerNode ?? params.exam.k8s_node_name;
           avgPowerW = await this.powerCapture.captureAvgPower(
             vendor,
-            params.exam.k8s_node_name,
+            targetNode,
             params.exam.started_at,
             params.exam.end_at,
           );

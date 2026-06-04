@@ -190,6 +190,47 @@ export class MpExamService implements OnModuleInit {
    * to transition to Completed. Falls back to wall-clock if the client is
    * unavailable or the CR never shows Completed within the retry window.
    */
+  /**
+   * R8 Bug-2 fix: extract the actual GPU worker node from the Exam CR status
+   * conditions. The operator sets a condition with reason "ExamRunning" and a
+   * message like "Exam job created and running on node jw2". We parse the node
+   * name from that message. Returns null on any failure so the caller can fall
+   * back to exam.k8s_node_name (best-effort; never throws).
+   */
+  private async resolveWorkerNode(examId: number): Promise<string | null> {
+    if (!this.k8sCustomObjects) return null;
+    try {
+      const cr = (await this.k8sCustomObjects.getNamespacedCustomObject({
+        group: EXAM_CRD_GROUP,
+        version: EXAM_CRD_VERSION,
+        namespace: EXAM_CRD_NAMESPACE,
+        plural: EXAM_CRD_PLURAL,
+        name: `mlperf-${examId}`,
+      } as any)) as {
+        status?: {
+          conditions?: Array<{ reason?: string; message?: string }>;
+        };
+      };
+      const conditions = cr?.status?.conditions ?? [];
+      for (const cond of conditions) {
+        if (!cond.message) continue;
+        // e.g. "Exam job created and running on node jw2"
+        const m = /running on node (\S+)/i.exec(cond.message);
+        if (m?.[1]) {
+          console.log(
+            `[MpExamService] Exam CR mlperf-${examId}: worker node resolved to "${m[1]}" from condition message.`,
+          );
+          return m[1];
+        }
+      }
+    } catch (err) {
+      console.debug(
+        `[MpExamService] resolveWorkerNode for mlperf-${examId} failed (best-effort): ${(err as Error)?.message}`,
+      );
+    }
+    return null;
+  }
+
   private async resolveExamCompletionTime(examId: number): Promise<string> {
     const fallback = dayjs().tz(this.timezone).format(this.timestampFormat);
     if (!this.k8sCustomObjects) return fallback;
@@ -369,6 +410,11 @@ export class MpExamService implements OnModuleInit {
       const completionTs = await this.resolveExamCompletionTime(data.id);
       await this.update(data.id, { end_at: completionTs });
 
+      // R8 Bug-2: resolve the actual GPU worker node (e.g. jw2/jw3) from the
+      // Exam CR conditions — falls back to null so captureAvgPower uses the
+      // exam's k8s_node_name as a last resort.
+      const workerNode = await this.resolveWorkerNode(data.id);
+
       // v42 Defect #38: catch result-service exceptions (e.g. ENOENT when
       // the worker crashed before writing mlperf_log_detail.txt). A thrown
       // exception here means zero results — treat it as a safety-gate trigger.
@@ -379,6 +425,7 @@ export class MpExamService implements OnModuleInit {
           testScenario: data.scenario as TestScenarioEnum,
           mode: data.mode as MpExamModeEnum,
           exam: data,
+          workerNode: workerNode ?? undefined,
         });
       } catch (createErr) {
         console.error(
@@ -615,6 +662,9 @@ export class MpExamService implements OnModuleInit {
         end_at: completionTs,
       });
 
+      // R8 Bug-2: resolve the actual GPU worker node from the Exam CR.
+      const workerNode = await this.resolveWorkerNode(id);
+
       // v42 Defect #38: catch result-service exceptions (see executeCreateGrpcExam).
       try {
         await this.mpExamResultService.create({
@@ -623,6 +673,7 @@ export class MpExamService implements OnModuleInit {
           testScenario: exam.scenario as TestScenarioEnum,
           mode: exam.mode as MpExamModeEnum,
           exam,
+          workerNode: workerNode ?? undefined,
         });
       } catch (createErr) {
         console.error(
