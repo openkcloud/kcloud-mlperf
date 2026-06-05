@@ -58,8 +58,13 @@ export class CreateMmExamDto {
   @Min(0)
   batch_size: number;
 
+  // gpu_util maps to vLLM `gpu_memory_utilization`, a FRACTION in (0, 1].
+  // @Max(1) rejects percent-style values (e.g. 80) that otherwise reach the
+  // worker and make vLLM abort with "GPU memory utilization must be less than
+  // 1.0" → Job BackoffLimitExceeded → exam Error (see historical mm 155–158).
   @IsNumber()
   @Min(0)
+  @Max(1)
   gpu_util: number;
 
   // Optional - defaults to GPU

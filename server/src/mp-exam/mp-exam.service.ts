@@ -535,6 +535,44 @@ export class MpExamService implements OnModuleInit {
         HttpStatus.BAD_REQUEST,
       );
     }
+    // Multi-GPU feasibility guard (audit: silent late failure). Every GPU node
+    // in the cluster exposes exactly one GPU and every MLPerf job template
+    // requests nvidia.com/gpu:"1", so multi-GPU runs cannot be honored: without
+    // this guard a tensor_parallel_size>1 / gpu_num>1 request passes
+    // validation, schedules a 1-GPU pod, then aborts inside vLLM at runtime
+    // (minutes later) instead of failing fast. Reject at create with an
+    // actionable 400. Lift this once a >=2-GPU node exists AND the
+    // operator/template requests gpu_num GPUs.
+    {
+      const tp = createMpExamDto.tensor_parallel_size;
+      const gpuNum = createMpExamDto.gpu_num;
+      if (gpuNum !== undefined && gpuNum !== null && gpuNum < 1) {
+        throw new HttpException(
+          'gpu_num must be >= 1 for a GPU exam.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (
+        tp !== undefined &&
+        tp !== null &&
+        gpuNum !== undefined &&
+        gpuNum !== null &&
+        tp > gpuNum
+      ) {
+        throw new HttpException(
+          `tensor_parallel_size (${tp}) cannot exceed gpu_num (${gpuNum}).`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if ((tp ?? 1) > 1 || (gpuNum ?? 1) > 1) {
+        throw new HttpException(
+          `Multi-GPU is not available on this cluster: every GPU node exposes a ` +
+            `single GPU, so MLPerf runs are single-GPU (use tensor_parallel_size=1, ` +
+            `gpu_num=1). Requested tensor_parallel_size=${tp ?? 1}, gpu_num=${gpuNum ?? 1}.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
     try {
       // Check if started_at is in the past and replace with current time
       const currentTime = dayjs().tz(this.timezone);
