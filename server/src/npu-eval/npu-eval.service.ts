@@ -23,6 +23,7 @@ import {
   isMmluLetter,
   type MmluLetter,
 } from '../mm-exam/mmlu-scoring';
+import { scoreRougeBatch } from './rouge';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -683,6 +684,11 @@ export class NpuEvalService implements OnModuleInit {
       // benchmarks this stays null and accuracy passes through as 0.
       const mmluExpected =
         exam.benchmark === 'mmlu' ? this.loadMmluExpectedLetters() : null;
+      // Full-dataset MLPerf accuracy: load CNN reference summaries once so each
+      // run's collected completions can be ROUGE-scored (RNGD / Atom+ otherwise
+      // report accuracy=0 for mlperf). Aligned 1:1 with loadDatasetSamples.
+      const mlperfRefs =
+        exam.benchmark === 'mlperf' ? this.loadMlperfReferences() : null;
 
       for (let run = 1; run <= exam.retry_num; run++) {
         if (abortController.signal.aborted) {
@@ -720,6 +726,18 @@ export class NpuEvalService implements OnModuleInit {
               sliced,
             ).accuracy_pct;
           }
+        } else if (mlperfRefs && exam.benchmark === 'mlperf') {
+          // Full-dataset MLPerf accuracy: ROUGE-L F1 (%) of generated summaries
+          // vs the CNN reference `output`. Stored in result_accuracy so RNGD /
+          // Atom+ get a real accuracy number alongside the GPU pass.
+          const sliced = mlperfRefs.slice(0, activeSamples.length);
+          const rouge = scoreRougeBatch(runResult.completions, sliced);
+          accuracyPct = rouge.rougeL_pct;
+          this.logger.log(
+            `NPU exam ${examId}: Run ${run} ROUGE-1=${rouge.rouge1_pct.toFixed(2)} ` +
+              `ROUGE-2=${rouge.rouge2_pct.toFixed(2)} ROUGE-L=${rouge.rougeL_pct.toFixed(2)} ` +
+              `(scored ${rouge.scored}/${activeSamples.length})`,
+          );
         }
 
         // BB-3: per-run latency percentiles (seconds) from the run's
@@ -962,6 +980,33 @@ export class NpuEvalService implements OnModuleInit {
   private mmluItemMatchesSubject(item: { category?: unknown }): boolean {
     if (!this.mmluSubjectFilter) return true;
     return String(item?.category ?? '').toLowerCase() === this.mmluSubjectFilter;
+  }
+
+  // Full-dataset MLPerf: CNN-DailyMail reference summaries (the `output` field),
+  // in the SAME order/filter as loadDatasetSamples('mlperf') so refs[i] aligns
+  // with prompt[i]. Used for ROUGE scoring of NPU-generated summaries.
+  private loadMlperfReferences(): string[] {
+    const refs: string[] = [];
+    try {
+      const datasetPath = path.join(DATASET_BASE_PATH, 'cnn_eval.json');
+      if (!fs.existsSync(datasetPath)) return refs;
+      const data = JSON.parse(fs.readFileSync(datasetPath, 'utf-8'));
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          const text = item.article || item.text || item.input || '';
+          if (text) {
+            refs.push(
+              String(item.output ?? item.summary ?? item.highlights ?? ''),
+            );
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to load MLPerf references: ${(err as Error).message}`,
+      );
+    }
+    return refs;
   }
 
   private loadMmluExpectedLetters(): MmluLetter[] | null {
@@ -1254,8 +1299,21 @@ export class NpuEvalService implements OnModuleInit {
             for (const item of data) {
               const text = item.article || item.text || item.input || '';
               if (text) {
+                // Use the dataset's official MLPerf prompt template
+                // (instruction.llama with {input}) over the FULL article so NPU
+                // summaries are comparable to the GPU MLPerf accuracy pass — the
+                // old 2000-char truncation starved the model of context and made
+                // ROUGE meaningless. 12000-char cap stays safely within the
+                // 8192-token window. Falls back to a plain instruction.
+                const tmpl =
+                  item.instruction && typeof item.instruction.llama === 'string'
+                    ? item.instruction.llama
+                    : null;
+                const article = String(text).slice(0, 12000);
                 samples.push(
-                  `Summarize the following article:\n\n${text.slice(0, 2000)}`,
+                  tmpl && tmpl.includes('{input}')
+                    ? tmpl.replace('{input}', article)
+                    : `Summarize the following news article. Output the summary only.\n\nArticle:\n${article}\n\nSummary:`,
                 );
               }
             }
