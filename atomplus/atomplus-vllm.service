@@ -1,0 +1,20 @@
+[Unit]
+Description=ETRI Atom+ vLLM-RBLN OpenAI server (Llama-3.1-8B-Instruct tp2, SDK 0.10.3) on :30093
+After=network-online.target rbln-default-rsd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kcloud
+Group=kcloud
+WorkingDirectory=/home/kcloud
+Environment=HOME=/home/kcloud
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=VLLM_RBLN_TP_SIZE=2
+ExecStart=/usr/local/bin/vllm serve /home/kcloud/cache/rbln-compiled/Llama-3.1-8B-Instruct-1003-tp2 --served-model-name rebellions/Llama-3.1-8B-Instruct Llama-3.1-8B-Instruct meta-llama/Llama-3.1-8B-Instruct --max-num-seqs 1 --max-num-batched-tokens 8192 --max-model-len 8192 --block-size 8192 --port 30093 --host 0.0.0.0
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
