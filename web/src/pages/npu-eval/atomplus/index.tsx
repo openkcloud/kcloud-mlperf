@@ -180,9 +180,17 @@ const AtomPlusNpuEvalPage = () => {
     refetchInterval: 5000,
   });
 
-  const allRuns: ComparisonRunRow[] = (comparisonData?.runs ?? []).filter(
-    (r) => r.hardware.vendor === 'rebellions'
-  );
+  // Newest-first so the user's latest Atom+ runs are on page 1. The unified
+  // /comparison/list is not reliably time-ordered across source tables, which
+  // otherwise buried fresh runs pages deep ("I don't see my Atom+ results").
+  const allRuns: ComparisonRunRow[] = (comparisonData?.runs ?? [])
+    .filter((r) => r.hardware.vendor === 'rebellions')
+    .sort((a, b) => {
+      const at = a.started_at ? Date.parse(a.started_at) : 0;
+      const bt = b.started_at ? Date.parse(b.started_at) : 0;
+      if (bt !== at) return bt - at;
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
 
   const totalPages = Math.ceil(allRuns.length / limit);
   const pagedRuns = allRuns.slice((page - 1) * limit, page * limit);
