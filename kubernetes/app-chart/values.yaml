@@ -33,7 +33,7 @@ components:
     metadata:
       name: "etri-llm-frontend"
     containers:
-      image: "jungwooshim/etri-llm-frontend:v67"
+      image: "jungwooshim/etri-llm-frontend:v68"
       containerPort: "5173"
     service:
       type: "NodePort"
