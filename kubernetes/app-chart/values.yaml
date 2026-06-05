@@ -44,7 +44,7 @@ components:
     metadata:
       name: "etri-llm-backend"
     containers:
-      image: "jungwooshim/etri-llm-backend:v60"
+      image: "jungwooshim/etri-llm-backend:v61"
       containerPort: "9999"
     service:
       protocol: "TCP"
