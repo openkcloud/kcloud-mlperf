@@ -81,11 +81,10 @@ describe('RealtimeService', () => {
 
   it('buildSnapshot returns 4 GPU slots when no exams are running', async () => {
     const snap = await service.buildSnapshot();
-    // Snapshot includes 4 GPU slots (node2 L40+A40, node3 L40-44+A40-44)
-    // and 2 NPU slots (node4 RNGD, node5 Atom+). Filter to GPU for this
-    // test's intent.
+    // Snapshot includes 2 GPU slots (jw2/jw3 A30) and 3 NPU slots
+    // (node4 RNGD, node5 Atom+ x2). Filter to GPU for this test's intent.
     const gpuSlots = snap.slots.filter((s) => s.device_type === 'gpu');
-    expect(gpuSlots).toHaveLength(4);
+    expect(gpuSlots).toHaveLength(2);
     snap.slots.forEach((s) => {
       expect(s.status).toBe('idle');
       expect(s.current_exam).toBeNull();
@@ -102,31 +101,33 @@ describe('RealtimeService', () => {
     const runningExam: Partial<MpExam> = {
       id: 42,
       name: 'test-mp-exam',
-      gpu_type: 'NVIDIA-L40',
+      gpu_type: 'NVIDIA-A30',
+      k8s_node_name: 'jw2',
       status: StatusEnum.RUNNING,
       started_at: new Date(Date.now() - 30_000).toISOString(),
     };
     mpRepo.find.mockResolvedValue([runningExam]);
 
     const snap = await service.buildSnapshot();
-    const l40Slot = snap.slots.find((s) => s.model === 'NVIDIA-L40');
-    expect(l40Slot?.status).toBe('running');
-    expect(l40Slot?.current_exam?.id).toBe(42);
-    expect(l40Slot?.current_exam?.kind).toBe('mp');
-    expect(l40Slot?.current_exam?.elapsed_seconds).toBeGreaterThanOrEqual(29);
+    const a30Slot = snap.slots.find((s) => s.model === 'NVIDIA-A30' && s.node === 'jw2');
+    expect(a30Slot?.status).toBe('running');
+    expect(a30Slot?.current_exam?.id).toBe(42);
+    expect(a30Slot?.current_exam?.kind).toBe('mp');
+    expect(a30Slot?.current_exam?.elapsed_seconds).toBeGreaterThanOrEqual(29);
     // Running mp-exam with no result rows yet — should be 'pending', not faked
     // and not 'unavailable'.
-    expect(l40Slot?.metrics_status).toBe('pending');
-    expect(l40Slot?.last_known_metric.tps).toBeNull();
-    expect(l40Slot?.last_known_metric.tt100t_seconds).toBeNull();
-    expect(l40Slot?.last_metric_timestamp).toBeNull();
+    expect(a30Slot?.metrics_status).toBe('pending');
+    expect(a30Slot?.last_known_metric.tps).toBeNull();
+    expect(a30Slot?.last_known_metric.tt100t_seconds).toBeNull();
+    expect(a30Slot?.last_metric_timestamp).toBeNull();
   });
 
   it('buildSnapshot surfaces tps/tt100t and metric timestamp when a result row exists', async () => {
     const runningExam: Partial<MpExam> = {
       id: 99,
       name: 'mlperf-llama',
-      gpu_type: 'NVIDIA-L40',
+      gpu_type: 'NVIDIA-A30',
+      k8s_node_name: 'jw2',
       status: StatusEnum.RUNNING,
       started_at: new Date(Date.now() - 5_000).toISOString(),
     };
@@ -181,32 +182,33 @@ describe('RealtimeService', () => {
 
     const svc = module.get<RealtimeService>(RealtimeService);
     const snap = await svc.buildSnapshot();
-    const l40 = snap.slots.find((s) => s.model === 'NVIDIA-L40');
-    expect(l40?.metrics_status).toBe('available');
-    expect(l40?.last_known_metric.tps).toBe(62.94);
-    expect(l40?.last_known_metric.tt100t_seconds).toBe(1.588);
-    expect(l40?.last_metric_timestamp).toBe('2026-04-28T08:30:00.000Z');
+    const a30 = snap.slots.find((s) => s.model === 'NVIDIA-A30' && s.node === 'jw2');
+    expect(a30?.metrics_status).toBe('available');
+    expect(a30?.last_known_metric.tps).toBe(62.94);
+    expect(a30?.last_known_metric.tt100t_seconds).toBe(1.588);
+    expect(a30?.last_metric_timestamp).toBe('2026-04-28T08:30:00.000Z');
   });
 
   it('buildSnapshot maps a preparing mm-exam onto the correct GPU slot', async () => {
     const preparingExam: Partial<MmExam> = {
       id: 7,
       name: 'test-mm-exam',
-      gpu_type: 'NVIDIA-A40',
+      gpu_type: 'NVIDIA-A30',
+      k8s_node_name: 'jw3',
       status: StatusEnum.PREPARING,
       started_at: new Date().toISOString(),
     };
     mmRepo.find.mockResolvedValue([preparingExam]);
 
     const snap = await service.buildSnapshot();
-    const a40Slot = snap.slots.find((s) => s.model === 'NVIDIA-A40');
-    expect(a40Slot?.status).toBe('preparing');
-    expect(a40Slot?.current_exam?.kind).toBe('mm');
+    const a30Slot = snap.slots.find((s) => s.model === 'NVIDIA-A30' && s.node === 'jw3');
+    expect(a30Slot?.status).toBe('preparing');
+    expect(a30Slot?.current_exam?.kind).toBe('mm');
     // mm exams have no streaming perf metrics — surface 'unavailable' so the
     // UI labels it explicitly instead of rendering blank cells.
-    expect(a40Slot?.metrics_status).toBe('unavailable');
-    expect(a40Slot?.last_known_metric.tps).toBeNull();
-    expect(a40Slot?.last_known_metric.tt100t_seconds).toBeNull();
+    expect(a30Slot?.metrics_status).toBe('unavailable');
+    expect(a30Slot?.last_known_metric.tps).toBeNull();
+    expect(a30Slot?.last_known_metric.tt100t_seconds).toBeNull();
   });
 
   it('sweep_progress has zero counts when GpuSweepService is not injected', async () => {

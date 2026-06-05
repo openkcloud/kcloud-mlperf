@@ -2,6 +2,21 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrometheusClient } from '../prometheus/prometheus.client';
 
 /**
+ * Escape a string for safe embedding as a PromQL label value (inside double
+ * quotes). Mirrors the LogQL label-injection hardening in loki.controller.ts:
+ *   1. Backslash-escape any literal backslash first (\ → \\).
+ *   2. Backslash-escape double-quotes (" → \").
+ *   3. Strip CR/LF — a newline inside a label selector yields a parse error.
+ * Usage: `Hostname="${promQuote(node)}"`.
+ */
+function promQuote(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')   // \ → \\  (must be first)
+    .replace(/"/g, '\\"')     // " → \"
+    .replace(/[\r\n]/g, '');  // strip newlines
+}
+
+/**
  * Telemetry chunk attached to a RealtimeSlot. Every field is optional so the
  * frontend can render whatever is available without complaining about gaps.
  *
@@ -69,7 +84,9 @@ export class DeviceTelemetryService {
   async getGpuTelemetry(node: string, slotIndex: number): Promise<SlotTelemetry> {
     // DCGM labels: Hostname="node2", gpu="0". slotIndex is the device-registry
     // slot_id (0|1) which lines up with the dcgm `gpu` label on these nodes.
-    const labelFilter = `Hostname="${node}", gpu="${slotIndex}"`;
+    // promQuote() escapes \ and " and strips newlines to prevent PromQL injection.
+    const labelFilter = `Hostname="${promQuote(node)}", gpu="${promQuote(String(slotIndex))}"`;
+
 
     const [util, fbUsed, fbFree, power, temp, memCopy] = await Promise.all([
       this.prom.instantQuery(`DCGM_FI_DEV_GPU_UTIL{${labelFilter}}`),
@@ -135,7 +152,8 @@ export class DeviceTelemetryService {
    * caller will mark the slot exporter_status="missing" itself.
    */
   async getVllmTelemetry(modelName: string): Promise<Partial<SlotTelemetry>> {
-    const labelFilter = `model_name="${modelName}"`;
+    const labelFilter = `model_name="${promQuote(modelName)}"`;
+
 
     const [rate, running, kv] = await Promise.all([
       this.prom.instantQuery(
@@ -187,13 +205,14 @@ export class DeviceTelemetryService {
     node: string,
     cardName?: string,
   ): Promise<SlotTelemetry> {
-    const hostFilter = `hostname="${node}"`;
+    // promQuote() escapes \ and " and strips newlines to prevent PromQL injection.
+    const hostFilter = `hostname="${promQuote(node)}"`;
     // Rebellions exposes one metric series per card (name="rbln0"|"rbln1"); when
     // a specific card is requested, narrow to it so each Atom+ slot reports its
     // own power/temp/util instead of the node aggregate. Furiosa (single RNGD
     // per node) ignores this.
     const rbFilter =
-      cardName != null ? `${hostFilter}, name="${cardName}"` : hostFilter;
+      cardName != null ? `${hostFilter}, name="${promQuote(cardName)}"` : hostFilter;
 
     if (vendor === 'furiosa') {
       const [util, alive, power, tempPeak, dramUsed, dramTotal] =

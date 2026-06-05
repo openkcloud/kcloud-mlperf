@@ -7,6 +7,7 @@ import { MpExamApi } from '@/api/domains/mp-exam.domain.ts';
 import type { ExamStatusResponse } from '@/api/types/common.types';
 import { HTTP_CODE_BAD_REQUEST, HTTP_CODE_SERVER_ERROR } from '@/constants/http-code.constants';
 import { StatusEnum } from '@/enums/status.enum';
+import { useStore } from '@/store';
 
 import { MpExamQueryKeys } from '@/contexts/QueryContext/query.keys';
 
@@ -16,6 +17,7 @@ export const useMpExamStatus = (config: MpExamStatusConfig) => {
   const { status, id, tablePageNumber: _tablePageNumber } = config;
 
   const queryClient = useQueryClient();
+  const { setErrorNotification } = useStore(store => store.notification);
 
   const updateExamStatus = async () => {
     try {
@@ -29,6 +31,7 @@ export const useMpExamStatus = (config: MpExamStatusConfig) => {
       });
     } catch (error) {
       console.error(error);
+      setErrorNotification(error);
     }
   };
 
@@ -77,6 +80,7 @@ export const useMpExamStatus = (config: MpExamStatusConfig) => {
 
   if (isError) {
     console.error(error);
+    setErrorNotification(error);
   }
 
   return data;

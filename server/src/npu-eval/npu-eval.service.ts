@@ -458,6 +458,12 @@ export class NpuEvalService implements OnModuleInit {
   // =====================================================================
 
   async createResult(dto: CreateNpuExamResultDto) {
+    // m-bk2: verify the referenced exam exists before inserting so a
+    // bad/unknown examId throws a clean 404 (NotFoundException) rather than
+    // a FK-violation 500 or a silently orphaned row. examId @Min(1) in the
+    // DTO already rejects non-positive values at the validation layer.
+    await this.findOne(dto.examId);
+
     const result = this.npuExamResultRepo.create({
       exam_id: dto.examId,
       result_number: dto.resultNumber,
@@ -498,6 +504,11 @@ export class NpuEvalService implements OnModuleInit {
   }
 
   async findAllResults(examId: number) {
+    // m-api3: verify the exam exists before returning results so callers can
+    // distinguish "exam not found" (404) from "exam exists but has 0 results"
+    // (200 []). This mirrors the behaviour of findOne and all other detail
+    // endpoints in this controller.
+    await this.findOne(examId);
     return await this.npuExamResultRepo.find({
       where: { exam_id: examId },
       order: { result_number: 'ASC' },

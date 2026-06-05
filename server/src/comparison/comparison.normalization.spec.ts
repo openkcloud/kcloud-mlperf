@@ -419,3 +419,54 @@ describe('C1 — pair() resolves the correct table on id collision', () => {
     expect(result.b.hardware.vendor).toBe('furiosa');
   });
 });
+
+// ----------------------------------------------------------------------
+// m-di2 — NPU MMLU full-dataset zero-accuracy → null (unscored)
+// ----------------------------------------------------------------------
+
+describe('m-di2 — NPU MMLU full-dataset accuracy=0 suppressed as null', () => {
+  it('dn=0 (full-dataset sentinel) + accuracy=0 → accuracy_pct is null', async () => {
+    // Live repro: RNGD id9, data_number=0, result_accuracy=0 (scoring artifact)
+    const svc = await buildService({
+      npu: [npuExam({ benchmark: 'mmlu', data_number: 0 }, 0)],
+    });
+    const runs = await listRuns(svc);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].metrics.accuracy_pct).toBeNull();
+  });
+
+  it('dn>=13368 (explicit full count) + accuracy=0 → accuracy_pct is null', async () => {
+    const svc = await buildService({
+      npu: [npuExam({ benchmark: 'mmlu', data_number: 13368 }, 0)],
+    });
+    const runs = await listRuns(svc);
+    expect(runs[0].metrics.accuracy_pct).toBeNull();
+  });
+
+  it('subset run (dn=10) + accuracy=0 → accuracy_pct is 0 (not suppressed)', async () => {
+    // Small subset runs that genuinely score 0 should not be suppressed —
+    // only full-dataset runs trigger the artifact guard.
+    const svc = await buildService({
+      npu: [npuExam({ benchmark: 'mmlu', data_number: 10 }, 0)],
+    });
+    const runs = await listRuns(svc);
+    expect(runs[0].metrics.accuracy_pct).toBe(0);
+  });
+
+  it('dn=0 + non-zero accuracy → accuracy_pct passes through unchanged', async () => {
+    const svc = await buildService({
+      npu: [npuExam({ benchmark: 'mmlu', data_number: 0 }, 21)],
+    });
+    const runs = await listRuns(svc);
+    expect(runs[0].metrics.accuracy_pct).toBe(21);
+  });
+
+  it('mlperf run (non-MMLU) with dn=0 accuracy=0 → accuracy_pct is 0 (not suppressed)', async () => {
+    // The artifact guard is MMLU-only; mlperf runs are unaffected.
+    const svc = await buildService({
+      npu: [npuExam({ benchmark: 'mlperf', data_number: 0 }, 0)],
+    });
+    const runs = await listRuns(svc);
+    expect(runs[0].metrics.accuracy_pct).toBe(0);
+  });
+});

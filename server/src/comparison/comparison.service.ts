@@ -984,7 +984,13 @@ export class ComparisonService {
         // C2 guard: NPU stores result_accuracy already as a percent in
         // [0,100]; clamp defensively so a malformed row can never escape the
         // invariant that accuracy_pct ∈ [0,100] across both paths.
-        accuracy_pct: this.clampAccuracyPercent(latest?.result_accuracy ?? null),
+        // m-di2: additionally suppress full-dataset MMLU runs that report
+        // accuracy===0 (scoring artifact) so they don't poison aggregates.
+        accuracy_pct: this.npuMmluAccuracyPct(
+          latest?.result_accuracy ?? null,
+          exam.data_number ?? null,
+          benchmark,
+        ),
         throughput: latest?.result_sps ?? null,
         tps_stdev: npuTpsStats.stdev,
         tt100t_stdev: npuTtStats.stdev,
@@ -1096,6 +1102,40 @@ export class ComparisonService {
     if (pct < 0) return 0;
     if (pct > 100) return 100;
     return pct;
+  }
+
+  /**
+   * m-di2: Defensive normalization for NPU MMLU accuracy.
+   *
+   * A full-dataset MMLU run (data_number=0 sentinel OR data_number>=13368)
+   * that reports result_accuracy===0 is almost certainly a scoring artifact
+   * (e.g. RNGD id9 dn=0 → 0%) rather than a real zero-accuracy result —
+   * the same device returns 21–70% on every subset run. Treating 0 as a
+   * valid headline number poisons leaderboard aggregates (min/max/mean) and
+   * the Efficiency Frontier y-axis.
+   *
+   * When the artifact condition is detected, return null (unscored) instead
+   * of 0 so the run is excluded from aggregates. No DB row is modified.
+   * Subset runs (dn 1..13367) and non-zero accuracy values are unaffected.
+   */
+  private npuMmluAccuracyPct(
+    rawAccuracy: number | null | undefined,
+    dataNumber: number | null | undefined,
+    benchmark: 'mlperf' | 'mmlu',
+  ): number | null {
+    const clamped = this.clampAccuracyPercent(rawAccuracy);
+    if (benchmark !== 'mmlu') return clamped;
+    if (clamped !== 0) return clamped;
+
+    // Accuracy is exactly 0 on an MMLU run — check if it is a full/large
+    // dataset run (the artifact pattern). data_number=0 is the sentinel for
+    // "full dataset (13368 samples)"; data_number>=13368 is the explicit count.
+    const dn = dataNumber ?? null;
+    const isFullDataset = dn === 0 || (dn != null && dn >= 13368);
+    if (isFullDataset) {
+      return null; // unscored — suppress from aggregates (no DB change)
+    }
+    return clamped;
   }
 
   private canonicalizeHardwareLabel(raw: string): CanonicalHardwareLabel {

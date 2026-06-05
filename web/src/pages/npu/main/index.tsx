@@ -12,6 +12,7 @@ import dayjs from 'dayjs';
 
 import { NpuEvalApi } from '@/api/domains/npu-eval.domain';
 import { QueryBoundary } from '@/components/QueryBoundary';
+import { LiveBenchDashboard } from '@/components/benchmark-page';
 import { NpuEvalQueryKeys } from '@/contexts/QueryContext/query.keys';
 import { NpuEvalPageLinks } from '@/contexts/RouterContext/router.links';
 import { StatusEnum } from '@/enums/status.enum';
@@ -573,38 +574,14 @@ const NpuEvalPage = () => {
       )}
 
       {/* Live Bench Dashboard (node4) — NPU telemetry, MLPerf accuracy progress, log tails */}
-      <Paper sx={{ p: 2, mt: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="h6">Live Bench Dashboard (node4)</Typography>
-          <Typography variant="caption">
-            <a
-              href="http://10.254.202.114:30890/"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: '#3aa3ff', textDecoration: 'none' }}
-            >
-              open in new tab ↗
-            </a>
-          </Typography>
-        </Box>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-          NPU temp / power, MLPerf accuracy progress + ETA, sequencer state, and live tails of accuracy.log,
-          live-poster.log, fp8-sequencer.log, bench-fp8-full.log. Auto-refresh every 5s.
-        </Typography>
-        <Box
-          component="iframe"
-          src="http://10.254.202.114:30890/"
-          title="node4 bench dashboard"
-          sx={{
-            width: '100%',
-            height: 900,
-            border: 0,
-            borderRadius: 1,
-            bgcolor: '#0e1117',
-            display: 'block',
-          }}
-        />
-      </Paper>
+      <LiveBenchDashboard
+        title="Live Bench Dashboard (node4)"
+        src={
+          (import.meta.env.VITE__APP_RNGD_LIVE_BENCH_URL as string | undefined) ??
+          'http://10.254.202.114:30890/'
+        }
+        height={900}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog

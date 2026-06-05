@@ -521,10 +521,12 @@ const RngdNpuEvalPage = () => {
         )}
       </Paper>
 
-      {/* TODO: LAN-only fallback IP — set VITE__APP_RNGD_LIVE_BENCH_URL for external access */}
       <LiveBenchDashboard
         title="Live Bench Dashboard (node4 — RNGD)"
-        src="http://10.254.202.114:30890/"
+        src={
+          (import.meta.env.VITE__APP_RNGD_LIVE_BENCH_URL as string | undefined) ??
+          'http://10.254.202.114:30890/'
+        }
         height={900}
       />
 

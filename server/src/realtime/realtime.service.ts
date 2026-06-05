@@ -366,15 +366,17 @@ export class RealtimeService implements OnModuleDestroy {
       }
     }
 
-    // Fallback: hardcoded 4 NVIDIA GPU slots + 2 NPU slots (RNGD on node4 and
-    // Atom+ on node5). v38 adds the NPU entries so the snapshot always exposes
-    // NPU telemetry even when cluster.yaml is unmounted in the pod image.
+    // Fallback: current cluster topology — jw2/jw3 NVIDIA-A30 (gpu), node4 RNGD
+    // (npu), node5 Atom+ x2 (npu, slot_id 0 & 1). Updated from the pre-
+    // consolidation old cluster (node2/node3 L40/A40) so a registry outage
+    // never renders phantom L40/A40 cards on the dashboard. The live k8s
+    // registry overrides this whenever it returns ≥1 device.
     return [
       {
-        node: 'node2',
+        node: 'jw2',
         type: 'gpu',
         vendor: 'nvidia',
-        model: 'NVIDIA-L40',
+        model: 'NVIDIA-A30',
         slot_id: 0,
         state: 'ready',
         k8s_node_status: 'Ready',
@@ -383,35 +385,11 @@ export class RealtimeService implements OnModuleDestroy {
         source: 'cluster_yaml',
       },
       {
-        node: 'node2',
+        node: 'jw3',
         type: 'gpu',
         vendor: 'nvidia',
-        model: 'NVIDIA-A40',
-        slot_id: 1,
-        state: 'ready',
-        k8s_node_status: 'Ready',
-        allocatable_resource_name: 'nvidia.com/gpu',
-        allocatable_count: 1,
-        source: 'cluster_yaml',
-      },
-      {
-        node: 'node3',
-        type: 'gpu',
-        vendor: 'nvidia',
-        model: 'NVIDIA-L40-44GiB',
+        model: 'NVIDIA-A30',
         slot_id: 0,
-        state: 'ready',
-        k8s_node_status: 'Ready',
-        allocatable_resource_name: 'nvidia.com/gpu',
-        allocatable_count: 1,
-        source: 'cluster_yaml',
-      },
-      {
-        node: 'node3',
-        type: 'gpu',
-        vendor: 'nvidia',
-        model: 'NVIDIA-A40-44GiB',
-        slot_id: 1,
         state: 'ready',
         k8s_node_status: 'Ready',
         allocatable_resource_name: 'nvidia.com/gpu',
@@ -439,7 +417,19 @@ export class RealtimeService implements OnModuleDestroy {
         state: 'ready',
         k8s_node_status: 'Ready',
         allocatable_resource_name: 'rebellions.ai/atomplus',
-        allocatable_count: 2,
+        allocatable_count: 1,
+        source: 'cluster_yaml',
+      },
+      {
+        node: 'node5',
+        type: 'npu',
+        vendor: 'rebellions',
+        model: 'Atom+',
+        slot_id: 1,
+        state: 'ready',
+        k8s_node_status: 'Ready',
+        allocatable_resource_name: 'rebellions.ai/atomplus',
+        allocatable_count: 1,
         source: 'cluster_yaml',
       },
     ];

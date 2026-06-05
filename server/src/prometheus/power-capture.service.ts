@@ -2,6 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrometheusClient } from './prometheus.client';
 
 /**
+ * Escape a string for safe embedding as a PromQL label value (inside double
+ * quotes). Mirrors the same helper in device-telemetry.service.ts:
+ *   1. Backslash-escape any literal backslash (\ → \\).
+ *   2. Backslash-escape double-quotes (" → \").
+ *   3. Strip CR/LF — newlines inside a label selector yield a parse error.
+ */
+function promQuote(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')   // \ → \\  (must be first)
+    .replace(/"/g, '\\"')     // " → \"
+    .replace(/[\r\n]/g, '');  // strip newlines
+}
+
+/**
  * R8 (perf/Watt): best-effort capture of the mean device power over a run's
  * window, evaluated at the run's end. Reuses the SAME metric/label
  * expressions as device-telemetry.service.ts (bare vector selectors — no
@@ -83,21 +97,23 @@ export class PowerCaptureService {
     vendor: string,
     node: string,
   ): string | null {
+    // promQuote() escapes \ and " and strips newlines to prevent PromQL injection.
+    const safeNode = promQuote(node);
     const v = (vendor || '').toLowerCase();
     if (v === 'nvidia') {
       // Bare selector — Hostname label is capital-H (verified on-cluster:
       // DCGM_FI_DEV_POWER_USAGE has labels Hostname="jw2"/"jw3"). JS layer
       // averages across the per-card series returned by avg_over_time.
-      return `DCGM_FI_DEV_POWER_USAGE{Hostname="${node}"}`;
+      return `DCGM_FI_DEV_POWER_USAGE{Hostname="${safeNode}"}`;
     }
     if (v === 'furiosa') {
       // rms label scopes to the single RMS power series for the RNGD device.
-      return `furiosa_npu_hw_power{hostname="${node}", label="rms"}`;
+      return `furiosa_npu_hw_power{hostname="${safeNode}", label="rms"}`;
     }
     if (v === 'rebellions') {
       // Returns one series per card; JS layer takes the mean across cards
       // (best-effort — total board power would be a sum, not a mean).
-      return `RBLN_DEVICE_STATUS:CARD_POWER{hostname="${node}"}`;
+      return `RBLN_DEVICE_STATUS:CARD_POWER{hostname="${safeNode}"}`;
     }
     return null;
   }

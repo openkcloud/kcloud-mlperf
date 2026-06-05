@@ -57,8 +57,11 @@ const isExporterUnavailable = (t: WireSlotTelemetry | null | undefined): boolean
   return !!(t.exporter_status && t.exporter_status !== 'ok');
 };
 
-/** Staleness threshold in seconds above which telemetry data is considered stale (M2). */
-const TELEMETRY_STALE_SECONDS = 15;
+/** Staleness threshold in seconds above which telemetry data is considered stale (M2).
+ *  Set to 45s (≈2-3× typical DCGM/furiosa scrape interval of 10-30s) to avoid
+ *  false-stale dimming on healthy idle devices (m-rt3). The backend doc recommends ~60s;
+ *  45s is conservative enough to catch real staleness while avoiding false positives. */
+const TELEMETRY_STALE_SECONDS = 45;
 
 /** Compose the DRAM / FB usage tile string ("used / total GB" or "MiB"). */
 const memUsage = (t: WireSlotTelemetry | null | undefined, deviceType: 'gpu' | 'npu' | 'cpu'): string => {
@@ -120,45 +123,53 @@ const STATE_CHIP_LABEL: Record<DeviceState, { label: string; kind: 'success' | '
 
 type StatusChipProps = { status: string };
 
+/** Map each status string to a StatusKind for statusColor(), plus a label and optional strikethrough.
+ *  Intent: running=success/green, completed=info/blue, queued/pending/preparing=warning/amber,
+ *  idle/stale/unknown=neutral/gray, failed/error/unavailable=error/red, stopped=neutral.
+ *  statusColor() returns mode-aware hex so StatusChip is now theme-consistent with RegistryStateChip
+ *  (m-fe3). We use variant="outlined" + the mode-aware color for both chip border and text. */
+type StatusChipKind = 'success' | 'warning' | 'error' | 'neutral' | 'info';
+const STATUS_CHIP_MAP: Record<string, { label: string; kind: StatusChipKind; strikethrough?: boolean }> = {
+  Running: { label: 'Running', kind: 'success' },
+  running: { label: 'Running', kind: 'success' },
+  Completed: { label: 'Completed', kind: 'info' },
+  completed: { label: 'Completed', kind: 'info' },
+  Queued: { label: 'Queued', kind: 'warning' },
+  queued: { label: 'Queued', kind: 'warning' },
+  Pending: { label: 'Pending', kind: 'warning' },
+  Preparing: { label: 'Preparing', kind: 'warning' },
+  preparing: { label: 'Preparing', kind: 'warning' },
+  Idle: { label: 'Idle', kind: 'neutral' },
+  idle: { label: 'Idle', kind: 'neutral' },
+  Failed: { label: 'Failed', kind: 'error' },
+  failed: { label: 'Failed', kind: 'error' },
+  error: { label: 'Error', kind: 'error' },
+  Stopped: { label: 'Stopped', kind: 'neutral' },
+  // Stale: RUNNING in DB but heartbeat >2 min ago — rendered gray/neutral
+  Stale: { label: 'Stale', kind: 'neutral' },
+  stale: { label: 'Stale', kind: 'neutral' },
+  // Unavailable: hardware absent from device registry — error with strikethrough
+  Unavailable: { label: 'Unavailable', kind: 'error', strikethrough: true },
+  unavailable: { label: 'Unavailable', kind: 'error', strikethrough: true },
+  Unknown: { label: 'Unknown', kind: 'neutral' },
+  unknown: { label: 'Unknown', kind: 'neutral' },
+  'Pending Join': { label: 'Pending Join', kind: 'warning' },
+  pending_join: { label: 'Pending Join', kind: 'warning' }
+};
+
 const StatusChip = ({ status }: StatusChipProps) => {
-  // StatusChip uses a solid-background style (color: '#fff'), so the background
-  // itself is the brand color. These are already saturated enough to carry white
-  // text on both themes — no mode switch needed for the bg. We keep '#fff' fg.
-  const map: Record<string, { label: string; color: string; strikethrough?: boolean }> = {
-    Running: { label: 'Running', color: '#16A34A' },
-    running: { label: 'Running', color: '#16A34A' },
-    Completed: { label: 'Completed', color: '#4F46E5' },
-    completed: { label: 'Completed', color: '#4F46E5' },
-    Queued: { label: 'Queued', color: '#D97706' },
-    queued: { label: 'Queued', color: '#D97706' },
-    Pending: { label: 'Pending', color: '#D97706' },
-    Preparing: { label: 'Preparing', color: '#0284C7' },
-    preparing: { label: 'Preparing', color: '#0284C7' },
-    Idle: { label: 'Idle', color: '#64748B' },
-    idle: { label: 'Idle', color: '#64748B' },
-    Failed: { label: 'Failed', color: '#DC2626' },
-    failed: { label: 'Failed', color: '#DC2626' },
-    error: { label: 'Error', color: '#DC2626' },
-    Stopped: { label: 'Stopped', color: '#9333EA' },
-    // Stale: RUNNING in DB but heartbeat >2 min ago — rendered gray
-    Stale: { label: 'Stale', color: '#64748B' },
-    stale: { label: 'Stale', color: '#64748B' },
-    // Unavailable: hardware absent from device registry — red strike
-    Unavailable: { label: 'Unavailable', color: '#DC2626', strikethrough: true },
-    unavailable: { label: 'Unavailable', color: '#DC2626', strikethrough: true },
-    Unknown: { label: 'Unknown', color: '#64748B' },
-    unknown: { label: 'Unknown', color: '#64748B' },
-    'Pending Join': { label: 'Pending Join', color: '#D97706' },
-    pending_join: { label: 'Pending Join', color: '#D97706' }
-  };
-  const cfg = map[status] ?? { label: status, color: '#64748B' };
+  const { palette } = useTheme();
+  const mode = palette.mode;
+  const cfg = STATUS_CHIP_MAP[status] ?? { label: status, kind: 'neutral' as StatusChipKind };
+  const color = statusColor(cfg.kind, mode);
   return (
     <Chip
       label={cfg.label}
       size="small"
+      variant="outlined"
       sx={{
-        bgcolor: cfg.color,
-        color: '#fff',
+        borderColor: color,
+        color,
         fontWeight: 600,
         fontSize: '0.6875rem',
         ...(cfg.strikethrough ? { textDecoration: 'line-through' } : {})
@@ -360,7 +371,7 @@ const DeviceCard = ({ device, slot, telemetryHistory }: DeviceCardProps) => {
           gridTemplateColumns: 'repeat(4, 1fr)',
           gap: 1,
           pt: 1,
-          borderTop: '1px dashed rgba(0,0,0,0.08)',
+          borderTop: `1px dashed ${palette.divider}`,
           // M2: dim tiles to signal stale data; transport "Live" chip is unchanged
           opacity: isTelemetryStale ? 0.5 : 1,
           transition: 'opacity 0.3s'

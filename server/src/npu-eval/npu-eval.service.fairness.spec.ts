@@ -39,13 +39,13 @@ describe('NpuEvalService.create — fairness_assessment wiring (US-NEXT-1)', () 
     framework: 'furiosa-llm',
     batch_size: 1,
     dataset: 'cnn_eval',
-    data_number: 0,
+    data_number: 10,
     npu_type: 'RNGD',
     npu_num: 1,
     cpu_core: 7,
     ram_capacity: 32,
     retry_num: 1,
-    max_output_tokens: 0,
+    max_output_tokens: 128,
     started_at: '2099-01-01T00:00:00Z',
     status: undefined as any,
     error_log: '',
@@ -110,7 +110,7 @@ describe('NpuEvalService.create — fairness_assessment wiring (US-NEXT-1)', () 
   });
 
   it('persists fairness_assessment for Atom+ NPU (vendor derived as rebellions)', async () => {
-    await service.create({ ...baseDto, npu_type: 'Atom+' });
+    await service.create({ ...baseDto, npu_type: 'Atom+', precision: 'FP16' });
 
     const payload = mockExamRepo.create.mock.calls[0][0];
     expect(payload.fairness_assessment).toBeDefined();

@@ -1,7 +1,10 @@
 import { IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateNpuExamResultDto {
+  // m-bk2: examId must be a positive FK reference; @Min(1) rejects 0 and
+  // negative values at the DTO layer before any DB access.
   @IsInt()
+  @Min(1)
   examId: number;
 
   @IsInt()
