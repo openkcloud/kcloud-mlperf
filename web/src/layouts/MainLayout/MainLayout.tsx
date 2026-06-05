@@ -134,9 +134,9 @@ const BENCHMARK_NAV_ITEMS = [
   {
     to: NpuEvalAtomPlusPageLinks.main,
     label: 'Rebellions Atom+ NPU Eval',
-    // node5 is joined and the Atom+ devices are live; the remaining gap is the
-    // inference server (NodePort 30093 not yet deployed), not the device itself.
-    sublabel: 'node5 · inference server pending',
+    // node5 Atom+ inference is LIVE: vLLM-RBLN (SDK 0.10.3) serves
+    // Llama-3.1-8B-Instruct tensor-parallel across both cards on :30093.
+    sublabel: 'node5 · 2× Atom+ (tp2)',
     Icon: HexagonSVG,
     segment: 'npu-eval/atomplus'
   }
