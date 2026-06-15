@@ -121,4 +121,4 @@ When ready to commit changes:
 - Create feature branch: `git checkout -b feature/your-feature`
 - Push and open PR against `main`
 
-For deployment guidance, see `/home/kcloud/mondrianai-etri-llm-deployments-*/kubernetes/` Helm chart and `docs/operator_runbook.md`.
+For deployment guidance, see `/home/kcloud/etri-llm-deployments/app/kubernetes/` Helm chart and `docs/operator_runbook.md`.

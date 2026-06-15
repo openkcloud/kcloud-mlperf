@@ -110,7 +110,7 @@ kubectl cp llm-evaluation/playwright-qa:/work/out \
 
 # Re-checkout the branch:
 git -C /home/kcloud/etri-llm-exam-solution checkout fix/live-ui-recovery-20260429-052300-fd7cd81
-git -C /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869 checkout fix/live-ui-recovery-20260429-052300-fd7cd81
+git -C /home/kcloud/etri-llm-deployments/app checkout fix/live-ui-recovery-20260429-052300-fd7cd81
 ```
 
 ## Rollback

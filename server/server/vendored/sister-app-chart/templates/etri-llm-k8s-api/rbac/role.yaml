@@ -1,0 +1,70 @@
+{{- with .Values }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: etri-llm-api
+  name: etri-llm-api-role
+  namespace: {{ .global.namespace }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/status
+  verbs:
+  - get
+  - patch
+  - update
+  
+{{- end }}  

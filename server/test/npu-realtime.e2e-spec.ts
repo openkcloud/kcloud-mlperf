@@ -109,7 +109,7 @@ const NOMINAL_DEVICES: DeviceEntry[] = [
     slot_id: 0,
     state: 'pending_join',
     k8s_node_status: 'Absent',
-    allocatable_resource_name: 'rebellions.ai/atomplus',
+    allocatable_resource_name: 'rebellions.ai/ATOM',
     allocatable_count: null,
     source: 'cluster_yaml',
   },

@@ -81,7 +81,7 @@ The backend now integrates compute devices from three distinct vendors via a cen
 |--------|--------|-----------|-----------------|
 | **NVIDIA** | GPU (L40, A40) | `kube-system` (NVIDIA device plugin) | Standard K8s resource: `nvidia.com/gpu` |
 | **Furiosa** | RNGD NPU | `furiosa-system` (Furiosa device plugin) | Custom K8s resource: `furiosa.ai/warboy` |
-| **Rebellions** | Atom+ NPU | `furiosa-system` (Rebellions device plugin) | Custom K8s resource: `rebellions.ai/atomplus` |
+| **Rebellions** | Atom+ NPU | `furiosa-system` (Rebellions device plugin) | Custom K8s resource: `rebellions.ai/ATOM` |
 
 **Key Location**: `src/device-registry/` — integrates Kubernetes API, cluster.yaml, and gRPC service health checks.
 

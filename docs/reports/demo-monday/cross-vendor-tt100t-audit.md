@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — sister deployment directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # Cross-vendor TT100T audit — Llama-3.1-8B (vendor-native precisions)
 
 **Status**: live document (May 8, 2026 — autopilot in progress)

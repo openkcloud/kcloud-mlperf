@@ -2,8 +2,8 @@
 
 # 환경 변수로 설정 (필요시 수정)
 DOCKER_USERNAME=${DOCKER_USERNAME:-"도커 로그인 계정명"}
-WEB_IMAGE_PREFIX=${WEB_IMAGE_PREFIX:-"프론트엔드 이미지명 (ex. mondrianai/etri-llm-frontend)"}
-SERVER_IMAGE_PREFIX=${SERVER_IMAGE_PREFIX:-"백엔드 이미지명 (ex. mondrianai/etri-llm-backend)"}
+WEB_IMAGE_PREFIX=${WEB_IMAGE_PREFIX:-"프론트엔드 이미지명 (ex. ghcr.io/etri-llm/etri-llm-frontend)"}
+SERVER_IMAGE_PREFIX=${SERVER_IMAGE_PREFIX:-"백엔드 이미지명 (ex. ghcr.io/etri-llm/etri-llm-backend)"}
 VERSION=${VERSION:-"버전명 (ex. v1.0.4)"}
 WEB_ENVIRONMENT=${WEB_ENVIRONMENT:-"dev"}
 SERVER_ENVIRONMENT=${SERVER_ENVIRONMENT:-"prod"}

@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — sister deployment directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # Live Deployment vs Repo Gap Audit
 
 **RUN_ID:** 20260428-083516-4b786d4  
@@ -20,7 +22,7 @@ The deployed v14 image was built from the `mondrianai-etri-llm-deployments` repo
 |---|---|---|---|
 | backend | `jungwooshim/etri-llm-backend:v14` | `jungwooshim/etri-llm-backend:v14` | YES (tag) |
 | frontend | `jungwooshim/etri-llm-frontend:v14` | `jungwooshim/etri-llm-frontend:v14` | YES (tag) |
-| api | `mondrianai/etri-llm-k8s-api:v1.0.0` | `mondrianai/etri-llm-k8s-api:v1.0.0` | YES |
+| api | `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0` | `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0` | YES |
 | operator | `mondrianai/etri-llm-k8s-operator:v1.0.1` | `mondrianai/etri-llm-k8s-operator:v1.0.1` | YES |
 
 Tags match `values.yaml`, but the source code embedded in the v14 image is behind the current solution repo HEAD.

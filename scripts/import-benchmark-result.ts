@@ -26,6 +26,11 @@ export interface BenchmarkResult {
   benchmark: 'mlperf' | 'mmlu';
   model: string;
   precision: string;
+  // W7 canonical contract fields
+  dataset: string;
+  dataset_version: string;
+  scenario: string | null;
+  max_output_tokens: number | null;
   started_at: string;   // ISO 8601
   completed_at: string; // ISO 8601
   status: 'completed' | 'failed';
@@ -51,6 +56,7 @@ function validate(obj: unknown): BenchmarkResult {
 
   const required = [
     'run_id', 'hardware', 'vendor', 'benchmark', 'model', 'precision',
+    'dataset', 'dataset_version',
     'started_at', 'completed_at', 'status', 'failure_reason', 'tt100t_seconds',
     'elapsed_seconds', 'throughput_tokens_per_sec', 'raw_metrics',
     'logs_path', 'artifact_path', 'config_fingerprint',
@@ -59,6 +65,10 @@ function validate(obj: unknown): BenchmarkResult {
   for (const k of required) {
     if (!(k in r)) throw new Error(`Missing required field: ${k}`);
   }
+
+  // scenario and max_output_tokens are optional (null allowed)
+  if (!('scenario' in r)) r.scenario = null;
+  if (!('max_output_tokens' in r)) r.max_output_tokens = null;
 
   if (!['mlperf', 'mmlu'].includes(r.benchmark as string)) {
     throw new Error(`benchmark must be 'mlperf' or 'mmlu', got: ${r.benchmark}`);
@@ -250,6 +260,10 @@ export function sampleResult(): BenchmarkResult {
     benchmark: 'mlperf',
     model: 'meta-llama/Llama-3.1-8B-Instruct',
     precision: 'FP16',
+    dataset: 'CNN-DailyMail',
+    dataset_version: '3.0.0',
+    scenario: 'offline',
+    max_output_tokens: 128,
     started_at: started,
     completed_at: completed,
     status: 'completed',

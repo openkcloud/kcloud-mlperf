@@ -1,6 +1,6 @@
 # Rollback Guide
 
-Application-level rollback procedures for the LLM evaluation platform. Distinct from infrastructure rollback (see `/home/kcloud/mondrianai-*/scripts/17_rollback_last_change.sh`).
+Application-level rollback procedures for the LLM evaluation platform. Distinct from infrastructure rollback (see `/home/kcloud/etri-llm-deployments/app/scripts/17_rollback_last_change.sh`).
 
 ## Helm Rollback
 
@@ -91,7 +91,7 @@ If application rollback fails or introduces worse problems:
 kubectl scale deployment/etri-llm-backend -n llm-evaluation --replicas=0
 
 # Run infra rollback script (escalate to DevOps)
-/home/kcloud/mondrianai-etri-llm-deployments-*/scripts/17_rollback_last_change.sh
+/home/kcloud/etri-llm-deployments/app/scripts/17_rollback_last_change.sh
 ```
 
 This reverts Helm chart, cluster configuration, and database migrations to the previous consistent state.

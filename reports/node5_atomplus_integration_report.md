@@ -143,7 +143,7 @@ kubectl delete node node5
 
 ## Files changed
 
-In `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869`:
+In `/home/kcloud/etri-llm-deployments/app`:
 - `config/cluster.yaml` (vendor: rebellions)
 - `k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template` (renamed)
 - `scripts/07_prepare_rebellions_atomplus_npu_nodes.sh` (renamed)

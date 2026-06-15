@@ -226,7 +226,7 @@ describe('DeviceRegistry (e2e)', () => {
         expect(d.model).toBe('Atom+');
         expect(d.state).toBe('pending_join');
         expect(d.k8s_node_status).toBe('Absent');
-        expect(d.allocatable_resource_name).toBe('rebellions.ai/atomplus');
+        expect(d.allocatable_resource_name).toBe('rebellions.ai/ATOM');
         expect(d.allocatable_count).toBeNull();
       }
       expect(node5.map((d) => d.slot_id).sort()).toEqual([0, 1]);

@@ -366,14 +366,23 @@ describe('config-fingerprint', () => {
   // -------------------------------------------------------------------------
 
   it('run with dataset_subset and run without produce different hashes', () => {
-    const withSubset = { ...BASE, dataset_subset: { name: 'cnn_dailymail', n_samples: 100 } };
+    const withSubset = {
+      ...BASE,
+      dataset_subset: { name: 'cnn_dailymail', n_samples: 100 },
+    };
     const withoutSubset = { ...BASE, dataset_subset: null };
     expect(canonicalize(withSubset)).not.toBe(canonicalize(withoutSubset));
   });
 
   it('different dataset_subset n_samples → different hash', () => {
-    const subset100 = { ...BASE, dataset_subset: { name: 'cnn_dailymail', n_samples: 100 } };
-    const subsetFull = { ...BASE, dataset_subset: { name: 'cnn_dailymail', n_samples: 13368 } };
+    const subset100 = {
+      ...BASE,
+      dataset_subset: { name: 'cnn_dailymail', n_samples: 100 },
+    };
+    const subsetFull = {
+      ...BASE,
+      dataset_subset: { name: 'cnn_dailymail', n_samples: 13368 },
+    };
     expect(canonicalize(subset100)).not.toBe(canonicalize(subsetFull));
   });
 
@@ -384,8 +393,14 @@ describe('config-fingerprint', () => {
   });
 
   it('dataset_subset name is case-normalized', () => {
-    const a = { ...BASE, dataset_subset: { name: 'CNN-DailyMail', n_samples: 100 } };
-    const b = { ...BASE, dataset_subset: { name: 'cnn-dailymail', n_samples: 100 } };
+    const a = {
+      ...BASE,
+      dataset_subset: { name: 'CNN-DailyMail', n_samples: 100 },
+    };
+    const b = {
+      ...BASE,
+      dataset_subset: { name: 'cnn-dailymail', n_samples: 100 },
+    };
     expect(canonicalize(a)).toBe(canonicalize(b));
   });
 
@@ -396,7 +411,10 @@ describe('config-fingerprint', () => {
   });
 
   it('diffConfig detects dataset_subset.n_samples drift', () => {
-    const b = { ...BASE, dataset_subset: { name: 'cnn_dailymail', n_samples: 500 } };
+    const b = {
+      ...BASE,
+      dataset_subset: { name: 'cnn_dailymail', n_samples: 500 },
+    };
     const diffs = diffConfig(BASE, b);
     expect(diffs).toContain('dataset_subset.n_samples');
   });
@@ -416,18 +434,32 @@ describe('config-fingerprint', () => {
     const a40 = { ...BASE, precision: 'fp8' };
     const rngd = { ...BASE, precision: 'fp8' };
     const atom = { ...BASE, precision: 'fp8' };
-    const hashes = new Set([canonicalize(l40), canonicalize(a40), canonicalize(rngd), canonicalize(atom)]);
+    const hashes = new Set([
+      canonicalize(l40),
+      canonicalize(a40),
+      canonicalize(rngd),
+      canonicalize(atom),
+    ]);
     expect(hashes.size).toBe(1);
   });
 
   it('vendor-specific FP8 model IDs normalize to same hash after lowercasing', () => {
-    const redhat = { ...BASE, model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8' };
-    const redhatLower = { ...BASE, model: 'redhatai/meta-llama-3.1-8b-instruct-fp8' };
+    const redhat = {
+      ...BASE,
+      model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8',
+    };
+    const redhatLower = {
+      ...BASE,
+      model: 'redhatai/meta-llama-3.1-8b-instruct-fp8',
+    };
     expect(canonicalize(redhat)).toBe(canonicalize(redhatLower));
   });
 
   it('neuralmagic and RedHatAI FP8 variants produce different hashes (different org prefix)', () => {
-    const redhat = { ...BASE, model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8' };
+    const redhat = {
+      ...BASE,
+      model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8',
+    };
     const nm = { ...BASE, model: 'neuralmagic/Meta-Llama-3.1-8B-Instruct-FP8' };
     expect(canonicalize(redhat)).not.toBe(canonicalize(nm));
   });

@@ -96,7 +96,7 @@ cd /home/kcloud/etri-llm-exam-solution
 docker build -f web/Dockerfile.prod -t docker.io/jungwooshim/etri-llm-frontend:v21 web/
 docker push docker.io/jungwooshim/etri-llm-frontend:v21
 helm upgrade app-chart \
-  /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart \
+  /home/kcloud/etri-llm-deployments/app/kubernetes/app-chart \
   -n llm-evaluation \
   --reuse-values \
   --set components.etriLLMFrontend.containers.image=jungwooshim/etri-llm-frontend:v21

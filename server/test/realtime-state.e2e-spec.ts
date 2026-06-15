@@ -54,7 +54,7 @@ const ATOM_DEVICE: DeviceEntry = {
   slot_id: 0,
   state: 'ready',
   k8s_node_status: 'Ready',
-  allocatable_resource_name: 'rebellions.ai/atomplus',
+  allocatable_resource_name: 'rebellions.ai/ATOM',
   allocatable_count: 1,
   source: 'cluster_yaml',
 };

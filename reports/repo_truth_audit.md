@@ -10,7 +10,7 @@
 
 ### 🚨 PRIMARY DEFECT: node5 Atom+ labeled as Furiosa
 
-**Location**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/cluster.yaml:57`
+**Location**: `/home/kcloud/etri-llm-deployments/app/config/cluster.yaml:57`
 
 ```yaml
 - name: node5
@@ -218,7 +218,7 @@ All under `/npu-eval/**` prefix
 ## Kubernetes Cluster Configuration
 
 ### node5 Definition
-**File**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/cluster.yaml:54-62`
+**File**: `/home/kcloud/etri-llm-deployments/app/config/cluster.yaml:54-62`
 
 ```yaml
 - name: node5
@@ -231,7 +231,7 @@ All under `/npu-eval/**` prefix
 
 **Status**: node5 is marked as SKIPPED in inventory (pending join). Vendor label is **WRONG**.
 
-**File**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/reports/cluster_inventory.yaml:7`
+**File**: `/home/kcloud/etri-llm-deployments/app/reports/cluster_inventory.yaml:7`
 
 ```yaml
 # node5 is SKIPPED — state: pending_join per cluster.yaml
@@ -242,7 +242,7 @@ All under `/npu-eval/**` prefix
 ## Config References to GPU Models
 
 ### Benchmark Profiles
-**File**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/benchmark_profiles.yaml`
+**File**: `/home/kcloud/etri-llm-deployments/app/config/benchmark_profiles.yaml`
 
 Lines with GPU references:
 - **L40 FP8**: Line 18 (profile name), 19, 87, 145, 213, 216, 281, 545
@@ -254,7 +254,7 @@ Lines with GPU references:
 ---
 
 ### Model Profiles
-**File**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/model_profiles.yaml`
+**File**: `/home/kcloud/etri-llm-deployments/app/config/model_profiles.yaml`
 
 GPU device requirement matrix:
 - **L40**: Lines 33, 59, 85
@@ -267,7 +267,7 @@ GPU device requirement matrix:
 
 ## Cluster Inventory Report
 
-**File**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/reports/cluster_inventory.yaml`
+**File**: `/home/kcloud/etri-llm-deployments/app/reports/cluster_inventory.yaml`
 
 **node2 GPU**:
 - NVIDIA-L40 (gpu_index=0)
@@ -285,7 +285,7 @@ GPU device requirement matrix:
 
 ## Device Plugin & Helm Integration
 
-**File**: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/gpu-operator-25.10.0/`
+**File**: `/home/kcloud/etri-llm-deployments/app/kubernetes/gpu-operator-25.10.0/`
 
 GPU operator charts present; device plugin config awaiting node5 join.
 

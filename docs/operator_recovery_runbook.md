@@ -475,7 +475,7 @@ kubectl rollout status deployment/etri-llm-backend -n llm-evaluation --timeout=1
 For infrastructure-level changes (Helm chart, Kubernetes manifests):
 
 ```bash
-bash /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/scripts/17_rollback_last_change.sh
+bash /home/kcloud/etri-llm-deployments/app/scripts/17_rollback_last_change.sh
 ```
 
 This script:

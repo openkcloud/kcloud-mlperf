@@ -1,0 +1,25 @@
+{
+  "run_id": "mmlu-pro-atomplus-20260506-020458",
+  "hardware": "Rebellions-AtomPlus",
+  "vendor": "rebellions",
+  "benchmark": "mmlu",
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "precision": "bf16",
+  "started_at": "2026-05-06T02:08:48Z",
+  "completed_at": "2026-05-06T02:08:50Z",
+  "status": "failed",
+  "failure_reason": "SSH auth failure: no passwordless key from node1 to node5 (10.254.202.111). Permission denied (publickey,password). Operator must run ssh-copy-id kcloud@10.254.202.111 and re-execute jobs/mmlu-pro-atomplus-ssh.sh",
+  "tt100t_seconds": null,
+  "elapsed_seconds": 2,
+  "throughput_tokens_per_sec": null,
+  "raw_metrics": {
+    "result_acc_total": null,
+    "dataset": "TIGER-Lab/MMLU-Pro",
+    "n_train": 5,
+    "batch_size": 1,
+    "data_number": 0
+  },
+  "logs_path": "logs/benchmarks/mmlu_pro_atomplus_20260506-020458-mmlu.log",
+  "artifact_path": "results/mmlu-pro-atomplus-20260506-020458-mmlu",
+  "config_fingerprint": "mmlu|meta-llama/Llama-3.1-8B-Instruct|TIGER-Lab/MMLU-Pro|bf16|1|0|0.0"
+}

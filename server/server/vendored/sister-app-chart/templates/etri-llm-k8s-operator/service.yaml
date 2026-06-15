@@ -1,0 +1,19 @@
+{{- with .Values }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: etri-llm-operator
+    control-plane: controller-manager
+  name: {{ .components.etriLLMOperator.metadata.name }}-controller-manager-metrics-service
+  namespace: {{ .global.namespace }}
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app: {{ .components.etriLLMOperator.metadata.name }}
+{{- end }}      

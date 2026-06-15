@@ -486,12 +486,12 @@ items:
       - docker.io/vllm/vllm-openai:latest
       sizeBytes: 9612695005
     - names:
-      - docker.io/mondrianai/etri-llm-mmlu-pro@sha256:400e0a4a76232af4120589bd0abae167056f34c2748a005ce2975b706adb4c7e
-      - docker.io/mondrianai/etri-llm-mmlu-pro:v0.2
+      - docker.io/ghcr.io/etri-llm/etri-llm-mmlu-pro@sha256:400e0a4a76232af4120589bd0abae167056f34c2748a005ce2975b706adb4c7e
+      - docker.io/ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2
       sizeBytes: 8114193701
     - names:
-      - docker.io/mondrianai/etri-llm-mlperf@sha256:e673b5058fa121a1ac03ddca1a8f54e5531b6628d294423cfbbc07f10d3648fc
-      - docker.io/mondrianai/etri-llm-mlperf:v0.2
+      - docker.io/ghcr.io/etri-llm/etri-llm-mlperf@sha256:e673b5058fa121a1ac03ddca1a8f54e5531b6628d294423cfbbc07f10d3648fc
+      - docker.io/ghcr.io/etri-llm/etri-llm-mlperf:v0.2
       sizeBytes: 7761205014
     - names:
       - mcr.microsoft.com/playwright@sha256:0fc07c73230cb7c376a528d7ffc83c4bdcdcd3fc7efbe54a2eed72b1ec118377
@@ -502,15 +502,15 @@ items:
       - docker.io/jungwooshim/etri-cloud-frontend:v1.0.0
       sizeBytes: 832811912
     - names:
-      - docker.io/mondrianai/etri-llm-frontend@sha256:9549695eb72890a336cbb4b39a1434015021021bc7102df8737d671dab2b731c
-      - docker.io/mondrianai/etri-llm-frontend:v1.0.0
+      - docker.io/ghcr.io/etri-llm/etri-llm-frontend@sha256:9549695eb72890a336cbb4b39a1434015021021bc7102df8737d671dab2b731c
+      - docker.io/ghcr.io/etri-llm/etri-llm-frontend:v1.0.0
       sizeBytes: 742051869
     - names:
       - docker.io/furiosaai/furiosa-llm:2025.3.3
       sizeBytes: 733640594
     - names:
-      - docker.io/mondrianai/etri-llm-backend@sha256:076c19227ed61c8a33ae29b978f6f0fecd70dbf659f8a685b21eb73285498756
-      - docker.io/mondrianai/etri-llm-backend:latest
+      - docker.io/ghcr.io/etri-llm/etri-llm-backend@sha256:076c19227ed61c8a33ae29b978f6f0fecd70dbf659f8a685b21eb73285498756
+      - docker.io/ghcr.io/etri-llm/etri-llm-backend:latest
       sizeBytes: 271368398
     - names:
       - docker.io/grafana/alloy@sha256:8c7256f412feb9f5f48f9f6f9394dc97ca887f63dea9304f347970ecc1787669
@@ -628,9 +628,9 @@ items:
       sizeBytes: 33282980
     - names:
       - docker.io/jungwooshim/etri-llm-k8s-api@sha256:6084872c51cc0bb9fe4dd5552c5849244eae2c35c14ab2d918eceec5cd1c16a8
-      - docker.io/mondrianai/etri-llm-k8s-api@sha256:6084872c51cc0bb9fe4dd5552c5849244eae2c35c14ab2d918eceec5cd1c16a8
+      - docker.io/ghcr.io/etri-llm/etri-llm-k8s-api@sha256:6084872c51cc0bb9fe4dd5552c5849244eae2c35c14ab2d918eceec5cd1c16a8
       - docker.io/jungwooshim/etri-llm-k8s-api:v1.0.0
-      - docker.io/mondrianai/etri-llm-k8s-api:v1.0.0
+      - docker.io/ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0
       sizeBytes: 31497448
     - names:
       - registry.k8s.io/kube-proxy@sha256:7dd7829fa889ac805a0b1047eba04599fa5006bdbcb5cb9c8d14e1dc8910488b
@@ -899,12 +899,12 @@ items:
       - docker.io/vllm/vllm-openai:latest
       sizeBytes: 9612695005
     - names:
-      - docker.io/mondrianai/etri-llm-mmlu-pro@sha256:400e0a4a76232af4120589bd0abae167056f34c2748a005ce2975b706adb4c7e
-      - docker.io/mondrianai/etri-llm-mmlu-pro:v0.2
+      - docker.io/ghcr.io/etri-llm/etri-llm-mmlu-pro@sha256:400e0a4a76232af4120589bd0abae167056f34c2748a005ce2975b706adb4c7e
+      - docker.io/ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2
       sizeBytes: 8114193701
     - names:
-      - docker.io/mondrianai/etri-llm-mlperf@sha256:e673b5058fa121a1ac03ddca1a8f54e5531b6628d294423cfbbc07f10d3648fc
-      - docker.io/mondrianai/etri-llm-mlperf:v0.2
+      - docker.io/ghcr.io/etri-llm/etri-llm-mlperf@sha256:e673b5058fa121a1ac03ddca1a8f54e5531b6628d294423cfbbc07f10d3648fc
+      - docker.io/ghcr.io/etri-llm/etri-llm-mlperf:v0.2
       sizeBytes: 7761205014
     - names:
       - mcr.microsoft.com/playwright@sha256:0fc07c73230cb7c376a528d7ffc83c4bdcdcd3fc7efbe54a2eed72b1ec118377
@@ -986,8 +986,8 @@ items:
       - docker.io/mondrianai/etri-llm-k8s-operator:v1.0.1
       sizeBytes: 33282980
     - names:
-      - docker.io/mondrianai/etri-llm-k8s-api@sha256:6084872c51cc0bb9fe4dd5552c5849244eae2c35c14ab2d918eceec5cd1c16a8
-      - docker.io/mondrianai/etri-llm-k8s-api:v1.0.0
+      - docker.io/ghcr.io/etri-llm/etri-llm-k8s-api@sha256:6084872c51cc0bb9fe4dd5552c5849244eae2c35c14ab2d918eceec5cd1c16a8
+      - docker.io/ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0
       sizeBytes: 31497448
     - names:
       - registry.k8s.io/kube-proxy@sha256:7dd7829fa889ac805a0b1047eba04599fa5006bdbcb5cb9c8d14e1dc8910488b

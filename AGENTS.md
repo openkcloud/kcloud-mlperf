@@ -4,7 +4,7 @@
 # etri-llm-exam-solution
 
 ## Purpose
-Full-stack LLM evaluation platform monorepo. NestJS backend (REST API + gRPC) with React frontend (MUI dashboard). Manages MLPerf and MMLU benchmark exams with real-time result visualization, comparison, and Loki-based logging. Deployed to Kubernetes via Helm chart in the sibling `mondrianai-*` directory.
+Full-stack LLM evaluation platform monorepo. NestJS backend (REST API + gRPC) with React frontend (MUI dashboard). Manages MLPerf and MMLU benchmark exams with real-time result visualization, comparison, and Loki-based logging. Deployed to Kubernetes via Helm chart in the ETRI-owned sibling directory `etri-llm-deployments/app/kubernetes/app-chart/`.
 
 ## Key Files
 
@@ -47,8 +47,8 @@ Full-stack LLM evaluation platform monorepo. NestJS backend (REST API + gRPC) wi
 ## Dependencies
 
 ### Internal
-- Deployed via Helm chart in `../mondrianai-etri-llm-deployments-*/kubernetes/app-chart/`
-- Docker images referenced: `jungwooshim/etri-cloud-frontend`, `jungwooshim/etri-cloud-backend`
+- Deployed via Helm chart in `../etri-llm-deployments/app/kubernetes/app-chart/` (ETRI-owned; legacy path was `../mondrianai-etri-llm-deployments-*/kubernetes/app-chart/`)
+- Docker images referenced: `ghcr.io/etri-llm/etri-llm-frontend`, `ghcr.io/etri-llm/etri-llm-backend` (migration from `jungwooshim/etri-cloud-*` in progress)
 
 ### External
 - Node.js 22 (Alpine in Docker)

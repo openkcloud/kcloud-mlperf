@@ -158,5 +158,5 @@ kubectl exec -n llm-evaluation deployment/postgres -- \
 ```
 
 ## Key Contacts
-- **DevOps**: `/home/kcloud/mondrianai-*/scripts/17_rollback_last_change.sh` for infra rollback
+- **DevOps**: `/home/kcloud/etri-llm-deployments/app/scripts/17_rollback_last_change.sh` for infra rollback
 - **Evaluation Service**: gRPC health check at `$GRPC_SERVICE_URL:50051`

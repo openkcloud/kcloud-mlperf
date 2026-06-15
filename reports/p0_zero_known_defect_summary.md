@@ -66,7 +66,7 @@ node5   Ready    <none>          26m     v1.28.0    10.254.202.111   ← NEW
 - Plans: `.omc/plans/p0-zero-known-defect-stabilization.md`
 - Checkpoints: `.omc/checkpoints/20260428-083516-4b786d4/{nodes-before, nodes-after, helm-values-before, helm-history-before, deployments-before, join-command}.{yaml,txt}`
 
-**Infra repo (`/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869`)** — 7 files modified/created:
+**Infra repo (`/home/kcloud/etri-llm-deployments/app`)** — 7 files modified/created:
 - `config/cluster.yaml` (vendor=rebellions for node5)
 - `k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template` (renamed + rewritten)
 - `scripts/{07_prepare_rebellions_atomplus_npu_nodes,18_validate_node5_atomplus,19_join_node5}.sh`
@@ -104,7 +104,7 @@ git checkout fix/p0-node5-rebellions-realtime-comparison-sweep-20260428-083516-4
 # App repo:
 git -C /home/kcloud/etri-llm-exam-solution checkout main
 # Infra repo:
-git -C /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869 checkout main
+git -C /home/kcloud/etri-llm-deployments/app checkout main
 # Cluster (revert node5):
 kubectl drain node5 --ignore-daemonsets --delete-emptydir-data --force
 sshpass -p $SUDO_PASS ssh -p 22 kcloud@10.254.202.111 'sudo kubeadm reset -f'

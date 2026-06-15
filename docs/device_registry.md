@@ -97,7 +97,7 @@ The primary source. For each Ready node:
 
 ### Source 2: cluster.yaml (Static Inventory)
 
-Located at: `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/k8s/cluster.yaml`
+Located at: `/home/kcloud/etri-llm-deployments/app/k8s/cluster.yaml`
 
 Maps node hostname to device specs:
 

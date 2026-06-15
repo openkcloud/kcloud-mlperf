@@ -96,7 +96,7 @@ http://10.254.177.41:30980/api/comparison/list?hardware=npu  200 (real tt100t va
 
 ```bash
 git -C /home/kcloud/etri-llm-exam-solution checkout fix/live-ui-recovery-20260429-052300-fd7cd81
-git -C /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869 checkout fix/live-ui-recovery-20260429-052300-fd7cd81
+git -C /home/kcloud/etri-llm-deployments/app checkout fix/live-ui-recovery-20260429-052300-fd7cd81
 ```
 
 ## Rollback command (v19 → v18 / rev 13 → rev 12)
