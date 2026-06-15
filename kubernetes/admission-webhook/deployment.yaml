@@ -1,0 +1,171 @@
+# Kyverno admission controller deployment plan + Helm values.
+#
+# IMPLEMENTATION CHOICE: Kyverno (per WS-D01a-ALT practical recommendation).
+# Rationale:
+#   * No custom Go code to maintain
+#   * Policy is declarative YAML (kyverno-policy.yaml)
+#   * CNCF-incubating, broadly deployed in production
+#   * Native integration with cert-manager (cert-issuer.yaml)
+#
+# This file is split into two parts:
+#   1) Helm values block (HelmRelease-style, but a vanilla Helm chart
+#      install also works -- see README for the imperative `helm install`
+#      command). The values are inline here so a GitOps tool (Argo CD,
+#      Flux, or `helm install -f`) can consume them directly.
+#   2) The expected Deployment that Kyverno will create. Documented here
+#      for audit purposes; do NOT `kubectl apply` this manifest directly
+#      -- let Helm own the Deployment so upgrades work.
+---
+# Part 1: Helm values for the Kyverno chart (`kyverno/kyverno`).
+# Save this stanza as `kyverno-values.yaml` and run:
+#   helm upgrade --install kyverno kyverno/kyverno \
+#     --namespace kyverno --create-namespace \
+#     --version 3.2.6 \
+#     -f kyverno-values.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etri-kyverno-helm-values
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/name: etri-admission-webhook
+    app.kubernetes.io/component: helm-values
+data:
+  kyverno-values.yaml: |
+    # Use the cert-manager-issued cert from cert-issuer.yaml instead of
+    # the chart's bundled self-signed CA.
+    admissionController:
+      replicas: 2
+      serviceAccount:
+        name: kyverno-admission-controller
+      tls:
+        # Source the existing cert-manager Secret, and skip the chart's
+        # automatic cert generation.
+        existingTLSSecret: kyverno-svc-tls
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 384Mi
+      # failurePolicy is per-policy in Kyverno; see kyverno-policy.yaml.
+      tolerations: []
+      nodeSelector: {}
+
+    backgroundController:
+      replicas: 1
+      serviceAccount:
+        name: kyverno-background-controller
+
+    cleanupController:
+      replicas: 1
+
+    reportsController:
+      replicas: 1
+
+    # Avoid Kyverno reconciling its own pods.
+    config:
+      excludeKyvernoNamespace: true
+      webhooks:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - kube-system
+                  - kyverno
+
+    # Disable bundled cert generation -- we use cert-manager.
+    features:
+      autoUpdateWebhooks:
+        enabled: true
+      generateValidatingAdmissionPolicy:
+        enabled: false
+
+    crds:
+      install: true
+
+    # Surface metrics to the existing kube-prometheus-stack scraper.
+    monitoring:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        namespace: monitoring
+---
+# Part 2: Reference Deployment manifest. Kyverno's Helm chart creates
+# this; included here so on-call engineers can sanity-check the live
+# spec against the expected shape. DO NOT apply directly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kyverno-admission-controller
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/name: kyverno
+    app.kubernetes.io/component: admission-controller
+    app.kubernetes.io/managed-by: etri-admission-webhook-docs
+  annotations:
+    etri.llm/note: "REFERENCE ONLY -- the live Deployment is owned by Helm."
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kyverno
+      app.kubernetes.io/component: admission-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kyverno
+        app.kubernetes.io/component: admission-controller
+    spec:
+      serviceAccountName: kyverno-admission-controller
+      containers:
+        - name: kyverno
+          image: ghcr.io/kyverno/kyverno:v1.12.5
+          ports:
+            - name: https
+              containerPort: 9443
+              protocol: TCP
+            - name: metrics-port
+              containerPort: 8000
+              protocol: TCP
+          args:
+            - --tlsSecretName=kyverno-svc-tls
+            - --servicePort=443
+            - --webhookTimeout=10
+            - --autoUpdateWebhooks=true
+          env:
+            - name: KYVERNO_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KYVERNO_SVC
+              value: kyverno-svc
+          volumeMounts:
+            - name: kyverno-svc-tls
+              mountPath: /etc/kyverno/tls
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 9443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: 9443
+              scheme: HTTPS
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: kyverno-svc-tls
+          secret:
+            secretName: kyverno-svc-tls

@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # MLPerf Patch Audit — RUN_ID 20260428-072038-a612a54
 
 ## Finding: No upstream MLPerf source found in either repository

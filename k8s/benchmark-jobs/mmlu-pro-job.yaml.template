@@ -49,7 +49,7 @@ spec:
         - name: image-pull-secret
       containers:
         - name: mmlu-pro-runner
-          image: mondrianai/etri-llm-mmlu-pro:v0.2
+          image: ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2
           imagePullPolicy: IfNotPresent
           env:
             - name: RUN_ID

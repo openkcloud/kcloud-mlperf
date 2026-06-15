@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # LLM 성능평가 도구 보관 및 저장소 이관 전략
 
 > 작성일: 2026-03-11 (최종 갱신)
@@ -27,7 +29,7 @@
 | 경로 | 성격 | 비고 |
 |------|------|------|
 | `etri-llm-deployments/kubespray/` | 벤더 납품 - 클러스터 프로비저닝 | Kubespray 기반, 수정 이력 없음 |
-| `mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/` | 벤더 납품 - 배포 스크립트, Helm 차트, 매니페스트 | 우리가 수정 중 |
+| `etri-llm-deployments/app/kubernetes/` | 벤더 납품 - 배포 스크립트, Helm 차트, 매니페스트 | 우리가 수정 중 |
 | `etri-llm-deployments.zip` | 벤더 납품 원본 아카이브 | 불변 보존 대상 |
 | `install.sh` | 운영 스크립트 | 민감정보 포함 (SSH 패스워드) |
 | `redeploy_full.sh` | 운영 스크립트 | 추가 검증 필요 |
@@ -47,7 +49,7 @@
 - 관리 대상 이미지: 4개
   - `jungwooshim/etri-cloud-frontend:v1.0.0`
   - `jungwooshim/etri-cloud-backend:latest`
-  - `mondrianai/etri-llm-k8s-api:v1.0.0`
+  - `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0`
   - `mondrianai/etri-llm-k8s-operator:v1.0.1`
 - 이미지 라이프사이클: 수동 빌드 (Kaniko Pod 사용), CI/CD 미구성
 
@@ -281,7 +283,7 @@ etri-llm-docs/    # (선택) 별도 문서 저장소
 | 자산 | 보존 위치 | 방법 |
 |------|-----------|------|
 | `etri-llm-deployments.zip` | S3, NAS, 또는 GitHub Releases | 불변 아카이브 |
-| `mondrianai-etri-llm-deployments-a9c4c59c4869/` (원본 상태) | `etri-llm-infra` 저장소 `vendor/v1.0.0` 태그 | git tag |
+| `etri-llm-deployments/app/` (원본 상태) | `etri-llm-infra` 저장소 `vendor/v1.0.0` 태그 | git tag |
 
 ### 6.3 저장소 호스팅
 
@@ -340,7 +342,7 @@ etri-llm-docs/    # (선택) 별도 문서 저장소
 
 ### 8.3 디렉터리 원본 스냅샷 보존 (git tag)
 
-`mondrianai-etri-llm-deployments-a9c4c59c4869/` 디렉터리의 **납품 당시 상태**를 git 이력에 고정한다.
+`etri-llm-deployments/app/` 디렉터리의 **납품 당시 상태**를 git 이력에 고정한다.
 
 ```bash
 # 1. etri-llm-infra 저장소 초기화
@@ -348,7 +350,7 @@ git init etri-llm-infra
 cd etri-llm-infra
 
 # 2. 벤더 파일 복사 (민감정보 포함 파일은 .gitignore 처리 후)
-cp -r /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/* .
+cp -r /home/kcloud/etri-llm-deployments/app/kubernetes/* .
 
 # 3. 최초 커밋 (벤더 원본 상태)
 git add .
@@ -613,7 +615,7 @@ database.yaml
 ├── etri-llm-deployments/
 │   └── kubespray/                          # 벤더 납품: 클러스터 프로비저닝
 │       └── inventory/etri/hosts.yml        # [민감정보] SSH 패스워드
-├── mondrianai-etri-llm-deployments-a9c4c59c4869/
+├── etri-llm-deployments/app/
 │   └── kubernetes/                         # 벤더 납품: 배포 스크립트, Helm 차트
 │       ├── app-chart/
 │       │   └── values.yaml                 # [민감정보] Docker Hub 인증정보, 포트, 이미지

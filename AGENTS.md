@@ -1,7 +1,9 @@
 <!-- Parent: ../AGENTS.md -->
 <!-- Generated: 2026-04-21 | Updated: 2026-04-21 -->
 
-# mondrianai-etri-llm-deployments
+# etri-llm-deployments / app
+<!-- Migrated 2026-05-12: this directory was previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming). It now lives under ETRI ownership at `/home/kcloud/etri-llm-deployments/app/`. -->
+
 
 ## Purpose
 Enhanced deployment fork that extends `etri-llm-deployments` with application-specific Kubernetes deployment. Contains Helm charts for the LLM evaluation app, GPU operator, observability stack (Loki, Prometheus, Alloy), NFS provisioner, and PostgreSQL. This is the **application deployment** layer — infrastructure provisioning is in the sibling `etri-llm-deployments/` directory.
@@ -45,7 +47,7 @@ Enhanced deployment fork that extends `etri-llm-deployments` with application-sp
 
 ### Common Patterns
 - Each `0X-deploy-*.sh` script wraps a `helm upgrade --install` command
-- App images: `mondrianai/etri-llm-k8s-api:v1.0.0`, `mondrianai/etri-llm-k8s-operator:v1.0.1`, `jungwooshim/etri-cloud-frontend:v1.0.0`, `jungwooshim/etri-cloud-backend:latest`
+- App images: `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0`, `jungwooshim/etri-llm-k8s-operator:v1.0.1` (operator image already migrated), `ghcr.io/etri-llm/etri-llm-frontend:v1.0.0`, `ghcr.io/etri-llm/etri-llm-backend:latest`
 - Secrets pulled via `image-pull-secret` (dockerconfigjson type)
 
 ## Dependencies

@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # Repo Architecture Audit — RUN_ID 20260428-072038-a612a54
 
 ## Inventory
@@ -11,7 +13,7 @@
 |-----------|-------|-----|
 | Backend | jungwooshim/etri-llm-backend | v12 |
 | Frontend | jungwooshim/etri-llm-frontend | v12 |
-| K8s API | mondrianai/etri-llm-k8s-api | v1.0.0 |
+| K8s API | ghcr.io/etri-llm/etri-llm-k8s-api | v1.0.0 |
 | Operator | mondrianai/etri-llm-k8s-operator | v1.0.1 |
 
 ---
@@ -52,7 +54,7 @@
 - No RNGD device plugin Helm chart found in `kubernetes/`; GPU operator present at `kubernetes/gpu-operator-25.10.0/`
 
 ### Kubernetes Job Templating
-- `mp-exam.service.ts` and `mm-exam.service.ts` both use gRPC (`ExamServiceClient`) to call `mondrianai/etri-llm-k8s-api:v1.0.0`, which relays to the operator
+- `mp-exam.service.ts` and `mm-exam.service.ts` both use gRPC (`ExamServiceClient`) to call `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0`, which relays to the operator
 - Operator (`mondrianai/etri-llm-k8s-operator:v1.0.1`) creates Kubernetes Jobs from the `Exam` CRD
 - NPU path bypasses the operator: `npu-eval.service.ts` directly applies YAML templates via `kubectl apply` calls using substituted template strings (`npu-benchmark-job.yaml`, `npu-inference-pod.yaml`, `npu-inference-service.yaml`)
 

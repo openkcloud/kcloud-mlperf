@@ -1,0 +1,63 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-log-tee-sidecar
+  annotations:
+    policies.kyverno.io/title: Inject log-tee sidecar into benchmark Pods
+    policies.kyverno.io/category: ETRI LLM Evaluation
+    policies.kyverno.io/description: >-
+      Mutates Pods labelled etri.llm/role=benchmark to add a log-tee sidecar
+      that tees stdout/stderr to a PVC-mounted file. Provides Loki SPOF
+      mitigation per WS-A05/WS-0.2. failurePolicy is Ignore so that a
+      Kyverno outage does not block benchmark Pod scheduling.
+spec:
+  failurePolicy: Ignore
+  rules:
+    - name: add-log-tee-sidecar
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  etri.llm/role: benchmark
+      mutate:
+        patchStrategicMerge:
+          spec:
+            containers:
+              # patchStrategicMerge appends; existing containers are preserved
+              - name: log-tee
+                image: busybox:1.36
+                command:
+                  - sh
+                  - -c
+                  - |
+                    tail -F /proc/1/fd/1 /proc/1/fd/2 \
+                      > /var/log/benchmark-tee/${POD_NAME}.log 2>&1
+                env:
+                  - name: POD_NAME
+                    valueFrom:
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.name
+                volumeMounts:
+                  - name: benchmark-log-tee
+                    mountPath: /var/log/benchmark-tee
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 32Mi
+                  limits:
+                    cpu: 200m
+                    memory: 128Mi
+                tolerations:
+                  - key: node.kubernetes.io/disk-pressure
+                    operator: Exists
+                    effect: NoSchedule
+            volumes:
+              - name: benchmark-log-tee
+                persistentVolumeClaim:
+                  claimName: benchmark-log-tee-pvc

@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # LLM 성능평가 도구 설치/재배포/이관 발표자료 초안
 
 ---
@@ -331,7 +333,7 @@
 |---------|--------|------|----------|
 | frontend | jungwooshim/etri-cloud-frontend | v1.0.0 | NodePort 30001 |
 | backend | jungwooshim/etri-cloud-backend | latest | NodePort 30980 |
-| k8s-api | mondrianai/etri-llm-k8s-api | v1.0.0 | ClusterIP (내부) |
+| k8s-api | ghcr.io/etri-llm/etri-llm-k8s-api | v1.0.0 | ClusterIP (내부) |
 | k8s-operator | mondrianai/etri-llm-k8s-operator | v1.0.1 | ClusterIP (내부) |
 
 ---
@@ -456,8 +458,8 @@ http://10.254.184.195:30980/api  (NodePort → backend:9999)
 
 **핵심 메시지**:
 1. GitHub `mondrian-cloudteam/etri-llm-exam-solution` 에서 frontend 코드 수정 및 PR 머지
-2. Docker 이미지 빌드: `docker build -t mondrianai/etri-llm-frontend:v1.x.x .`
-3. Docker Hub 푸시: `docker push mondrianai/etri-llm-frontend:v1.x.x`
+2. Docker 이미지 빌드: `docker build -t ghcr.io/etri-llm/etri-llm-frontend:v1.x.x .`
+3. Docker Hub 푸시: `docker push ghcr.io/etri-llm/etri-llm-frontend:v1.x.x`
 4. `/home/kcloud/app-chart/values.yaml` 에서 frontend 이미지 태그를 새 버전으로 업데이트
 5. Helm 업그레이드 실행: `helm upgrade app-chart ./app-chart -f values.yaml -n llm-evaluation`
 
@@ -490,7 +492,7 @@ kubectl rollout status 확인
 **목적**: backend 코드 변경 후 재배포 절차와 `:latest` 태그 사용 시 주의사항 설명
 
 **핵심 메시지**:
-1. GitHub에서 backend 코드 수정 후 이미지 빌드: `docker build -t mondrianai/etri-llm-backend:latest .`
+1. GitHub에서 backend 코드 수정 후 이미지 빌드: `docker build -t ghcr.io/etri-llm/etri-llm-backend:latest .`
 2. **주의**: backend는 `:latest` 태그 사용 — 이미지 pull 정책이 `Always` 가 아니면 새 이미지가 반영되지 않을 수 있음
 3. Docker Hub 푸시 후 파드 강제 재시작 필요: `kubectl rollout restart deployment/backend -n llm-evaluation`
 4. k8s-api, k8s-operator 재배포도 동일한 흐름 (각각 버전 태그 사용)

@@ -38,8 +38,8 @@ Kubernetes deployment configurations for the entire LLM evaluation platform stac
 
 | Component | Image | Port | Service Type |
 |-----------|-------|------|-------------|
-| `etri-llm-api` | `mondrianai/etri-llm-k8s-api:v1.0.0` | 9090 | ClusterIP |
-| `etri-llm-operator` | `mondrianai/etri-llm-k8s-operator:v1.0.1` | 8443 | ClusterIP |
+| `etri-llm-api` | `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0` | 9090 | ClusterIP |
+| `etri-llm-operator` | `jungwooshim/etri-llm-k8s-operator:v1.0.1` | 8443 | ClusterIP |
 | `etri-llm-frontend` | `jungwooshim/etri-cloud-frontend:v1.0.0` | 5173 | NodePort 30001 |
 | `etri-llm-backend` | `jungwooshim/etri-cloud-backend:latest` | 9999 | NodePort 30980 |
 
@@ -75,6 +75,6 @@ Kubernetes deployment configurations for the entire LLM evaluation platform stac
 ### External
 - Helm 3.x (pre-installed on control plane)
 - NFS server with exported paths for datasets, models, results
-- Container registry access for `mondrianai/*` and `jungwooshim/*` images
+- Container registry access for `ghcr.io/etri-llm/*` (ETRI-owned) and `jungwooshim/*` (operator image, pre-migrated)
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

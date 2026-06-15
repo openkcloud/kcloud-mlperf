@@ -89,3 +89,7 @@ node_modules/
 
 # Scrubbed kubespray paths
 kubespray/inventory/etri/credentials/
+.omc/
+**/.omc/
+__pycache__/
+*.pyc

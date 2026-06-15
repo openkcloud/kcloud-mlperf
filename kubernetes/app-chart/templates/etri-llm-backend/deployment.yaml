@@ -26,6 +26,23 @@ spec:
             name: http
             protocol: TCP
           image: {{ .components.etriLLMBackend.containers.image }}
+          env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: IMAGE_DIGEST
+            value: {{ .repro.imageDigest | quote }}
+          - name: GIT_COMMIT_SHA
+            value: {{ .repro.gitCommitSha | quote }}
+          - name: RUNTIME_VERSIONS_JSON
+            value: {{ .repro.runtimeVersionsJson | quote }}
+          - name: RESULT_SCHEMA_VERSION
+            value: {{ .repro.resultSchemaVersion | quote }}
           envFrom:
           - secretRef:
               name: {{ .components.etriLLMBackend.metadata.name }}
@@ -38,7 +55,7 @@ spec:
           - name: results-volume
             mountPath: /usr/src/app/mnt/result/
           - name: cluster-config
-            mountPath: /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config
+            mountPath: /home/kcloud/etri-llm-deployments/app/config
             readOnly: true
       volumes:
         - name: model-volume

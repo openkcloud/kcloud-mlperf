@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # 몬드리안AI 용역 결과물 설치 및 재배포 가이드
 
 > 작성 기준일: 2026-03-11 (최종 갱신)
@@ -107,7 +109,7 @@ GitHub 소스 수정 → Docker 이미지 빌드 → Docker Hub 푸시 → app-c
 |---|---|---|---|---|
 | Frontend | `jungwooshim/etri-cloud-frontend:v1.0.0` | NodePort | 30001 | 5173 |
 | Backend | `jungwooshim/etri-cloud-backend:latest` | NodePort | 30980 | 9999 |
-| K8s API | `mondrianai/etri-llm-k8s-api:v1.0.0` | ClusterIP | 없음 | 9090 |
+| K8s API | `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0` | ClusterIP | 없음 | 9090 |
 | K8s Operator | `mondrianai/etri-llm-k8s-operator:v1.0.1` | (webhook/metrics) | 없음 | 9443 / 8443 |
 
 ### 3.4 데이터베이스
@@ -151,7 +153,7 @@ GitHub 소스 수정 → Docker 이미지 빌드 → Docker Hub 푸시 → app-c
 │       ├── inventory/etri/artifacts/admin.conf  # 생성된 kubeconfig
 │       └── install.sh                      # Kubespray 실행 스크립트
 │
-└── mondrianai-etri-llm-deployments-a9c4c59c4869/
+└── etri-llm-deployments/app/
     └── kubernetes/                         # 모든 배포 자산의 루트
         ├── redeploy_full.sh               # 전체 재배포 스크립트
         ├── kubeconfig/config              # 클러스터 접근 인증 파일
@@ -228,7 +230,7 @@ GitHub 소스 수정 → Docker 이미지 빌드 → Docker Hub 푸시 → app-c
 
 ```bash
 # kubernetes/ 디렉터리로 이동
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/
 
 # kubeconfig 환경변수 설정
 export KUBECONFIG=$(realpath kubeconfig/config)
@@ -499,7 +501,7 @@ cp /home/kcloud/etri-llm-deployments/kubespray/inventory/etri/artifacts/admin.co
 
 # 배포 자산 디렉터리의 kubeconfig에도 복사 (00-export-kubeconfig에서 참조)
 cp /home/kcloud/etri-llm-deployments/kubespray/inventory/etri/artifacts/admin.conf \
-   /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/kubeconfig/config
+   /home/kcloud/etri-llm-deployments/app/kubernetes/kubeconfig/config
 ```
 
 #### 6.1.7 클러스터 상태 확인
@@ -507,7 +509,7 @@ cp /home/kcloud/etri-llm-deployments/kubespray/inventory/etri/artifacts/admin.co
 **[절차]**
 
 ```bash
-export KUBECONFIG=/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/kubeconfig/config
+export KUBECONFIG=/home/kcloud/etri-llm-deployments/app/kubernetes/kubeconfig/config
 kubectl get nodes -o wide
 kubectl get pods -A
 ```
@@ -534,7 +536,7 @@ node3   Ready    <none>          ...   v1.28.12   10.254.184.196   ...
 **[절차]** 아래 절차를 순서대로 실행한다. 각 단계에서 성공 여부를 확인한 후 다음 단계로 진행한다.
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/
 
 # kubeconfig 설정
 source 00-export-kubeconfig
@@ -665,7 +667,7 @@ kubectl get pods -n monitoring
 **[절차]**
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/
 export KUBECONFIG=$(realpath kubeconfig/config)
 ```
 
@@ -749,7 +751,7 @@ kubectl get pvc -A
 Pod를 재시작하는 가장 간단한 방법이다.
 
 ```bash
-export KUBECONFIG=$(realpath /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/kubeconfig/config)
+export KUBECONFIG=$(realpath /home/kcloud/etri-llm-deployments/app/kubernetes/kubeconfig/config)
 
 # 특정 Deployment 재시작
 kubectl rollout restart deployment/<deployment-name> -n llm-evaluation
@@ -765,7 +767,7 @@ kubectl rollout restart deployment -n llm-evaluation
 #### 단계 1: values.yaml 수정
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/
 # 텍스트 편집기로 values.yaml 열기
 vi values.yaml
 ```
@@ -776,7 +778,7 @@ vi values.yaml
 |---|---|---|
 | Frontend | `components.etriLLMFrontend.containers.image` | `jungwooshim/etri-cloud-frontend:v1.0.0` |
 | Backend | `components.etriLLMBackend.containers.image` | `jungwooshim/etri-cloud-backend:latest` |
-| K8s API | `components.etriLLMAPI.containers.image` | `mondrianai/etri-llm-k8s-api:v1.0.0` |
+| K8s API | `components.etriLLMAPI.containers.image` | `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0` |
 | K8s Operator | `components.etriLLMOperator.containers.image` | `mondrianai/etri-llm-k8s-operator:v1.0.1` |
 
 예시 (frontend를 v1.0.1로 업그레이드):
@@ -790,7 +792,7 @@ components:
 #### 단계 2: Helm upgrade 실행
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/
 bash 02-upgrade.sh
 # 내부: helm upgrade -n llm-evaluation app-chart -f values.yaml ./
 ```
@@ -810,7 +812,7 @@ kubectl get pods -n llm-evaluation -o jsonpath='{range .items[*]}{.metadata.name
 **[주의]** `redeploy_full.sh`는 전체 앱 스택을 재배포한다. 데이터 영속성에 영향을 줄 수 있으므로 내용을 확인 후 실행한다.
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/
 # 내용 확인 후 실행
 cat redeploy_full.sh
 bash redeploy_full.sh
@@ -889,7 +891,7 @@ docker push jungwooshim/etri-cloud-frontend:${NEW_TAG}
 #### 단계 5: values.yaml 이미지 태그 수정
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/
 vi values.yaml
 ```
 
@@ -994,7 +996,7 @@ docker push jungwooshim/etri-cloud-backend:${NEW_TAG}
 #### 단계 5: values.yaml 수정
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/
+cd /home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/
 vi values.yaml
 ```
 
@@ -1181,7 +1183,7 @@ VITE__APP_API_BASE_URL: http://10.254.184.195:30980/api
 **[절차]** 배포 완료 직후 아래 항목을 순서대로 확인한다.
 
 ```bash
-export KUBECONFIG=$(realpath /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/kubeconfig/config)
+export KUBECONFIG=$(realpath /home/kcloud/etri-llm-deployments/app/kubernetes/kubeconfig/config)
 ```
 
 - [ ] **전체 Pod 상태**: 모든 Pod가 `Running` 또는 `Completed`
@@ -1303,7 +1305,7 @@ helm history app-chart -n llm-evaluation
    showmount -e 10.254.184.195
 
    # NFS 경로 오타 확인 (etri-lllm vs etri-llm)
-   cat /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/nfs-subdir-external-provisioner-4.0.18/values-override.yaml
+   cat /home/kcloud/etri-llm-deployments/app/kubernetes/nfs-subdir-external-provisioner-4.0.18/values-override.yaml
    ```
 
 3. StorageClass 미존재
@@ -1756,9 +1758,9 @@ helm diff upgrade app-chart -n llm-evaluation -f values.yaml ./app-chart/
 
 | 컴포넌트 | 이미지 | 태그 | pull 정책 |
 |---|---|---|---|
-| Frontend | `mondrianai/etri-llm-frontend` | `v1.0.0` | Always |
-| Backend | `mondrianai/etri-llm-backend` | `latest` | Always |
-| K8s API | `mondrianai/etri-llm-k8s-api` | `v1.0.0` | Always |
+| Frontend | `ghcr.io/etri-llm/etri-llm-frontend` | `v1.0.0` | Always |
+| Backend | `ghcr.io/etri-llm/etri-llm-backend` | `latest` | Always |
+| K8s API | `ghcr.io/etri-llm/etri-llm-k8s-api` | `v1.0.0` | Always |
 | K8s Operator | `mondrianai/etri-llm-k8s-operator` | `v1.0.1` | Always |
 | PostgreSQL | `postgres` | `15.4-alpine` | (기본값) |
 
@@ -1790,17 +1792,17 @@ helm diff upgrade app-chart -n llm-evaluation -f values.yaml ./app-chart/
 
 | 용도 | 파일 절대 경로 |
 |---|---|
-| 앱 이미지 태그 변경 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/values.yaml` |
-| NFS Provisioner 설정 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/nfs-subdir-external-provisioner-4.0.18/values-override.yaml` |
-| GPU Operator 설정 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/gpu-operator-25.10.0/values-override.yaml` |
-| Loki 설정 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/loki-2.2.1/loki/values-override.yaml` |
-| Prometheus 설정 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/kube-prometheus-stack-79.1.1/charts/prometheus/values-override.yaml` |
-| Alloy 설정 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/alloy-1.4.0/values-override.yaml` |
-| 앱 NFS PV/PVC | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/templates/data-volume.yaml` |
-| PostgreSQL 배포 | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/templates/database.yaml` |
-| Docker Hub pull secret | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/app-chart/templates/regcred.yaml` |
+| 앱 이미지 태그 변경 | `/home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/values.yaml` |
+| NFS Provisioner 설정 | `/home/kcloud/etri-llm-deployments/app/kubernetes/nfs-subdir-external-provisioner-4.0.18/values-override.yaml` |
+| GPU Operator 설정 | `/home/kcloud/etri-llm-deployments/app/kubernetes/gpu-operator-25.10.0/values-override.yaml` |
+| Loki 설정 | `/home/kcloud/etri-llm-deployments/app/kubernetes/loki-2.2.1/loki/values-override.yaml` |
+| Prometheus 설정 | `/home/kcloud/etri-llm-deployments/app/kubernetes/kube-prometheus-stack-79.1.1/charts/prometheus/values-override.yaml` |
+| Alloy 설정 | `/home/kcloud/etri-llm-deployments/app/kubernetes/alloy-1.4.0/values-override.yaml` |
+| 앱 NFS PV/PVC | `/home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/templates/data-volume.yaml` |
+| PostgreSQL 배포 | `/home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/templates/database.yaml` |
+| Docker Hub pull secret | `/home/kcloud/etri-llm-deployments/app/kubernetes/app-chart/templates/regcred.yaml` |
 | Kubespray 노드 인벤토리 | `/home/kcloud/etri-llm-deployments/kubespray/inventory/etri/hosts.yml` |
-| 클러스터 kubeconfig | `/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/kubernetes/kubeconfig/config` |
+| 클러스터 kubeconfig | `/home/kcloud/etri-llm-deployments/app/kubernetes/kubeconfig/config` |
 
 ### 부록 F. 주요 kubectl 명령 빠른 참조
 

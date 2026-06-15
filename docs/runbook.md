@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # Operator Runbook: Nominal End-to-End Benchmark Flow
 
 ## Overview
@@ -9,7 +11,7 @@ This runbook describes the standard operational flow for running a complete benc
 ### 1. Source Credentials and Config
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869
+cd /home/kcloud/etri-llm-deployments/app
 source config/.env
 source config/credentials.example.env  # Or your actual .env-prod
 ```

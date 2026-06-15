@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # Node5 Rebellions Atom+ Join Runbook
 
 ## Overview
@@ -46,7 +48,7 @@ Before proceeding, verify:
 
 5. **Lane C-prep Complete**: Device plugin YAML scaffolded
    ```bash
-   ls -l /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template
+   ls -l /home/kcloud/etri-llm-deployments/app/k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template
    ```
 
 ## Join Procedure
@@ -234,7 +236,7 @@ export ATOMPLUS_PLUGIN_IMAGE=rebellions/k8s-device-plugin
 export ATOMPLUS_PLUGIN_TAG=atomplus-v1.0.0
 
 # Render the template
-DEVICE_PLUGIN_YAML="/home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template"
+DEVICE_PLUGIN_YAML="/home/kcloud/etri-llm-deployments/app/k8s/device-plugins/rebellions-atomplus-device-plugin.yaml.template"
 envsubst < "$DEVICE_PLUGIN_YAML" > /tmp/rebellions-atomplus-device-plugin.yaml
 
 # Dry-run first

@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # node5 Rebellions Atom+ Integration Report
 
 **Status:** ready_to_apply
@@ -50,14 +52,14 @@ Execute **after** team-lead sends "PROCEED WITH NODE5 JOIN":
 
 ```bash
 # Source credentials
-source /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/.env
+source /home/kcloud/etri-llm-deployments/app/.env
 
 # Set device plugin image vars (confirm with team-lead if uncertain)
 export ATOMPLUS_PLUGIN_IMAGE=rebellions/k8s-device-plugin
 export ATOMPLUS_PLUGIN_TAG=atomplus-v1.0.0
 
 # Run the join script (DRY_RUN=false executes for real)
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869
+cd /home/kcloud/etri-llm-deployments/app
 DRY_RUN=false bash scripts/19_join_node5.sh
 ```
 

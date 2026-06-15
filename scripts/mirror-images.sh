@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# mirror-images.sh — copy required mondrianai/* images into jungwooshim/*
-#                    so a fresh cluster only needs ONE Docker Hub account.
+# mirror-images.sh — copy required images from the legacy mondrianai/* registry
+#                    into ETRI-owned ghcr.io/etri-llm/*
+#                    so a fresh cluster only needs ONE registry account.
+#
+# ETRI takeover (2026-05-12): destination registry migrated from
+# jungwooshim Docker Hub to ETRI-owned GHCR org `ghcr.io/etri-llm`.
 #
 # Run-once when standing up a new cluster, or whenever a new mondrianai image
 # tag is referenced by the chart. Idempotent — re-running is safe (crane
@@ -9,7 +13,8 @@
 # Mechanism: spawns a short-lived Kubernetes Job on an existing cluster node
 # that runs gcr.io/go-containerregistry/crane:debug. The Job uses the
 # `image-pull-secret` already deployed in the namespace as the destination
-# auth, so no Docker Hub credentials are touched on the operator workstation.
+# auth, so no registry credentials are touched on the operator workstation.
+# The destination secret MUST be a GHCR PAT with write:packages scope.
 #
 # Usage:
 #   ./mirror-images.sh                     # mirror all known images
@@ -25,7 +30,7 @@ set -euo pipefail
 NS="llm-evaluation"
 NODE="node2"
 WAIT_TIMEOUT="300"
-JOB_NAME="mirror-mondrianai-to-jungwooshim"
+JOB_NAME="mirror-mondrianai-to-ghcr"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -79,10 +84,9 @@ spec:
           mkdir -p /root/.docker
           printf '%s' "\$DOCKER_CONFIG_JSON" > /root/.docker/config.json
           for pair in \\
-            "mondrianai/etri-llm-k8s-api:v1.0.0       jungwooshim/etri-llm-k8s-api:v1.0.0" \\
-            "mondrianai/etri-llm-k8s-operator:v1.0.1  jungwooshim/etri-llm-k8s-operator:v1.0.1" \\
-            "mondrianai/etri-llm-mlperf:v0.2          jungwooshim/etri-llm-mlperf:v0.2" \\
-            "mondrianai/etri-llm-mmlu-pro:v0.2        jungwooshim/etri-llm-mmlu-pro:v0.2" ; do
+            "mondrianai/etri-llm-k8s-api:v1.0.0       ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0" \\
+            "mondrianai/etri-llm-mlperf:v0.2          ghcr.io/etri-llm/etri-llm-mlperf:v0.2" \\
+            "mondrianai/etri-llm-mmlu-pro:v0.2        ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2" ; do
             src=\$(echo "\$pair" | awk '{print \$1}')
             dst=\$(echo "\$pair" | awk '{print \$2}')
             echo "=== mirror \$src -> \$dst ==="
@@ -98,11 +102,9 @@ if ! kubectl -n "$NS" wait --for=condition=complete --timeout="${WAIT_TIMEOUT}s"
   exit 3
 fi
 
-echo "[mirror-images] OK — final tag list:"
-for img in jungwooshim/etri-llm-k8s-api:v1.0.0 \
-           jungwooshim/etri-llm-k8s-operator:v1.0.1 \
-           jungwooshim/etri-llm-mlperf:v0.2 \
-           jungwooshim/etri-llm-mmlu-pro:v0.2; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${img%:*}/tags/${img##*:}")
-  printf "  %-50s HTTP %s\n" "$img" "$code"
+echo "[mirror-images] OK — final tag list (manual verification: GHCR API requires auth):"
+for img in ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0 \
+           ghcr.io/etri-llm/etri-llm-mlperf:v0.2 \
+           ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2; do
+  printf "  %-60s (verify via: crane manifest %s)\n" "$img" "$img"
 done

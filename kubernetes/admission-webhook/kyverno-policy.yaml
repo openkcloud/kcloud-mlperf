@@ -1,0 +1,171 @@
+# Kyverno ClusterPolicy: env-injector
+#
+# Mutates Pods in the `llm-evaluation` namespace that carry the label
+# `etri.llm/role=benchmark` so that every container receives:
+#
+#   1) Downward-API env vars: POD_NAME, NODE_NAME (also POD_NAMESPACE,
+#      POD_UID for completeness -- benchmarking results are joined on
+#      these in WS-C01 / WS-D02).
+#   2) Build-provenance env vars sourced from the
+#      `etri-llm-build-info` ConfigMap in the llm-evaluation namespace:
+#        - IMAGE_DIGEST       (sha256:... of the deployed image)
+#        - GIT_COMMIT_SHA     (short or long SHA of the source tree)
+#        - HELM_RELEASE_NAME  (chart release identifier, optional)
+#        - HELM_CHART_VERSION (chart appVersion, optional)
+#
+# Match contract (matches WS-D01a-ALT acceptance criteria):
+#   * resource: Pods
+#   * operation: CREATE only (UPDATE pods cannot mutate env on existing
+#     containers anyway -- skip to avoid wasted admission cycles)
+#   * namespace: llm-evaluation (via match.any.resources.namespaces)
+#   * label: etri.llm/role=benchmark
+#   * failurePolicy: Ignore (per WS-D01a-ALT -- a webhook outage MUST NOT
+#     prevent benchmark pods from starting)
+#
+# Compatible with Kyverno >= 1.11.
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: etri-llm-env-injector
+  labels:
+    app.kubernetes.io/name: etri-admission-webhook
+    app.kubernetes.io/component: kyverno-policy
+  annotations:
+    policies.kyverno.io/title: "ETRI LLM benchmark env injector"
+    policies.kyverno.io/category: "Mutation"
+    policies.kyverno.io/severity: "low"
+    policies.kyverno.io/subject: "Pod"
+    policies.kyverno.io/description: |
+      Injects downward-API env vars (POD_NAME, NODE_NAME) and
+      build-provenance vars (IMAGE_DIGEST, GIT_COMMIT_SHA) into every
+      container of every Pod in the llm-evaluation namespace that has
+      the label etri.llm/role=benchmark.
+spec:
+  # CRITICAL: failurePolicy: Ignore is required by WS-D01a-ALT so that
+  # benchmark pod creation is never blocked by webhook unavailability.
+  failurePolicy: Ignore
+  # Background processing only re-applies on existing matching resources;
+  # for env injection that is meaningless (env vars are immutable on
+  # running containers), so we disable it.
+  background: false
+  # Mutate-only policy.
+  admission: true
+  # Mutate at admission time.
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - name: inject-env-vars
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - llm-evaluation
+              selector:
+                matchLabels:
+                  etri.llm/role: benchmark
+              operations:
+                - CREATE
+      # Pull build-info from the ConfigMap so we can reference its values
+      # via {{ buildInfo.data.IMAGE_DIGEST }} below.
+      context:
+        - name: buildInfo
+          configMap:
+            name: etri-llm-build-info
+            namespace: llm-evaluation
+      mutate:
+        # foreach over each container so existing env entries are preserved.
+        # Kyverno's strategic-merge under `patchStrategicMerge` would replace
+        # the entire env list; foreach with patchesJson6902 appends safely.
+        foreach:
+          - list: "request.object.spec.containers"
+            patchStrategicMerge:
+              spec:
+                containers:
+                  - name: "{{ element.name }}"
+                    env:
+                      - name: POD_NAME
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
+                      - name: POD_NAMESPACE
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.namespace
+                      - name: POD_UID
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.uid
+                      - name: NODE_NAME
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: spec.nodeName
+                      - name: IMAGE_DIGEST
+                        value: '{{ buildInfo.data.IMAGE_DIGEST || "unknown" }}'
+                      - name: GIT_COMMIT_SHA
+                        value: '{{ buildInfo.data.GIT_COMMIT_SHA || "unknown" }}'
+                      - name: HELM_RELEASE_NAME
+                        value: '{{ buildInfo.data.HELM_RELEASE_NAME || "" }}'
+                      - name: HELM_CHART_VERSION
+                        value: '{{ buildInfo.data.HELM_CHART_VERSION || "" }}'
+          # Same treatment for initContainers so build-provenance is
+          # available to any pre-flight scripts.
+          - list: "request.object.spec.initContainers || `[]`"
+            patchStrategicMerge:
+              spec:
+                initContainers:
+                  - name: "{{ element.name }}"
+                    env:
+                      - name: POD_NAME
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
+                      - name: POD_NAMESPACE
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.namespace
+                      - name: NODE_NAME
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: spec.nodeName
+                      - name: IMAGE_DIGEST
+                        value: '{{ buildInfo.data.IMAGE_DIGEST || "unknown" }}'
+                      - name: GIT_COMMIT_SHA
+                        value: '{{ buildInfo.data.GIT_COMMIT_SHA || "unknown" }}'
+---
+# Companion policy: stamp a `etri.llm/env-injected=true` annotation so that
+# downstream tooling (WS-C01 reproducibility checks) can verify the webhook
+# actually fired without grepping container env at runtime.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: etri-llm-env-injector-annotation
+  labels:
+    app.kubernetes.io/name: etri-admission-webhook
+    app.kubernetes.io/component: kyverno-policy
+spec:
+  failurePolicy: Ignore
+  background: false
+  admission: true
+  rules:
+    - name: stamp-injected-annotation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - llm-evaluation
+              selector:
+                matchLabels:
+                  etri.llm/role: benchmark
+              operations:
+                - CREATE
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              etri.llm/env-injected: "true"
+              etri.llm/env-injected-by: "kyverno"
+              etri.llm/env-injected-at: "{{ time_now_utc() }}"

@@ -1,3 +1,5 @@
+> Note: ETRI takeover migration 2026-05-12 — directory previously named `mondrianai-etri-llm-deployments-a9c4c59c4869` (legacy subcontractor naming); now ETRI-owned at `/home/kcloud/etri-llm-deployments/app/`. Container images previously under `mondrianai/*` Docker Hub org are migrating to `ghcr.io/etri-llm/*`. Historical mentions of the legacy names below are preserved for context.
+
 # Security Audit: Secret Remediation Report
 
 ## Executive Summary
@@ -87,7 +89,7 @@ File exists but contains no actual credentials (verified).
 
 **Search**: Grep for `ghp_`, `github_token`, `github_pat`
 ```bash
-grep -r "ghp_\|github_token\|github_pat" /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869 \
+grep -r "ghp_\|github_token\|github_pat" /home/kcloud/etri-llm-deployments/app \
   --include="*.yaml" --include="*.yml" --include="*.py" --include="*.sh"
 ```
 
@@ -97,7 +99,7 @@ grep -r "ghp_\|github_token\|github_pat" /home/kcloud/mondrianai-etri-llm-deploy
 
 **Search**: Grep for `hf_`, `huggingface_token`
 ```bash
-grep -r "hf_\|huggingface_token" /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869 \
+grep -r "hf_\|huggingface_token" /home/kcloud/etri-llm-deployments/app \
   --include="*.yaml" --include="*.yml" --include="*.sh" --include="*.json"
 ```
 
@@ -107,7 +109,7 @@ grep -r "hf_\|huggingface_token" /home/kcloud/mondrianai-etri-llm-deployments-a9
 
 **Search**: Grep for `dckr_pat_`, `dockerhub_token`, `docker_password`
 ```bash
-grep -r "dckr_pat_\|dockerhub_token\|docker_password" /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869 \
+grep -r "dckr_pat_\|dockerhub_token\|docker_password" /home/kcloud/etri-llm-deployments/app \
   --include="*.yaml" --include="*.yml"
 ```
 
@@ -440,7 +442,7 @@ kubectl create secret docker-registry image-pull-secret \
 ### Pre-Commit Hook Installation
 
 ```bash
-cd /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869
+cd /home/kcloud/etri-llm-deployments/app
 pip install pre-commit
 cat > .pre-commit-config.yaml <<EOF
 repos:

@@ -1,6 +1,6 @@
 {{- with .Values }}
 # Cluster inventory ConfigMap mounted into the backend pod at
-# /home/kcloud/mondrianai-etri-llm-deployments-a9c4c59c4869/config/cluster.yaml
+# /home/kcloud/etri-llm-deployments/app/config/cluster.yaml
 # DeviceRegistryService reads this as the source-of-truth fallback when the
 # Kubernetes API is unreachable, and to enrich k8s node entries with declared
 # accelerator vendor/model/count metadata.

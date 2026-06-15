@@ -24,21 +24,21 @@ control_plane:
 workers:
   - name: node2
     role: worker
-    accelerator: { type: gpu, vendor: nvidia, model: "L40 + A40", count: 2 }
+    accelerator: { type: gpu, vendor: nvidia, model: "L40", count: 2 }
     ssh: { host: 10.254.184.195, port: 122 }
     labels:
       accelerator-type: gpu
       gpu-vendor: nvidia
-      gpu-pair: l40-a40
+      gpu-pair: l40-l40
 
   - name: node3
     role: worker
-    accelerator: { type: gpu, vendor: nvidia, model: "L40-44GiB + A40-44GiB", count: 2 }
+    accelerator: { type: gpu, vendor: nvidia, model: "A40", count: 2 }
     ssh: { host: 10.254.184.196, port: 122 }
     labels:
       accelerator-type: gpu
       gpu-vendor: nvidia
-      gpu-pair: l40-44-a40-44
+      gpu-pair: a40-a40
 
   - name: node4
     role: worker

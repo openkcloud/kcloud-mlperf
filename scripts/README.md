@@ -27,11 +27,12 @@ If you also need to build images on this host:
 
 ---
 
-## Recipe 0: mirror upstream images into jungwooshim (one-time per cluster)
+## Recipe 0: mirror upstream images into ghcr.io/etri-llm (one-time per cluster)
 
-The chart pulls k8s-api/operator/mlperf/mmlu images from `jungwooshim/*` so a
-fresh cluster only needs ONE Docker Hub account. If you bring up a brand-new
-cluster, run this once:
+The chart pulls k8s-api/mlperf/mmlu images from `ghcr.io/etri-llm/*` so a
+fresh cluster only needs ONE registry account. The operator image
+(`jungwooshim/etri-llm-k8s-operator:v1.0.1`) was migrated earlier and is
+not re-mirrored. If you bring up a brand-new cluster, run this once:
 
 ```bash
 ./scripts/mirror-images.sh
@@ -40,18 +41,18 @@ cluster, run this once:
 This applies a short-lived in-cluster Job that uses
 `gcr.io/go-containerregistry/crane` to copy:
 
-| Source (mondrianai)                  | Destination (jungwooshim)               |
-|--------------------------------------|------------------------------------------|
-| `mondrianai/etri-llm-k8s-api:v1.0.0` | `jungwooshim/etri-llm-k8s-api:v1.0.0`    |
-| `mondrianai/etri-llm-k8s-operator:v1.0.1` | `jungwooshim/etri-llm-k8s-operator:v1.0.1` |
-| `mondrianai/etri-llm-mlperf:v0.2`    | `jungwooshim/etri-llm-mlperf:v0.2`       |
-| `mondrianai/etri-llm-mmlu-pro:v0.2`  | `jungwooshim/etri-llm-mmlu-pro:v0.2`     |
+| Source (legacy mondrianai)           | Destination (ETRI-owned GHCR)               |
+|--------------------------------------|---------------------------------------------|
+| `mondrianai/etri-llm-k8s-api:v1.0.0` | `ghcr.io/etri-llm/etri-llm-k8s-api:v1.0.0`  |
+| `mondrianai/etri-llm-mlperf:v0.2`    | `ghcr.io/etri-llm/etri-llm-mlperf:v0.2`     |
+| `mondrianai/etri-llm-mmlu-pro:v0.2`  | `ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2`   |
 
 Idempotent — re-running detects existing manifests and skips uploads. The Job
-reuses `secret/image-pull-secret` for the destination push, so no Docker Hub
-token is touched on the operator workstation.
+reuses `secret/image-pull-secret` for the destination push, so no registry
+token is touched on the operator workstation. The secret MUST be a GHCR PAT
+with `write:packages` scope.
 
-If you add a new mondrianai image to the chart, append it to the `for pair in`
+If you add a new image to the chart, append it to the `for pair in`
 list inside `mirror-images.sh` and re-run the script.
 
 ---
@@ -122,7 +123,7 @@ cd ..
 ./scripts/install-app-chart.sh
 ```
 
-For the operator (mondrianai/etri-llm-k8s-operator) and apt operator (etri-llm-k8s-api), the helm chart wires those automatically when `install-app-chart.sh` runs.
+For the operator (`jungwooshim/etri-llm-k8s-operator:v1.0.1`, pre-migrated under ETRI ownership) and the api (`ghcr.io/etri-llm/etri-llm-k8s-api`), the helm chart wires those automatically when `install-app-chart.sh` runs.
 
 ---
 
