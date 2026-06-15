@@ -1,0 +1,99 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kcloud-mlperf-smoke
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: smoke
+spec:
+  backoffLimit: 1
+  completions: 1
+  parallelism: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kcloud-tool
+        app.kubernetes.io/instance: kcloud-mlperf
+        app.kubernetes.io/part-of: kcloud-tool
+        app.kubernetes.io/managed-by: kcloud-tool
+        app.kubernetes.io/component: smoke
+    spec:
+      restartPolicy: Never
+      serviceAccountName: kcloud-mlperf-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["mlt"]
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["compute1"]
+            - weight: 60
+              preference:
+                matchExpressions:
+                  - key: hardware
+                    operator: NotIn
+                    values: ["nvidia-gpu"]
+      containers:
+        - name: smoke
+          image: docker.io/library/python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/scripts/smoke.py"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          volumeMounts:
+            - name: results
+              mountPath: /mnt/datasets
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: kcloud-mlperf-results
+        - name: scripts
+          configMap:
+            name: kcloud-mlperf-bench-scripts
+        - name: tmp
+          emptyDir: {}

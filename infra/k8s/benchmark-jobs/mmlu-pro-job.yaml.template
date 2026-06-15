@@ -1,0 +1,103 @@
+# MMLU-Pro benchmark Job template.
+#
+# Runs the MMLU-Pro evaluation (TIGER-Lab/MMLU-Pro, 100 samples/subject, pass@1)
+# on either GPU (node2/node3) or NPU (node4) depending on ACCELERATOR_TYPE.
+#
+# Apply via envsubst:
+#   envsubst < k8s/benchmark-jobs/mmlu-pro-job.yaml.template | kubectl apply -f -
+#
+# Required env vars:
+#   RUN_ID            — unique run identifier, e.g. 20260428-072038-a612a54
+#   MODEL             — HF model ID, e.g. meta-llama/Llama-3.1-8B-Instruct
+#   PRECISION         — fp16 | bf16 | fp8
+#   ACCELERATOR_TYPE  — gpu | npu
+#   DEVICE_LABEL_KEY  — node label key for scheduling, e.g. gpu-pair or npu-model
+#   DEVICE_LABEL_VAL  — node label value, e.g. l40-a40 or rngd
+#   DEVICE_NAME       — human-readable device name for result paths, e.g. L40 or RNGD
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mmlu-pro-${RUN_ID}-${DEVICE_NAME}-${PRECISION}
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: mmlu-pro-job
+    app.kubernetes.io/managed-by: kubectl
+    etri.run-id: "${RUN_ID}"
+    etri.benchmark: mmlu-pro
+    etri.model: "${MODEL}"
+    etri.device: "${DEVICE_NAME}"
+    etri.precision: "${PRECISION}"
+    etri.scenario: accuracy
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mmlu-pro-job
+        etri.run-id: "${RUN_ID}"
+        etri.benchmark: mmlu-pro
+        etri.device: "${DEVICE_NAME}"
+        etri.precision: "${PRECISION}"
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        accelerator-type: "${ACCELERATOR_TYPE}"
+        "${DEVICE_LABEL_KEY}": "${DEVICE_LABEL_VAL}"
+      imagePullSecrets:
+        - name: image-pull-secret
+      containers:
+        - name: mmlu-pro-runner
+          image: ghcr.io/etri-llm/etri-llm-mmlu-pro:v0.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RUN_ID
+              value: "${RUN_ID}"
+            - name: MODEL
+              value: "${MODEL}"
+            - name: PRECISION
+              value: "${PRECISION}"
+            - name: DEVICE_NAME
+              value: "${DEVICE_NAME}"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: huggingface-token
+                  key: HF_TOKEN
+          command:
+            - /bin/bash
+            - -c
+            - |
+              python3 /app/run_mmlu_pro.py \
+                --model "${MODEL}" \
+                --precision "${PRECISION}" \
+                --samples-per-subject 100 \
+                --metric pass@1 \
+                --output-dir /mnt/results/${RUN_ID}/mmlu-pro/${DEVICE_NAME}/${PRECISION}
+          resources:
+            requests:
+              cpu: "4"
+              memory: 32Gi
+            limits:
+              cpu: "8"
+              memory: 64Gi
+          volumeMounts:
+            - name: model-volume
+              mountPath: /mnt/models
+              readOnly: true
+            - name: dataset-volume
+              mountPath: /mnt/datasets
+              readOnly: true
+            - name: results-volume
+              mountPath: /mnt/results
+      volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: model-nfs-pvc
+        - name: dataset-volume
+          persistentVolumeClaim:
+            claimName: dataset-nfs-pvc
+        - name: results-volume
+          persistentVolumeClaim:
+            claimName: results-nfs-pvc

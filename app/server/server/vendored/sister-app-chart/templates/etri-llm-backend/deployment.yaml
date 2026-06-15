@@ -1,0 +1,58 @@
+{{- with .Values }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .components.etriLLMBackend.metadata.name }}
+  namespace: {{ .global.namespace }}
+  labels:
+    app.kubernetes.io/name: etri-llm-backend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/instance: {{ .components.etriLLMBackend.metadata.name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .components.etriLLMBackend.metadata.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .components.etriLLMBackend.metadata.name }}
+        app.kubernetes.io/instance: {{ .components.etriLLMBackend.metadata.name }}
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: {{ .components.etriLLMBackend.metadata.name }}
+          ports:
+          - containerPort: {{ .components.etriLLMBackend.containers.containerPort }}
+            name: http
+            protocol: TCP
+          image: {{ .components.etriLLMBackend.containers.image }}
+          envFrom:
+          - secretRef:
+              name: {{ .components.etriLLMBackend.metadata.name }}
+          imagePullPolicy: Always
+          volumeMounts:
+          - name: model-volume
+            mountPath: /usr/src/app/mnt/models/
+          - name: dataset-volume
+            mountPath: /usr/src/app/mnt/datasets/
+          - name: results-volume
+            mountPath: /usr/src/app/mnt/result/
+          - name: cluster-config
+            mountPath: /home/kcloud/etri-llm-deployments/app/config
+            readOnly: true
+      volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: model-nfs-pvc
+        - name: dataset-volume
+          persistentVolumeClaim:
+            claimName: dataset-nfs-pvc
+        - name: results-volume
+          persistentVolumeClaim:
+            claimName: results-nfs-pvc
+        - name: cluster-config
+          configMap:
+            name: etri-llm-cluster-config
+      imagePullSecrets:
+      - name: {{ .global.imagePullSecret.metadata.name }}
+{{- end }}

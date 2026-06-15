@@ -1,0 +1,3 @@
+download_run_once: false
+download_retries: 10
+retry_stagger: 30

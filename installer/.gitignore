@@ -1,0 +1,27 @@
+# Rendered manifests / working dirs produced at install time
+deploy/render/
+
+# Test harness results
+test/.results/
+
+# OMC working state (research docs are intentionally tracked; sessions/state are not)
+.omc/state/
+.omc/sessions/
+.omc/logs/
+.omc/validator-run.log
+.omc/.toolcheck
+
+# Editor / OS
+*.swp
+.DS_Store
+
+# Secret-bearing ad-hoc build logs/scripts (kept local only)
+.omc/jwbuild-logs/
+
+# Benchmark job manifests with hardcoded HF token (kept local only)
+jobs/mmlu-pro-a40.yaml
+jobs/mmlu-pro-l40.yaml
+jobs/mmlu-pro-rngd.yaml
+
+# internal OMC working notes (never publish)
+.omc/

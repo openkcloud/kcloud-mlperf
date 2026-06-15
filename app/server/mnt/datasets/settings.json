@@ -1,0 +1,9 @@
+{
+  "mlperf": {
+    "Llama-3.1-8B-instruct": ["cnn_eval.json"],
+    "bert-model.pt": ["bert_train_data.json", "common-dataset-folder"]
+  },
+  "mmlu": {
+    "Llama-3.1-8B-instruct": ["mmlu-pro"]
+  }
+}

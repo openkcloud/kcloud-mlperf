@@ -1,0 +1,153 @@
+import {
+  IsDate,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsNumberString,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  Min,
+} from 'class-validator';
+import { StatusEnum } from '../../enums/status.enum';
+
+export class CreateMpExamDto {
+  // Required
+  @IsString()
+  @Length(1, 100)
+  name: string;
+
+  // Optional
+  @IsString()
+  @Length(0, 500)
+  description: string;
+
+  // Required
+  @IsString()
+  @Length(1, 100)
+  model: string;
+
+  // Required
+  @IsString()
+  @Length(1, 10)
+  precision: string;
+
+  // Required
+  @IsString()
+  @Length(1, 20)
+  mode: string;
+
+  // Required
+  @IsString()
+  @Length(1, 100)
+  framework: string;
+
+  // Required — batch_size=0 is operationally invalid (vLLM requires >=1).
+  @IsInt()
+  @Min(1)
+  batch_size: number;
+
+  // Required
+  @IsInt()
+  @Min(0)
+  min_duration: number;
+
+  // Required
+  @IsString()
+  @Length(1, 100)
+  dataset: string;
+
+  // Required — B3: reject data_number <= 0 (0 = continuous HTTP-400 storm).
+  @IsInt()
+  @Min(1)
+  data_number: number;
+
+  // Required
+  @IsString()
+  @IsNotEmpty()
+  scenario: string;
+
+  // Required
+  @IsNumber()
+  @Min(0)
+  target_qps: number;
+
+  // Required — num_workers=0 is operationally invalid; must be at least 1.
+  // m-bk3: cap at 64 to bound the job spec (DoS guard with no auth/rate-limit).
+  @IsInt()
+  @Min(1)
+  @Max(64)
+  num_workers: number;
+
+  // Required — tensor_parallel_size=0 is invalid (vLLM requires >=1).
+  // m-bk3: cap at 8 (max devices per node) to bound the job spec.
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  tensor_parallel_size: number;
+
+  // Optional - defaults to GPU
+  @IsOptional()
+  @IsString()
+  @Length(1, 10)
+  device_type: string;
+
+  // Required
+  @IsString()
+  @Length(1, 100)
+  gpu_type: string;
+
+  // Required
+  @IsInt()
+  @Min(0)
+  gpu_num: number;
+
+  // Required
+  @IsInt()
+  @Min(0)
+  cpu_core: number;
+
+  // Required
+  @IsInt()
+  @Min(0)
+  ram_capacity: number;
+
+  // Required — B-validation #6: retry_num drives totalRepeatCount; 0 makes the
+  // operator loop run zero iterations and hang waiting for a result that never
+  // arrives. Must be at least 1.
+  // m-bk3: cap at 100 so a huge retry_num can't spin the run loop unboundedly.
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  retry_num: number;
+
+  // Optional — generation length (default 128). Wired through to operator job env.
+  @IsOptional()
+  @IsInt()
+  @Min(16)
+  max_output_tokens?: number;
+
+  // Required
+  @IsString()
+  @IsNotEmpty()
+  started_at: string;
+
+  // Optional
+  @IsOptional()
+  status: StatusEnum;
+
+  @IsOptional()
+  @IsString()
+  error_log: string;
+
+  // Optional
+  @IsString()
+  @IsOptional()
+  end_at: string;
+
+  // Optional — reproducibility seed (WS-D03). Stored as string for bigint safety.
+  @IsOptional()
+  @IsNumberString()
+  seed?: number | string;
+}

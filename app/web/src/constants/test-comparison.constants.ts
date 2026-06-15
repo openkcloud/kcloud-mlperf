@@ -1,0 +1,1 @@
+export const SelectedTestResultCount = 2 as const

@@ -1,0 +1,52 @@
+version: "3.4"
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_dev
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${DATABASE_USER}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
+
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+  frontend:
+    container_name: react_dev
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    ports:
+      - 5173:5173
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    command: yarn dev
+
+  backend:
+    container_name: nestjs_dev
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    ports:
+      - 9999:9999
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - ./server:/app
+      - /app/node_modules

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-atomplus-config
+  namespace: npu
+  labels:
+    app: vllm-atomplus
+    app.kubernetes.io/part-of: etri-llm
+data:
+  # All values here are wired into the container via envFrom in deployment.yaml.
+  # Defaults match the canonical cmdline captured from node5 PID 3794752 on
+  # 2026-05-12.  See app/atomplus/Dockerfile and .omc/state/vllm-rbln-cmdline-truth.txt.
+  MODEL_PATH: "/models/llama3.1-8b-rbln"
+  SERVED_MODEL_NAME: "rebellions/Llama-3.1-8B-Instruct"
+  MAX_NUM_SEQS: "1"
+  MAX_NUM_BATCHED_TOKENS: "8192"
+  MAX_MODEL_LEN: "8192"
+  BLOCK_SIZE: "8192"
+  PORT: "8000"
+  HOST: "0.0.0.0"

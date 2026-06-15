@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: benchmark-log-tee-pvc
+  namespace: llm-evaluation
+  labels:
+    app.kubernetes.io/name: benchmark-log-tee
+    app.kubernetes.io/component: log-tee
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 100Gi

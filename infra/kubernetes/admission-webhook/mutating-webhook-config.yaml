@@ -1,0 +1,67 @@
+# MutatingWebhookConfiguration documenting the admission webhook contract.
+#
+# IMPORTANT: When Kyverno is installed (via Helm, see deployment.yaml), it
+# auto-generates a `MutatingWebhookConfiguration` named
+# `kyverno-resource-mutating-webhook-cfg` based on the loaded policies.
+# Kyverno's auto-generated MWC will SUPERSEDE this file at runtime.
+#
+# This manifest exists for two reasons:
+#   1) Audit / IR documentation: the exact shape of the contract that
+#      WS-D01a-ALT requires (matchLabels, namespaceSelector,
+#      failurePolicy=Ignore, CREATE on Pods).
+#   2) Disaster recovery: if Kyverno is uninstalled but you want to keep
+#      the same admission contract pointing at a replacement webhook
+#      server, this manifest is the starting point.
+#
+# DO NOT `kubectl apply` this file while Kyverno is running -- Kyverno's
+# auto-update reconciler will overwrite it within seconds.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: etri-llm-env-injector
+  labels:
+    app.kubernetes.io/name: etri-admission-webhook
+    app.kubernetes.io/component: mutating-webhook-config
+    etri.llm/managed-by: kyverno
+  annotations:
+    # cert-manager will inject the CA bundle from the CA secret into the
+    # `caBundle` field below at runtime if this MWC is deployed standalone.
+    cert-manager.io/inject-ca-from: kyverno/kyverno-svc-tls
+    etri.llm/note: |
+      REFERENCE ONLY when Kyverno is the active admission engine.
+      Kyverno will auto-generate kyverno-resource-mutating-webhook-cfg.
+webhooks:
+  - name: env-injector.etri.llm
+    # Only intercept Pods in the llm-evaluation namespace.
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: llm-evaluation
+    # Only intercept Pods that opt in via the benchmark role label.
+    objectSelector:
+      matchLabels:
+        etri.llm/role: benchmark
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: Namespaced
+    # Per WS-D01a-ALT acceptance criteria: failurePolicy MUST be Ignore so
+    # that webhook outages never block benchmark pod creation.
+    failurePolicy: Ignore
+    # Run before any other mutators that read env vars.
+    reinvocationPolicy: IfNeeded
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    clientConfig:
+      service:
+        namespace: kyverno
+        name: kyverno-svc
+        path: /mutate/fail
+        port: 443
+      # Populated by cert-manager via the inject-ca-from annotation, OR
+      # by Kyverno itself when it owns the MWC.
+      caBundle: ""

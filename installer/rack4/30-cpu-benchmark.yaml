@@ -1,0 +1,250 @@
+# Phase 2 — CPU-only benchmark (no model, no HF, no network deps, no accelerator).
+# Reuses existing (unmodified) kcloud-mlperf-sa + PVC kcloud-mlperf-results.
+# Creates: 1 new ConfigMap (separate from smoke's) + 1 new Job. NO Secret/Service/Ingress.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kcloud-mlperf-cpubench-scripts
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: benchmark
+data:
+  cpu_benchmark.py: |
+    import os, sys, json, time, hashlib, zlib, math, random
+    from multiprocessing import Pool
+
+    RESULTS_DIR = "/mnt/datasets/cpu-benchmark"
+    POD = os.environ.get("POD_NAME", "unknown")
+    NODE = os.environ.get("NODE_NAME", "unknown")
+    WORKERS = int(os.environ.get("BENCH_WORKERS", "4"))
+    SCALE = float(os.environ.get("BENCH_SCALE", "1.0"))
+
+    def now():
+        return time.perf_counter()
+
+    def bench_float(iters):
+        x = 0.0
+        t0 = now()
+        for i in range(iters):
+            x += math.sin(i * 1e-6) * math.cos(i * 1e-6) + math.sqrt(i + 1.0)
+        t1 = now()
+        return (iters / (t1 - t0), x)
+
+    def bench_int(iters):
+        t0 = now()
+        acc = 0
+        for i in range(iters):
+            acc = (acc * 1664525 + 1013904223) & 0xFFFFFFFF
+        t1 = now()
+        return (iters / (t1 - t0), acc)
+
+    def bench_hash(mb):
+        data = os.urandom(1024 * 1024)
+        t0 = now()
+        h = hashlib.sha256()
+        for _ in range(mb):
+            h.update(data)
+        t1 = now()
+        return (mb / (t1 - t0), h.hexdigest()[:12])
+
+    def bench_zlib(mb):
+        block = os.urandom(512 * 1024) + b"\x00" * (512 * 1024)
+        t0 = now()
+        total = 0
+        for _ in range(mb):
+            total += len(zlib.compress(block, 6))
+        t1 = now()
+        return (mb / (t1 - t0), total)
+
+    def bench_matmul(n):
+        random.seed(1234)
+        A = [[random.random() for _ in range(n)] for _ in range(n)]
+        B = [[random.random() for _ in range(n)] for _ in range(n)]
+        t0 = now()
+        C = [[0.0] * n for _ in range(n)]
+        for i in range(n):
+            Ai = A[i]; Ci = C[i]
+            for k in range(n):
+                aik = Ai[k]; Bk = B[k]
+                for j in range(n):
+                    Ci[j] += aik * Bk[j]
+        t1 = now()
+        flops = 2.0 * n ** 3
+        return (flops / (t1 - t0) / 1e6, C[0][0])
+
+    def _worker(iters):
+        r, _ = bench_int(iters)
+        return r
+
+    def bench_parallel(iters, workers):
+        t0 = now()
+        with Pool(workers) as p:
+            rates = p.map(_worker, [iters] * workers)
+        t1 = now()
+        return sum(rates), (t1 - t0)
+
+    def main():
+        info = {
+            "benchmark": "kcloud-tool-cpu",
+            "version": 1,
+            "node": NODE, "pod": POD,
+            "python": sys.version.split()[0],
+            "cpu_count_visible": os.cpu_count(),
+            "workers": WORKERS,
+            "scale": SCALE,
+        }
+        results = {}
+        FI = int(2_000_000 * SCALE)
+        II = int(5_000_000 * SCALE)
+        HMB = int(512 * SCALE)
+        ZMB = int(128 * SCALE)
+        MN = int(160 * SCALE)
+
+        r, _ = bench_float(FI);   results["float_mops_per_s"] = round(r / 1e6, 3)
+        r, _ = bench_int(II);     results["int_mops_per_s"] = round(r / 1e6, 3)
+        r, _ = bench_hash(HMB);   results["sha256_mib_per_s"] = round(r, 2)
+        r, _ = bench_zlib(ZMB);   results["zlib_mib_per_s"] = round(r, 2)
+        r, _ = bench_matmul(MN);  results["pymatmul_mflop_per_s"] = round(r, 3)
+
+        single, _ = bench_int(II)
+        agg, wall = bench_parallel(II, WORKERS)
+        results["int_single_mops_per_s"] = round(single / 1e6, 3)
+        results["int_parallel_mops_per_s"] = round(agg / 1e6, 3)
+        results["parallel_speedup_x"] = round(agg / single, 2) if single else None
+        results["parallel_efficiency"] = round((agg / single) / WORKERS, 3) if single else None
+
+        out = {"info": info, "results": results, "status": "ok"}
+
+        try:
+            os.makedirs(RESULTS_DIR, exist_ok=True)
+            path = os.path.join(RESULTS_DIR, "result-%s.json" % POD)
+            with open(path, "w") as f:
+                json.dump(out, f, indent=2)
+            with open(path) as f:
+                back = json.load(f)
+            assert back["status"] == "ok"
+            out["persisted_path"] = path
+            out["persisted_verified"] = True
+        except Exception as e:
+            out["persisted_verified"] = False
+            out["persist_error"] = repr(e)
+
+        print(json.dumps(out, indent=2))
+        rate_ok = all(
+            isinstance(v, (int, float)) and v > 0
+            for k, v in results.items()
+            if k.endswith("_per_s")
+        )
+        sys.exit(0 if (rate_ok and out.get("persisted_verified")) else 1)
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kcloud-mlperf-cpu-benchmark
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: benchmark
+spec:
+  backoffLimit: 1
+  completions: 1
+  parallelism: 1
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kcloud-tool
+        app.kubernetes.io/instance: kcloud-mlperf
+        app.kubernetes.io/part-of: kcloud-tool
+        app.kubernetes.io/managed-by: kcloud-tool
+        app.kubernetes.io/component: benchmark
+    spec:
+      restartPolicy: Never
+      serviceAccountName: kcloud-mlperf-sa      # reused, unmodified
+      automountServiceAccountToken: false
+      # no hostNetwork / hostPID / hostIPC / nodeName / tolerations
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["mlt"]
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["compute1"]
+            - weight: 60
+              preference:
+                matchExpressions:
+                  - key: hardware
+                    operator: NotIn
+                    values: ["nvidia-gpu"]
+      containers:
+        - name: cpu-benchmark
+          image: docker.io/library/python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/scripts/cpu_benchmark.py"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: BENCH_WORKERS
+              value: "4"
+            - name: BENCH_SCALE
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "1"
+              memory: "512Mi"
+            limits:
+              cpu: "4"
+              memory: "1Gi"
+          volumeMounts:
+            - name: results
+              mountPath: /mnt/datasets
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: kcloud-mlperf-results       # reused, unmodified
+        - name: scripts
+          configMap:
+            name: kcloud-mlperf-cpubench-scripts   # new
+        - name: tmp
+          emptyDir: {}

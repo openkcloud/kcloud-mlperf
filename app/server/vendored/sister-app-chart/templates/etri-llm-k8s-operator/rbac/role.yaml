@@ -1,0 +1,208 @@
+{{- with .Values }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: etri-llm-k8s-operator
+  name: etri-llm-k8s-operator-role
+  namespace: {{ .global.namespace }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/status
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+# permissions to do leader election.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/name: etri-llm-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: leader-election-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch  
+
+---
+# This rule is not used by the project etri-llm-k8s-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants full permissions ('*') over resources.etri.llm.
+# This role is intended for users authorized to modify roles and bindings within the cluster,
+# enabling them to delegate specific permissions to other users or groups as needed.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: etri-llm-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: exam-admin-role
+rules:
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams
+  verbs:
+  - '*'
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/status
+  verbs:
+  - get
+---
+# This rule is not used by the project etri-llm-k8s-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants permissions to create, update, and delete resources within the resources.etri.llm.
+# This role is intended for users who need to manage these resources
+# but should not control RBAC or manage permissions for others.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: etri-llm-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: exam-editor-role
+rules:
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/status
+  verbs:
+  - get
+---
+# This rule is not used by the project etri-llm-k8s-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to resources.etri.llm resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: etri-llm-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: exam-viewer-role
+rules:
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - resources.etri.llm
+  resources:
+  - exams/status
+  verbs:
+  - get
+
+{{- end }}  

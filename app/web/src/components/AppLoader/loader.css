@@ -1,0 +1,69 @@
+.app-loader {
+  height: 100%;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99999;
+  background-color: rgba(248, 250, 252, 0.75);
+  backdrop-filter: blur(3px);
+}
+
+.loader-ring {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.loader-ring::before,
+.loader-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.loader-ring::before {
+  border: 3px solid rgba(79, 70, 229, 0.12);
+}
+
+.loader-ring::after {
+  border: 3px solid transparent;
+  border-top-color: #4F46E5;
+  border-right-color: #6366F1;
+  animation: loaderSpin 0.75s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.loader-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #005BAC 0%, #4F46E5 100%);
+  animation: loaderPulse 0.75s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes loaderSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loaderPulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

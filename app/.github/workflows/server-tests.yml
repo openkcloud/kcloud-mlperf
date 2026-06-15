@@ -1,0 +1,45 @@
+name: server-tests
+
+# Runs the NestJS unit test suite on every PR / push.
+# Gates: 0 failures + tsc clean. This is the minimum scientific-readiness gate.
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-tests.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: yarn.lock
+
+      - name: Install dependencies
+        working-directory: .
+        run: yarn install --frozen-lockfile
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run TypeScript build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint -- --max-warnings 100

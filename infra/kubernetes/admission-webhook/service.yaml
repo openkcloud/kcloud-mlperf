@@ -1,0 +1,57 @@
+# Reference Service definition for the Kyverno admission webhook.
+#
+# IMPORTANT: When you install Kyverno via the official Helm chart
+# (see deployment.yaml for the values file used in this project), the
+# chart creates a Service named `kyverno-svc` in the `kyverno` namespace
+# that exposes port 443 -> 9443 on the admission controller pods.
+#
+# This file documents what that Service looks like for audit/disaster
+# recovery, and provides a minimal standalone manifest in case you need
+# to recreate the Service after an accidental deletion without re-running
+# Helm.
+#
+# Kyverno will automatically reconcile this Service on chart upgrade.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kyverno-svc
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/name: kyverno
+    app.kubernetes.io/component: admission-controller
+    app.kubernetes.io/managed-by: etri-admission-webhook
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+    - name: metrics-port
+      port: 8000
+      targetPort: metrics-port
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: kyverno
+    app.kubernetes.io/component: admission-controller
+---
+# Headless Service used by Kyverno's metrics collection (Prometheus).
+apiVersion: v1
+kind: Service
+metadata:
+  name: kyverno-svc-metrics
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/name: kyverno
+    app.kubernetes.io/component: admission-controller-metrics
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics-port
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: kyverno
+    app.kubernetes.io/component: admission-controller

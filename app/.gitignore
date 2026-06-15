@@ -1,0 +1,50 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env  
+/data
+
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OMC session state (ephemeral - don't commit)
+.omc/state/
+.omc/autopilot/
+.omc/notepad.md
+
+# TS build cache
+*.tsbuildinfo
+
+# Playwright artifacts
+test-results/
+.omc/
+**/.omc/
+__pycache__/
+*.pyc
+# token-bearing job/script files (kept local only)
+jobs/mmlu-pro-a40.yaml
+jobs/mmlu-pro-atomplus-ssh.sh
+jobs/mmlu-pro-l40.yaml
+jobs/mmlu-pro-rngd.yaml
+scripts/concurrent_matrix_soak.sh
+# vendored chart secret templates with hardcoded DB password (kept local only)
+server/vendored/sister-app-chart/templates/etri-llm-backend/secret.yaml
+server/server/vendored/sister-app-chart/templates/etri-llm-backend/secret.yaml

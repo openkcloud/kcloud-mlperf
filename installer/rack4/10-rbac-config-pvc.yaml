@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kcloud-mlperf-sa
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: smoke
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kcloud-mlperf-role
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: smoke
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kcloud-mlperf-rolebinding
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: smoke
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kcloud-mlperf-role
+subjects:
+  - kind: ServiceAccount
+    name: kcloud-mlperf-sa
+    namespace: kcloud-tool
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kcloud-mlperf-bench-scripts
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: smoke
+data:
+  smoke.py: |
+    import os, sys, platform, shutil, json
+    MNT = "/mnt/datasets"
+    report = {
+        "smoke": "kcloud-tool",
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+        "node": os.environ.get("NODE_NAME", "?"),
+        "pod": os.environ.get("POD_NAME", "?"),
+    }
+    testfile = os.path.join(MNT, "kcloud-smoke.txt")
+    marker = "kcloud-tool smoke ok"
+    try:
+        with open(testfile, "w") as f:
+            f.write(marker)
+        with open(testfile) as f:
+            assert f.read() == marker
+        _, _, free = shutil.disk_usage(MNT)
+        report["pvc_writable"] = True
+        report["pvc_free_gib"] = round(free / 2**30, 2)
+        os.remove(testfile)
+    except Exception as e:
+        report["pvc_writable"] = False
+        report["error"] = repr(e)
+    print(json.dumps(report, indent=2))
+    sys.exit(0 if report.get("pvc_writable") else 1)
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kcloud-mlperf-results
+  namespace: kcloud-tool
+  labels:
+    app.kubernetes.io/name: kcloud-tool
+    app.kubernetes.io/instance: kcloud-mlperf
+    app.kubernetes.io/part-of: kcloud-tool
+    app.kubernetes.io/managed-by: kcloud-tool
+    app.kubernetes.io/component: smoke
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: general
+  resources:
+    requests:
+      storage: 1Gi
