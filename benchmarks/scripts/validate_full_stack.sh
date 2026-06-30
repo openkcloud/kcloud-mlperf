@@ -18,12 +18,12 @@ SELF="${BASH_SOURCE[0]}"
 
 # Sample node IPs for the pilot cluster (NOT the dev cluster).
 # These must appear in rendered output; dev-cluster IPs must NOT appear.
-SAMPLE_IPS="10.254.202.81,10.254.202.82,10.254.202.83"
-SAMPLE_CP="10.254.202.81"
-SAMPLE_NFS="10.254.202.81"
+SAMPLE_IPS="192.0.2.11,192.0.2.12,192.0.2.13"
+SAMPLE_CP="192.0.2.11"
+SAMPLE_NFS="192.0.2.11"
 
 # Dev-cluster IPs that must NEVER leak into rendered artifacts.
-DEV_IPS=("10.254.177.41" "10.254.184.195" "10.254.184.196")
+DEV_IPS=("192.0.2.41" "192.0.2.195" "192.0.2.196")
 
 # ── on_err trap ────────────────────────────────────────────────────────────────
 _on_err() {
@@ -57,7 +57,7 @@ Checks performed:
      (no helm install/upgrade w/o --dry-run, no kubectl apply w/o --dry-run=client,
       no kubectl create/delete/patch/replace)
   4  Node-IP substitution: sample IPs appear in rendered templates; no dev-cluster
-     IP (10.254.177.41 / 10.254.184.195 / 10.254.184.196) leaks into rendered output
+     IP (192.0.2.41 / 192.0.2.195 / 192.0.2.196) leaks into rendered output
   5  helm template each vendored chart with rendered overrides → valid YAML
      (SKIP if helm not on PATH)
   6  Secret safety: planted canary HF_TOKEN and SSHPASS never appear in any log output
@@ -230,8 +230,8 @@ fi
 #
 # Render each *.tmpl in deploy/platform/ with sample IPs exported as the
 # FROZEN variable set. Assert:
-#   a) at least one sample IP (10.254.202.81/82/83) appears in every rendered file
-#   b) NO dev-cluster IP (10.254.177.41 / 10.254.184.195 / 10.254.184.196) appears
+#   a) at least one sample IP (192.0.2.11/12/13) appears in every rendered file
+#   b) NO dev-cluster IP (192.0.2.41 / 192.0.2.195 / 192.0.2.196) appears
 #      in any rendered file
 #
 # Uses envsubst (required; if absent the check fails — envsubst is a hard dep
@@ -239,10 +239,10 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Export frozen variables with sample values (names FROZEN per plan section 3).
-export NODE_IPS="10.254.202.81,10.254.202.82,10.254.202.83"
-export CONTROL_PLANE_IP="10.254.202.81"
-export ACCESS_IP="10.254.202.81"
-export NFS_SERVER="10.254.202.81"
+export NODE_IPS="192.0.2.11,192.0.2.12,192.0.2.13"
+export CONTROL_PLANE_IP="192.0.2.11"
+export ACCESS_IP="192.0.2.11"
+export NFS_SERVER="192.0.2.11"
 export NFS_PATH="/nfs-storage"
 export APP_NAMESPACE="llm-evaluation"
 export BENCH_NAMESPACE="kcloud-mlperf"
@@ -277,9 +277,9 @@ export MAX_TOKENS="128"
 
 # Composite kubespray inventory vars — assembled by stages.sh at runtime from node IPs.
 # Exported here with sample IP content so envsubst resolves them in kubespray-inventory.ini.tmpl.
-export NODE_ENTRIES_ALL="node1 ansible_host=10.254.202.81 ansible_port=122 ip=10.254.202.81 etcd_member_name=etcd1
-node2 ansible_host=10.254.202.82 ansible_port=122 ip=10.254.202.82
-node3 ansible_host=10.254.202.83 ansible_port=122 ip=10.254.202.83"
+export NODE_ENTRIES_ALL="node1 ansible_host=192.0.2.11 ansible_port=122 ip=192.0.2.11 etcd_member_name=etcd1
+node2 ansible_host=192.0.2.12 ansible_port=122 ip=192.0.2.12
+node3 ansible_host=192.0.2.13 ansible_port=122 ip=192.0.2.13"
 export KUBE_CONTROL_PLANE_HOSTS="node1"
 export ETCD_HOSTS="node1"
 export KUBE_NODE_HOSTS="node2
@@ -316,7 +316,7 @@ else
 
       # 4a: assert at least one sample IP appears.
       _found_sample=false
-      for _sip in "10.254.202.81" "10.254.202.82" "10.254.202.83"; do
+      for _sip in "192.0.2.11" "192.0.2.12" "192.0.2.13"; do
         if echo "$_rendered" | grep -qF "$_sip"; then
           _found_sample=true
           break
@@ -324,7 +324,7 @@ else
       done
       if [[ "$_found_sample" == "false" ]]; then
         _fail "4.node-ip-substitution:${_tname}" \
-          "no sample IP (10.254.202.81/82/83) found in rendered output of $_tname"$'\n'"  Remediation: ensure the template uses \${NFS_SERVER}, \${CONTROL_PLANE_IP}, or \${ACCESS_IP} (frozen variable names from plan section 3)."
+          "no sample IP (192.0.2.11/12/13) found in rendered output of $_tname"$'\n'"  Remediation: ensure the template uses \${NFS_SERVER}, \${CONTROL_PLANE_IP}, or \${ACCESS_IP} (frozen variable names from plan section 3)."
         _subst_fail=true
         continue
       fi

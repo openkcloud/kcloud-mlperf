@@ -9,7 +9,7 @@ Usage:
 
 Env vars:
   HF_TOKEN          - HuggingFace token
-  VLLM_BASE_URL     - for rngd: base URL of OpenAI-compatible server (default http://10.254.202.114:8000)
+  VLLM_BASE_URL     - for rngd: base URL of OpenAI-compatible server (default http://192.0.2.114:8000)
   LOG_PATH          - override log file path
 """
 import argparse
@@ -30,7 +30,7 @@ def parse_args():
     p.add_argument("--output", required=True)
     p.add_argument("--n-samples", type=int, default=100)
     p.add_argument("--max-tokens", type=int, default=128)
-    p.add_argument("--base-url", default=os.environ.get("VLLM_BASE_URL", "http://10.254.202.114:8000"))
+    p.add_argument("--base-url", default=os.environ.get("VLLM_BASE_URL", "http://192.0.2.114:8000"))
     return p.parse_args()
 
 def make_log(log_path: Path):

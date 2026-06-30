@@ -18,8 +18,10 @@ spec:
         hardware: RNGD
     spec:
       restartPolicy: Never
-      # Run on a CPU node — calls the RNGD inference server at 10.254.202.114:8000
-      # The furiosa-llm server is already running furiosa-ai/Llama-3.1-8B-Instruct-FP8
+      # Run on a CPU node — calls an external RNGD inference (furiosa-llm) server
+      # serving furiosa-ai/Llama-3.1-8B-Instruct-FP8.
+      # NOTE: 192.0.2.114 is a placeholder (RFC 5737). Set --base-url / VLLM_BASE_URL
+      #       below to your own RNGD OpenAI-compatible endpoint before applying.
       nodeSelector:
         kubernetes.io/os: linux
       affinity:
@@ -45,13 +47,13 @@ spec:
               python3 /scripts/mlperf_cnndm100_fp8.py \
                 --hw rngd \
                 --model furiosa-ai/Llama-3.1-8B-Instruct-FP8 \
-                --base-url http://10.254.202.114:8000 \
+                --base-url http://192.0.2.114:8000 \
                 --output /mnt/datasets/results/mlperf-cnndm100-fp8-rngd-20260506/result.json \
                 --n-samples 100 \
                 --max-tokens 128
           env:
             - name: VLLM_BASE_URL
-              value: "http://10.254.202.114:8000"
+              value: "http://192.0.2.114:8000"
             - name: LOG_PATH
               value: /mnt/datasets/logs/benchmarks/mlperf_rngd_fp8_20260506.log
           resources:

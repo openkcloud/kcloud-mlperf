@@ -54,11 +54,11 @@ ssh_reachable() {
 # Live cluster nodes only — candidate nodes skipped (powered off / firewalled)
 # format: "name ip port"
 NODES=(
-  "node1 10.254.177.41  122"
-  "node2 10.254.184.195 122"
-  "node3 10.254.184.196 122"
-  "node4 10.254.202.114 22"
-  "node5 10.254.202.111 122"
+  "node1 192.0.2.41  122"
+  "node2 192.0.2.195 122"
+  "node3 192.0.2.196 122"
+  "node4 192.0.2.114 22"
+  "node5 192.0.2.111 122"
 )
 
 for entry in "${NODES[@]}"; do

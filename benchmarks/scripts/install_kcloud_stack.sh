@@ -6,7 +6,7 @@
 #   preflight → provision → storage → operators → observability → webapp → benchmarks → verify
 #
 # One-command happy path (only manual input = node IPs):
-#   ./scripts/install_kcloud_stack.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+#   ./scripts/install_kcloud_stack.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 #
 # See --help for the full flag reference. This installer REUSES install_pilot_k8s.sh
 # as the benchmark stage and drives the vendored Helm charts under --platform-dir
@@ -139,22 +139,22 @@ Safety:
 
 Examples:
   # Minimal one-command full-stack install
-  ./install_kcloud_stack.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+  ./install_kcloud_stack.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 
   # Dry run — render + plan, no cluster mutations (works offline)
-  ./install_kcloud_stack.sh --node-ips "10.254.202.81" --dry-run
+  ./install_kcloud_stack.sh --node-ips "192.0.2.11" --dry-run
 
   # Read-only readiness check
-  ./install_kcloud_stack.sh --node-ips "10.254.202.81" --validate-only
+  ./install_kcloud_stack.sh --node-ips "192.0.2.11" --validate-only
 
   # Only re-run verification
-  ./install_kcloud_stack.sh --node-ips "10.254.202.81" --only verify
+  ./install_kcloud_stack.sh --node-ips "192.0.2.11" --only verify
 
   # CPU-only / kind: skip device operators
-  ./install_kcloud_stack.sh --node-ips "10.254.202.81" --skip-operators
+  ./install_kcloud_stack.sh --node-ips "192.0.2.11" --skip-operators
 
   # Tear down everything this installer created
-  ./install_kcloud_stack.sh --node-ips "10.254.202.81" --cleanup --force
+  ./install_kcloud_stack.sh --node-ips "192.0.2.11" --cleanup --force
 USAGE
 }
 

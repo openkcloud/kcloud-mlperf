@@ -2,7 +2,7 @@
 # scripts/install_pilot_k8s.sh — kcloud-mlperf LLM benchmark suite Kubernetes installer
 #
 # One-command happy path (only required input is node IPs):
-#   ./scripts/install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+#   ./scripts/install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 #
 # See --help for full flag reference.
 
@@ -96,20 +96,20 @@ Safety:
 
 Examples:
   # Minimal one-command install
-  ./install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+  ./install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 
   # Dry run — render + plan, no cluster mutations
-  ./install_pilot_k8s.sh --node-ips "10.254.202.81" --dry-run
+  ./install_pilot_k8s.sh --node-ips "192.0.2.11" --dry-run
 
   # Preflight only — check cluster readiness
-  ./install_pilot_k8s.sh --node-ips "10.254.202.81" --validate-only
+  ./install_pilot_k8s.sh --node-ips "192.0.2.11" --validate-only
 
   # GPU, full benchmark, explicit HF token file
-  ./install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82" \
+  ./install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12" \
       --device gpu --bench full --hf-token-source file:/root/.hf_token
 
   # Cleanup a previously installed release
-  ./install_pilot_k8s.sh --node-ips "10.254.202.81" --cleanup --force
+  ./install_pilot_k8s.sh --node-ips "192.0.2.11" --cleanup --force
 
 USAGE
 }

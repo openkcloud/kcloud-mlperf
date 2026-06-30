@@ -24,7 +24,7 @@ from typing import Any
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORTS_DIR = os.path.join(BASE_DIR, "docs", "reports")
 LOGS_DIR = os.path.join(BASE_DIR, "logs", "benchmarks")
-BACKEND_URL = os.environ.get("IMPORT_BACKEND_URL", "http://10.254.177.41:30980")
+BACKEND_URL = os.environ.get("IMPORT_BACKEND_URL", "http://192.0.2.41:30980")
 
 # ---------------------------------------------------------------------------
 # Canonical config fields used for fingerprinting (mirrors canonical-config.yaml)

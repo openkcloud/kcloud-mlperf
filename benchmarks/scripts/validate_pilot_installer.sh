@@ -16,7 +16,7 @@ TEMPLATES_DIR="${REPO_ROOT}/deploy/templates"
 SELF="${BASH_SOURCE[0]}"
 
 # Sample node IPs matching the design contract (used for dry-run checks).
-SAMPLE_IPS="10.254.202.81,10.254.202.82,10.254.202.83"
+SAMPLE_IPS="192.0.2.11,192.0.2.12,192.0.2.13"
 
 # ── result tracking ────────────────────────────────────────────────────────────
 declare -a CHECK_NAMES=()

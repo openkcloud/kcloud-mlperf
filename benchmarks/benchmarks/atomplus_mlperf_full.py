@@ -39,7 +39,7 @@ MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "128"))
 DATA_NUMBER = int(os.environ.get("DATA_NUMBER", "13368"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", f"/home/kcloud/results/{RUN_ID}"))
 NPU_EXAM_ID = os.environ.get("NPU_EXAM_ID", "")
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://10.254.177.41:30980/api/npu-eval")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://192.0.2.41:30980/api/npu-eval")
 LOG_PATH = Path(os.environ.get("LOG_PATH", f"/home/kcloud/etri-llm-exam-solution/logs/benchmarks/mlperf_atomplus_{RUN_ID}.log"))
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

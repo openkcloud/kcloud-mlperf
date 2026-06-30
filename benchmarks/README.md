@@ -418,7 +418,7 @@ Deploys MLPerf CNN/DM + MMLU-Pro into a fresh namespace (`kcloud-mlperf`) with a
 Only required input: the node IP list.
 
 ```bash
-./scripts/install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+./scripts/install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 ```
 
 Device mode, storage class, HF token, and registry are all auto-detected.
@@ -442,7 +442,7 @@ web application (frontend + backend), and benchmark layer — from a single comm
 Only required input: the cluster node IP list.
 
 ```bash
-./scripts/install_kcloud_stack.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+./scripts/install_kcloud_stack.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 ```
 
 Stages run in order: `storage → operators → observability → webapp → benchmarks → verify`.

@@ -5,7 +5,7 @@ Verified working 2026-06-04 on the consolidation jw cluster
 
 ## The device
 
-- **node5 = `10.254.202.111`**, 2× **Rebellions ATOM (RBLN-CA22)** NPUs (`rbln0`, `rbln1`),
+- **node5 = `192.0.2.111`**, 2× **Rebellions ATOM (RBLN-CA22)** NPUs (`rbln0`, `rbln1`),
   exposed in-cluster as `rebellions.ai/ATOM` (see `scripts/lib/detect.sh`).
 - Verified specs (per Rebellions, for the roofline/perf docs): ~32 TFLOPS FP16,
   256 GB/s GDDR6 (16 GB), 64 MB on-chip SRAM, ~90 W TDP. BF16/FP8 peak is **not
@@ -23,12 +23,12 @@ rbln-sdk / rebel-compiler / optimum-rbln / vllm_rbln : 0.10.3
 rbln-container-toolkit : 0.2.1
 ```
 
-Verify before joining: `ssh kcloud@10.254.202.111 rbln-stat` should list 2×
+Verify before joining: `ssh kcloud@192.0.2.111 rbln-stat` should list 2×
 RBLN-CA22, healthy, idle.
 
 ## Join — kubespray adds the node correctly
 
-Add `10.254.202.111` to the kubespray worker inventory and run the normal
+Add `192.0.2.111` to the kubespray worker inventory and run the normal
 `install_kcloud_stack.sh --provision` flow. **Kubespray installs the
 `nginx-proxy` static pod (local API LB on `127.0.0.1:6443`) automatically** —
 that is essential and is the part a bare `kubeadm join` omits.
@@ -61,7 +61,7 @@ platform surfaces Atom+ via:
      - name: node5
        role: worker
        accelerator: { type: npu, vendor: rebellions, model: "Atom+", count: 2 }
-       ssh: { host: 10.254.202.111, port: 22 }
+       ssh: { host: 192.0.2.111, port: 22 }
        labels:
          accelerator-type: npu
          npu-vendor: rebellions

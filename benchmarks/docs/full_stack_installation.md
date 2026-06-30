@@ -39,7 +39,7 @@ All resources are labeled `app.kubernetes.io/managed-by=kcloud-tool` and
 ## One-Command Install
 
 ```bash
-./scripts/install_kcloud_stack.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+./scripts/install_kcloud_stack.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 ```
 
 **What happens:**
@@ -172,7 +172,7 @@ Every auto-detected value has a corresponding flag. Supply only the flags you ne
 `kubectl` is already configured. The installer skips provision entirely:
 
 ```bash
-./scripts/install_kcloud_stack.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+./scripts/install_kcloud_stack.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 ```
 
 Node IPs are validated against `kubectl get nodes` InternalIPs at preflight. A mismatch produces a `[warn]`; with `--force` absent and a live apply pending, the installer aborts with an actionable message.
@@ -183,7 +183,7 @@ Runs kubespray to turn raw Linux nodes into a Kubernetes cluster, then proceeds 
 
 ```bash
 SSHPASS=<sudo-password> ./scripts/install_kcloud_stack.sh \
-  --node-ips "10.254.202.81,10.254.202.82,10.254.202.83" \
+  --node-ips "192.0.2.11,192.0.2.12,192.0.2.13" \
   --provision \
   --ssh-port 22
 ```
@@ -206,8 +206,8 @@ The installer needs a StorageClass that supports `ReadWriteMany` (RWX) for the r
 
 ```bash
 ./scripts/install_kcloud_stack.sh \
-  --node-ips "10.254.202.81,10.254.202.82,10.254.202.83" \
-  --nfs-server 10.254.202.82
+  --node-ips "192.0.2.11,192.0.2.12,192.0.2.13" \
+  --nfs-server 192.0.2.12
 ```
 
 **NFS path:** default `/nfs-storage`. Rendered into `nfs-values-override.yaml` as `nfs.path`.
@@ -430,7 +430,7 @@ kubectl patch storageclass local-path \
 
 ### NPU node SSH port is 22 (all others are 122)
 
-All nodes use SSH port **122** except NPU nodes (e.g., FuriosaAI RNGD on 10.254.202.114), which use the standard port **22**. The installer encodes this as `SSH_PORT_NPU=22` in `cluster.yaml.tmpl`. If you have a non-standard topology, set the NPU SSH port by editing the rendered `cluster.yaml` under `deploy/render/`.
+All nodes use SSH port **122** except NPU nodes (e.g., FuriosaAI RNGD on 192.0.2.114), which use the standard port **22**. The installer encodes this as `SSH_PORT_NPU=22` in `cluster.yaml.tmpl`. If you have a non-standard topology, set the NPU SSH port by editing the rendered `cluster.yaml` under `deploy/render/`.
 
 For kubespray provisioning, `--ssh-port` sets the port for all nodes; if your NPU node is also being provisioned and uses port 22 while others use 122, run kubespray in two passes or set all nodes to a uniform port first.
 

@@ -39,7 +39,7 @@ All resources are labeled `app.kubernetes.io/managed-by=kcloud-tool` and `app.ku
 ## One-Command Install
 
 ```bash
-./scripts/install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83"
+./scripts/install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13"
 ```
 
 **What happens:**
@@ -235,7 +235,7 @@ Fix:
 
 ### node4 SSH port is 22 (others are 122)
 
-All nodes use SSH port **122** except `node4` (10.254.202.114, FuriosaAI RNGD), which is on the standard port **22**. This is not a cluster error — it is a known host configuration difference. If your tooling assumes port 122 uniformly, add an SSH config override for that IP.
+All nodes use SSH port **122** except `node4` (192.0.2.114, FuriosaAI RNGD), which is on the standard port **22**. This is not a cluster error — it is a known host configuration difference. If your tooling assumes port 122 uniformly, add an SSH config override for that IP.
 
 ### Atom+ (Rebellions) device plugin parked
 
@@ -261,7 +261,7 @@ Symptoms: Job exits with `401 Unauthorized` or `Repository Not Found`.
 ### Validate cluster readiness without installing
 
 ```bash
-./scripts/install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83" --validate-only
+./scripts/install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13" --validate-only
 ```
 
 Exit 0 = all preflight checks pass. Non-zero = the error message identifies the blocker.
@@ -269,7 +269,7 @@ Exit 0 = all preflight checks pass. Non-zero = the error message identifies the 
 ### Dry-run (render + print, no apply)
 
 ```bash
-./scripts/install_pilot_k8s.sh --node-ips "10.254.202.81,10.254.202.82,10.254.202.83" --dry-run
+./scripts/install_pilot_k8s.sh --node-ips "192.0.2.11,192.0.2.12,192.0.2.13" --dry-run
 ```
 
 Prints the rendered manifests and the `kubectl apply --dry-run=client` plan. No cluster state is changed.
