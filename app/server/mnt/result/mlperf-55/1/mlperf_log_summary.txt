@@ -1,1 +1,0 @@
-{'rouge1': '28.6341', 'rouge2': '11.5123', 'rougeL': '19.4967', 'rougeLsum': '25.9341', 'gen_len': 13259, 'gen_num': 22}
